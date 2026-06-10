@@ -46,7 +46,9 @@ class AgentIdentity:
 
     def _load_identity(self):
         if self._private_key_hex:
-            # Ephemeral agent — derive identity from provided key, no env access needed
+            # Ephemeral sub-agent — short-lived identity bound to coordinator's T3N session.
+            # Uses did:key: (W3C standard for key-based DIDs) to signal that authority derives
+            # from the cryptographic key, not a registered T3N tenant.
             key_bytes = bytes.fromhex(self._private_key_hex)
             priv = Ed25519PrivateKey.from_private_bytes(key_bytes)
             pub_bytes = priv.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
@@ -55,7 +57,8 @@ class AgentIdentity:
             self._private_key_obj = priv
             self._public_key_hex = pub_hex
             self._agent_id = agent_id
-            self._did = f"did:local:{agent_id}"
+            self._did = f"did:key:ed25519:{agent_id}"
+            self._authority = "ED25519_EPHEMERAL"
             return
 
         try:
@@ -64,6 +67,7 @@ class AgentIdentity:
             self._public_key_hex = pub_key_hex
             self._agent_id = agent_id
             self._did = did
+            self._authority = "T3N_SESSION"  # DID came from authenticated T3N handshake
         except Exception as e:
             if _is_mock():
                 mock_pub = "aabbcc" + "0" * 58
@@ -71,6 +75,7 @@ class AgentIdentity:
                 self._public_key_hex = mock_pub
                 self._agent_id = key_fingerprint(mock_pub)
                 self._did = "did:t3n:mock-agent"
+                self._authority = "MOCK"
             else:
                 raise RuntimeError(f"Failed to load agent identity: {e}")
 
@@ -82,6 +87,10 @@ class AgentIdentity:
     @property
     def did(self) -> str:
         return self._did
+
+    @property
+    def authority(self) -> str:
+        return getattr(self, "_authority", "UNKNOWN")
 
     @property
     def agent_id(self) -> str:
@@ -113,6 +122,7 @@ class AgentIdentity:
         return {
             "agent_name": self.agent_name,
             "did": self.did,
+            "authority": self.authority,
             "agent_id": self.agent_id,
             "public_key_hex": self.public_key_hex,
         }

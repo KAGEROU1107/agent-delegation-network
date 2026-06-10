@@ -8,8 +8,8 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from src.terminal3_api_client import get_configured_did, get_t3n_api_key
 
-ADAPTER_AUTHORITY = "UNTRUSTED_ADVISORY"
-AUDIENCE = "small-effv3-gate"
+ADAPTER_AUTHORITY = "ED25519_LOCAL"   # coordinator: T3N_SESSION  workers: ED25519_EPHEMERAL
+AUDIENCE = "t3n-adn-v1"
 PROOF_TTL_SECONDS = 300
 MOCK_AGENT_ID = "mock-agent-001"
 MOCK_PUBLIC_KEY_HEX = "aabbcc" + "0" * 58  # 64 hex chars = 32 bytes

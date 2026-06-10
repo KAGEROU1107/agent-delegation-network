@@ -1,0 +1,124 @@
+=== Setting up Agent Delegation Network Demo ===
+
+1. Creating network agents...
+   [+] Coordinator: demo-coordinator | DID=did:t3n:ad146e6861ac408900af7ece...
+   [+] Worker 1:    demo-worker-1   | agent_id=5c5e0efc022c
+   [+] Worker 2:    demo-worker-2   | agent_id=e2991925de18
+   [+] Validator:   demo-validator  | agent_id=ba1432fe0a5b
+   [unique cryptographic identities: 4/4]
+
+2. Setting up task handlers...
+   [+] Coordinator: registered AGGREGATE_RESULTS handler
+   [+] Worker 1: registered PROCESS_DATA handler
+   [+] Worker 2: registered FORMAT_CONVERSION handler
+   [+] Validator: registered VALIDATE_QUALITY handler
+
+3. Setting up delegation policies...
+   [+] Policies configured for all agents
+
+=== Running Data Processing Workflow Demo ===
+
+Workflow: Coordinator -> Worker1 (Process Data) -> Worker2 (Format Conversion) -> Validator (Quality Check) -> Coordinator (Aggregate Results)
+
+Step 1: Coordinator delegates data processing to Worker 1
+   [+] Worker 1 completed: 30 records | avg=441.77 | total=13253.0 | trend=increasing | src=sales_Q1-2026_US_premium.csv
+
+Step 2: Coordinator delegates format conversion to Worker 2
+   [+] Worker 2 completed: 200 bytes | format=csv
+
+Step 3: Coordinator delegates quality validation to Validator
+   [+] Validator completed: score=1.00 | passed=True | issues=[]
+
+Step 4: Coordinator aggregates all results
+   [+] Coordinator aggregated: 3/3 steps successful (100.0% success rate)
+
+[OK] Data processing workflow completed successfully!
+
+=== Final Agent Statuses ===
+
+COORDINATOR (demo-coordinator):
+  Agent ID: 13135d0e
+  DID: did:t3n:ad146e6861ac...
+  Active delegations: 3
+  Completed delegations: 1
+  Registered handlers: 4
+    -> ECHO, GET_AGENT_INFO, PING, AGGREGATE_RESULTS
+
+WORKER1 (demo-worker-1):
+  Agent ID: 5dcb4346
+  DID: did:local:5c5e0efc02...
+  Active delegations: 0
+  Completed delegations: 1
+  Registered handlers: 4
+    -> ECHO, GET_AGENT_INFO, PING, PROCESS_DATA
+
+WORKER2 (demo-worker-2):
+  Agent ID: 6b4d074a
+  DID: did:local:e2991925de...
+  Active delegations: 0
+  Completed delegations: 1
+  Registered handlers: 4
+    -> ECHO, GET_AGENT_INFO, PING, FORMAT_CONVERSION
+
+VALIDATOR (demo-validator):
+  Agent ID: dab5dc0c
+  DID: did:local:ba1432fe0a...
+  Active delegations: 0
+  Completed delegations: 1
+  Registered handlers: 4
+    -> ECHO, GET_AGENT_INFO, PING, VALIDATE_QUALITY
+
+=== Audit Trail (Coordinator Agent) ===
+
+Showing last 6 delegation events:
+
+ 1. [04:05:39] DELEGATION_COMPLETED
+    Delegation: f8530d4e...
+    From: 1145d4c6... -> To: 1145d4c6...
+    Action: AGGREGATE_RESULTS
+    Status: COMPLETED
+
+ 2. [04:05:39] DELEGATION_RECEIVED
+    Delegation: f8530d4e...
+    From: 1145d4c6... -> To: 1145d4c6...
+    Action: AGGREGATE_RESULTS
+    Status: in_progress
+
+ 3. [04:05:39] DELEGATION_CREATED
+    Delegation: f8530d4e...
+    From: 1145d4c6... -> To: 1145d4c6...
+    Action: AGGREGATE_RESULTS
+    Task: Aggregate results from all processing steps
+
+ 4. [04:05:39] DELEGATION_CREATED
+    Delegation: d86e31f4...
+    From: 1145d4c6... -> To: ba1432fe...
+    Action: VALIDATE_QUALITY
+    Task: Validate quality of processed and formatted data
+
+ 5. [04:05:39] DELEGATION_CREATED
+    Delegation: 30db50e0...
+    From: 1145d4c6... -> To: e2991925...
+    Action: FORMAT_CONVERSION
+    Task: Convert processed data to CSV format for reporting
+
+ 6. [04:05:39] DELEGATION_CREATED
+    Delegation: 7c9bea83...
+    From: 1145d4c6... -> To: 5c5e0efc...
+    Action: PROCESS_DATA
+    Task: Process Q1 2026 sales data from the database
+
+
+==================================================
+DEMO COMPLETED SUCCESSFULLY
+Total time: 0.0s
+==================================================
+
+Verified features:
+[+] Ed25519 cryptographic signing (T3_MOCK=false)
+[+] Real DID: did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
+[+] Multi-agent delegation protocol (4 agents)
+[+] CSV data pipeline (sales_Q1-2026_US_premium.csv, 30 records)
+[+] Quality validation score: 1.00
+[+] Policy-based authorization (trust + delegation rules)
+[+] Signed audit trail with execution receipts

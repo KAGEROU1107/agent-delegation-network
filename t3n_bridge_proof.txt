@@ -1,0 +1,37 @@
+=== Terminal 3 Agent Delegation Network — Full ADK Demo ===
+
+[Phase 1] Authenticating with Terminal 3 testnet...
+  [+] handshake() complete
+  [+] authenticate() complete
+  [+] Authenticated DID (from session): did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
+  [+] Ethereum address: 0x2b765dd9ffb3795303970ac5921f5683375c59a2
+  [+] TenantClient initialized
+
+[Phase 2] Running Python ADN with authenticated DID...
+  DID injected into coordinator: did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
+  [+] Unique cryptographic identities: 4/4
+  [+] Records processed: 30
+  [+] Total revenue: $13253
+  [+] Quality score: 1 | passed: true
+  [+] Coordinator DID matches session: true
+
+[Phase 3] TEE Contract...
+  [+] Registering WASM contract with T3N...
+  [+] Registered: tail=adn-processor version=3.2.0
+  [+] Script: z:did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02:adn-processor
+  [+] Invoking process-data in TEE...
+  [+] TEE result: 30 records | avg=$441.77
+  [+] processed_in_tee: true
+  [+] Invoking validate-quality in TEE...
+  [+] TEE quality: score=0.9 | validated_in_tee: true
+
+=======================================================
+DEMO SUMMARY
+=======================================================
+Real T3N auth:            YES
+DID from session:         did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
+Distinct agent identities: 4/4
+Multi-agent delegation:   PASSED
+Tamper detection:         ACTIVE (data_hash in signed payload)
+WASM contract:            REGISTERED + INVOKED
+=======================================================

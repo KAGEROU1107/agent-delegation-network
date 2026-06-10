@@ -1,0 +1,17 @@
+package z:adn-processor@0.1.0;
+
+interface contracts {
+  record generic-input {
+    input:        option<list<u8>>,
+    user-profile: option<list<u8>>,
+    context:      option<list<u8>>,
+  }
+
+  process-data:     func(req: generic-input) -> result<list<u8>, string>;
+  validate-quality: func(req: generic-input) -> result<list<u8>, string>;
+  delegate-task:    func(req: generic-input) -> result<list<u8>, string>;
+}
+
+world adn-processor {
+  export contracts;
+}

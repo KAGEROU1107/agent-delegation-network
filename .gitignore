@@ -1,0 +1,8 @@
+.env
+.env.*
+node_modules/
+dist/
+target/
+__pycache__/
+*.pyc
+*.wasm

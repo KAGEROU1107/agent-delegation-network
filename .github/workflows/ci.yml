@@ -19,8 +19,18 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: |
-          pip install pytest cryptography
+        run: pip install pytest cryptography
 
       - name: Run negative security tests
         run: python -m pytest tests/negative_security.py -v --tb=short
+
+      - name: Post commit status
+        if: always()
+        run: |
+          STATE=$([ "${{ job.status }}" = "success" ] && echo "success" || echo "failure")
+          gh api repos/${{ github.repository }}/statuses/${{ github.sha }} \
+            -f state="$STATE" \
+            -f context="Tests" \
+            -f description="pytest 33 negative security tests"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

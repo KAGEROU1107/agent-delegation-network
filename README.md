@@ -1,13 +1,15 @@
 # Agent Delegation Network
 **Terminal 3 Agent Dev Kit Bounty Challenge Submission**
 
-A multi-agent delegation system built on the Terminal 3 ADK. Agents authenticate with T3N, delegate tasks with Ed25519-signed payloads, and execute workloads inside a hardware-secured TEE contract.
+A multi-agent delegation system built on the Terminal 3 ADK. A coordinator authenticates with T3N, delegates tasks to ephemeral Ed25519 sub-agents, and executes/verifies workloads through a Rust/WASM TEE contract on the T3N testnet.
 
 ---
 
 ## Live Proof
 
-All phases run against the real T3N testnet (contract v3.6.0 — with contract-layer delegation enforcement). Full output: [`t3n_bridge_proof.txt`](t3n_bridge_proof.txt) · [`proof/live_run_v3.6.0.txt`](proof/live_run_v3.6.0.txt)
+All phases run against the real T3N testnet using `adn-processor` contract v3.6.0 with contract-layer delegation enforcement.
+
+Full output: [`t3n_bridge_proof.txt`](t3n_bridge_proof.txt) · [`proof/live_run_v3.6.0.txt`](proof/live_run_v3.6.0.txt)
 
 ```
 [Phase 0] Agent Auth SDK — delegation credential + enforcement cycle...
@@ -50,17 +52,22 @@ All phases run against the real T3N testnet (contract v3.6.0 — with contract-l
 WASM contract: REGISTERED + INVOKED (v3.6.0, 20/20 WIT functions)
 ```
 
-**Real enclave computation**: 30 CSV sale records are sent into the TEE at runtime. The Rust contract computes `total`, `avg`, `min`, `max`, and `trend` inside the hardware-isolated enclave — no hardcoded values.
+**Real enclave computation**: 30 CSV sale records are sent into the TEE at runtime. The Rust contract computes `total`, `avg`, `min`, `max`, and `trend` inside the hardware-isolated enclave. No hardcoded result values are used for the core computation path.
 
-**Negative live test**: Phase 3 also sends an empty `records: []` to `process-data` and confirms the TEE rejects it (`HTTP 400: process-data: records cannot be empty`). The contract does not blindly return success.
+**Negative live test**: Phase 3 sends an empty `records: []` payload to `process-data` and confirms the TEE rejects it with `process-data: records cannot be empty`.
 
-> **Note on the 10-phase Python demo**: `demo/features_demo.py` demonstrates the interaction patterns of each feature using a local TEE simulation (`_tee_stub`). The authoritative live proof of all 20 contract functions is the TypeScript bridge run above — every WIT export is invoked against the real T3N testnet in Phase 4.
+> **Note on the Python feature demo**: `demo/features_demo.py` demonstrates interaction patterns using a local TEE simulation. The authoritative live proof is the TypeScript bridge run above: every WIT export is invoked against the real T3N testnet.
 
-**Artifact provenance**:
+---
+
+## Artifact Provenance
+
 ```
 SDK:    @terminal3/t3n-sdk@3.5.2
-WASM:   sha256:3b1fbb73a73f7cc8aa7bb2f65fc68c9d764a0b767a2bac53d370d1e1bdf53a99 (adn_processor.wasm v3.6.0 — with contract-layer delegation enforcement)
-Commit: c3a952c
+WASM:   sha256:3b1fbb73a73f7cc8aa7bb2f65fc68c9d764a0b767a2bac53d370d1e1bdf53a99
+        adn_processor.wasm v3.6.0 — with contract-layer delegation enforcement
+Head:   e40e7fe
+Proof:  c3a952c
 Run:    T3N_API_KEY=0x<key> node --loader ts-node/esm src/index.ts  (from t3n-bridge/)
 ```
 
@@ -70,31 +77,31 @@ Run:    T3N_API_KEY=0x<key> node --loader ts-node/esm src/index.ts  (from t3n-br
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  t3n-bridge/  (TypeScript — real Terminal 3 ADK)        │
+│  t3n-bridge/  TypeScript — real Terminal 3 ADK          │
 │                                                         │
-│  T3nClient.handshake()   → encrypted channel to T3N     │
-│  T3nClient.authenticate()→ real DID from testnet        │
-│  TenantClient            → contract + map management    │
-│  tenant.contracts.register(wasm) → TEE deployment       │
-│  t3n.executeAndDecode()  → live TEE invocation          │
+│  T3nClient.handshake()       → encrypted channel to T3N │
+│  T3nClient.authenticate()    → real DID from testnet    │
+│  TenantClient                → contract + map tooling   │
+│  tenant.contracts.register() → TEE contract deployment  │
+│  t3n.executeAndDecode()      → live TEE invocation      │
 └────────────────────┬────────────────────────────────────┘
                      │ injects real DID as coordinator identity
 ┌────────────────────▼────────────────────────────────────┐
-│  src/  (Python — Agent Delegation Network)              │
+│  src/  Python — Agent Delegation Network                │
 │                                                         │
-│  Coordinator: T3N-authenticated DID (from session)      │
-│  Workers:     ephemeral Ed25519 keys (per-session)      │
+│  Coordinator: T3N-authenticated DID from session        │
+│  Workers:     ephemeral Ed25519 keys per session        │
 │  Protocol:    signed delegation requests + data_hash    │
 │  Policy:      role-based authorization engine           │
 └────────────────────┬────────────────────────────────────┘
                      │ outputs flow into TEE contract
 ┌────────────────────▼────────────────────────────────────┐
-│  contract/  (Rust WASM — runs inside T3N TEE)           │
+│  contract/  Rust WASM — runs inside T3N TEE             │
 │                                                         │
 │  WIT interface: z:adn-processor@0.1.0                   │
-│  process-data: verifiable aggregation in enclave        │
-│  validate-quality: tamper-proof quality scoring         │
-│  delegate-task: TEE-enforced routing                    │
+│  process-data: enclave aggregation over runtime records │
+│  validate-quality: quality scoring in TEE               │
+│  delegate-task: contract-layer delegation enforcement   │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -105,26 +112,45 @@ Run:    T3N_API_KEY=0x<key> node --loader ts-node/esm src/index.ts  (from t3n-br
 | Layer | Technology | T3N Integration |
 |---|---|---|
 | Auth | `@terminal3/t3n-sdk` | `handshake()` + `authenticate()` → real DID |
-| Tenant | `TenantClient` | `tenant.claim()`, contract registration |
-| TEE Contract | Rust + `wasm32-wasip2` | Registered + invoked on T3N testnet |
+| Tenant | `TenantClient` | contract registration and map setup |
+| TEE Contract | Rust + `wasm32-wasip2` | registered and invoked on T3N testnet |
 | WIT Interface | `z:adn-processor@0.1.0` | `contracts` interface, `generic-input` record |
-| Delegation | Python Ed25519 | Coordinator: T3N DID · Workers: ephemeral keys |
+| Delegation | Python Ed25519 | Coordinator: T3N DID; workers: ephemeral keys |
 
 ---
 
 ## Agent Identity Model
 
-The **coordinator** is authenticated via the T3N ADK — its DID comes directly from `t3n.authenticate()` against the testnet. No hardcoding, no env-var injection.
+The **coordinator** is authenticated through the T3N ADK. Its DID comes directly from `t3n.authenticate()` against the testnet.
 
-**Workers and validators** use ephemeral Ed25519 keys generated per session. This is intentional: sub-agents in a delegation network are short-lived. Their outputs flow into the TEE contract, which is bound to the coordinator's authenticated T3N identity.
+**Workers and validators** use ephemeral Ed25519 keys generated per session. This is intentional: sub-agents in the delegation network are short-lived. Their outputs flow into the TEE contract, which is bound to the coordinator's authenticated T3N identity.
 
-Each agent has a **distinct cryptographic identity** — no key sharing. Every delegation request is signed and carries a `data_hash` over the payload, making post-signing mutation detectable.
+Each agent has a **distinct cryptographic identity**. Every delegation request is signed and carries a `data_hash` over the payload, making post-signing mutation detectable.
+
+---
+
+## Agent Auth Enforcement
+
+The TypeScript bridge demonstrates the Agent Auth credential lifecycle:
+
+1. Build a scoped `DelegationCredential`.
+2. Sign it with EIP-191.
+3. Build a per-call `DelegationEnvelope`.
+4. Submit the envelope to `delegate-task`.
+5. Accept the delegated call while the credential is valid.
+6. Revoke the credential through T3N delegation infrastructure.
+7. Wait for the short TTL window to expire.
+8. Confirm the TEE contract rejects the expired delegated call.
+
+The `adn-processor` v3.6.0 contract validates the credential time window and function scope inside the TEE contract.
+
+**Boundary**: real-time revocation registry lookup from inside a `generic-input` WASM contract is not yet available through a documented ADK host primitive. The demo uses short-lived credentials plus contract-layer expiry enforcement.
 
 ---
 
 ## TEE Contract
 
-The Rust WASM contract follows the official T3N WIT format:
+The Rust WASM contract follows the T3N WIT format:
 
 ```wit
 package z:adn-processor@0.1.0;
@@ -136,9 +162,26 @@ interface contracts {
     context:      option<list<u8>>,
   }
 
-  process-data:     func(req: generic-input) -> result<list<u8>, string>;
-  validate-quality: func(req: generic-input) -> result<list<u8>, string>;
-  delegate-task:    func(req: generic-input) -> result<list<u8>, string>;
+  process-data:               func(req: generic-input) -> result<list<u8>, string>;
+  validate-quality:           func(req: generic-input) -> result<list<u8>, string>;
+  delegate-task:              func(req: generic-input) -> result<list<u8>, string>;
+  submit-bid:                 func(req: generic-input) -> result<list<u8>, string>;
+  resolve-auction:            func(req: generic-input) -> result<list<u8>, string>;
+  record-completion:          func(req: generic-input) -> result<list<u8>, string>;
+  get-reputation:             func(req: generic-input) -> result<list<u8>, string>;
+  send-personalized-outreach: func(req: generic-input) -> result<list<u8>, string>;
+  issue-time-grant:           func(req: generic-input) -> result<list<u8>, string>;
+  check-grant:                func(req: generic-input) -> result<list<u8>, string>;
+  kyc-submit-step:            func(req: generic-input) -> result<list<u8>, string>;
+  kyc-get-status:             func(req: generic-input) -> result<list<u8>, string>;
+  store-secret:               func(req: generic-input) -> result<list<u8>, string>;
+  invoke-with-secret:         func(req: generic-input) -> result<list<u8>, string>;
+  cast-vote:                  func(req: generic-input) -> result<list<u8>, string>;
+  tally-votes:                func(req: generic-input) -> result<list<u8>, string>;
+  log-decision:               func(req: generic-input) -> result<list<u8>, string>;
+  audit-decisions:            func(req: generic-input) -> result<list<u8>, string>;
+  lock-bond:                  func(req: generic-input) -> result<list<u8>, string>;
+  verify-and-settle:          func(req: generic-input) -> result<list<u8>, string>;
 }
 
 world adn-processor {
@@ -152,42 +195,45 @@ Build: `cd contract && cargo build --target wasm32-wasip2 --release`
 
 ## Quickstart
 
-**Prerequisites**: Node.js 18+, Python 3.10+, Rust + `wasm32-wasip2` target
+**Prerequisites**: Node.js 18+, Python 3.10+, Rust + `wasm32-wasip2` target, Terminal 3 testnet API key
 
 ```bash
-# Install TS dependencies
+# Install TypeScript dependencies
 cd t3n-bridge && npm install
 
-# Run full demo (Phases 1 + 2 + 3)
+# Run full live demo
 T3N_API_KEY=0x<your_key> node --loader ts-node/esm src/index.ts
 ```
 
 The demo:
-1. Authenticates with T3N testnet via `handshake()` + `authenticate()`
-2. Spawns Python ADN with the authenticated DID as coordinator identity
-3. Runs multi-agent delegation (4 agents, Ed25519 signing, tamper detection)
-4. Registers the Rust WASM contract and invokes `process-data` + `validate-quality` in TEE
+1. Authenticates with T3N testnet via `handshake()` + `authenticate()`.
+2. Builds and tests an Agent Auth delegation credential.
+3. Spawns Python ADN with the authenticated DID as coordinator identity.
+4. Runs multi-agent delegation with 4 distinct identities.
+5. Registers the Rust/WASM contract.
+6. Invokes all 20 WIT exports through the live T3N bridge.
+7. Runs a negative TEE validation test.
 
 ---
 
-## Creative Features (10 Phases)
+## Creative Features
 
 | Phase | Feature | TEE Functions | Status |
 |---|---|---|---|
-| 0 | Agent Auth SDK — User Delegation | (SDK-native, no TEE call) | ✅ LIVE (T3N testnet) |
-| 1 | Core ADN + Auth + TEE | process-data, validate-quality, delegate-task | ✅ LIVE (T3N testnet, proof committed) |
-| 2 | Blind Multi-Agent Auction | submit-bid, resolve-auction | ✅ Contract live — TEE-invoked via bridge |
-| 3 | Agent Reputation Ledger | record-completion, get-reputation | ✅ Contract live — TEE-invoked via bridge |
-| 4 | Privacy-Preserving Personalization | send-personalized-outreach | ✅ Contract live — TEE-invoked via bridge |
-| 5 | Temporal Agent Delegation | issue-time-grant, check-grant | ✅ Contract live — TEE-invoked via bridge |
-| 6 | Cross-Tenant Verified Computation | (process-data) | ✅ Contract live — TEE-invoked via bridge |
-| 7 | Agentic KYC Pipeline | kyc-submit-step, kyc-get-status | ✅ Contract live — TEE-invoked via bridge |
-| 8 | TEE Secret Vault (pattern) | store-secret, invoke-with-secret | ✅ Contract live — TEE-invoked via bridge |
-| 9 | Autonomous Agent DAO | cast-vote, tally-votes | ✅ Contract live — TEE-invoked via bridge |
-| 10 | Verifiable AI Decision Audit | log-decision, audit-decisions | ✅ Contract live — TEE-invoked via bridge |
-| 11 | Agent Performance Bond | lock-bond, verify-and-settle | ✅ Contract live — TEE-invoked via bridge |
+| 0 | Agent Auth SDK — User Delegation | SDK-native credential lifecycle | Live on T3N testnet |
+| 1 | Core ADN + Auth + TEE | process-data, validate-quality, delegate-task | Live on T3N testnet |
+| 2 | Blind Multi-Agent Auction | submit-bid, resolve-auction | TEE-invoked via bridge |
+| 3 | Agent Reputation Ledger | record-completion, get-reputation | TEE-invoked via bridge |
+| 4 | Privacy-Preserving Personalization | send-personalized-outreach | TEE-invoked via bridge |
+| 5 | Temporal Agent Delegation | issue-time-grant, check-grant | TEE-invoked via bridge |
+| 6 | Cross-Tenant Verified Computation | process-data | TEE-invoked via bridge |
+| 7 | Agentic KYC Pipeline | kyc-submit-step, kyc-get-status | TEE-invoked via bridge |
+| 8 | TEE Secret Vault Pattern | store-secret, invoke-with-secret | TEE-invoked via bridge |
+| 9 | Autonomous Agent DAO | cast-vote, tally-votes | TEE-invoked via bridge |
+| 10 | Verifiable AI Decision Audit | log-decision, audit-decisions | TEE-invoked via bridge |
+| 11 | Agent Performance Bond | lock-bond, verify-and-settle | TEE-invoked via bridge |
 
-Run the 10-phase demo: `T3N_API_KEY=0x<key> python demo/features_demo.py`
+Run the local feature-pattern demo: `T3N_API_KEY=0x<key> python demo/features_demo.py`
 
 ---
 
@@ -199,7 +245,7 @@ distinctness, delegation policy enforcement, and credential TTL window validatio
 
 ```
 python -m pytest tests/negative_security.py -v
-# 33 passed in 0.25s
+# 33 passed
 ```
 
 ---
@@ -211,8 +257,9 @@ agent-delegation-network/
 ├── t3n-bridge/                  # TypeScript — real T3N ADK integration
 │   ├── src/
 │   │   ├── t3n_auth.ts          # handshake() + authenticate() → DID
-│   │   ├── contract_bridge.ts   # TEE contract registration + invocation (v3.6.0)
-│   │   ├── map_setup.ts         # KV map creation with contract ACLs
+│   │   ├── agent_auth.ts        # Agent Auth credential + envelope demo
+│   │   ├── contract_bridge.ts   # TEE contract registration + invocation v3.6.0
+│   │   ├── map_setup.ts         # KV map creation with BUG-001 fallback
 │   │   ├── adn_runner.ts        # spawns Python ADN with real DID
 │   │   └── index.ts             # main entry point
 │   ├── package.json             # @terminal3/t3n-sdk@3.5.2
@@ -223,29 +270,39 @@ agent-delegation-network/
 │   └── Cargo.toml
 ├── src/                         # Python agent delegation network
 │   ├── agent_identity.py        # Ed25519 identity per agent
-│   ├── blind_auction.py         # Phase 2 — sealed-bid auction
-│   ├── reputation_ledger.py     # Phase 3 — weighted reputation
-│   ├── secret_vault_agent.py    # Phase 8 — TEE secret vault
-│   ├── temporal_delegation.py   # Phase 5 — time-bounded grants
-│   ├── agent_dao.py             # Phase 9 — sealed-vote DAO
-│   ├── decision_audit_agent.py  # Phase 10 — decision audit trail
-│   ├── kyc_pipeline.py          # Phase 7 — multi-agent KYC
-│   ├── performance_bond.py      # Phase 11 — escrow bond settlement
-│   ├── personalization_agent.py # Phase 4 — privacy-preserving outreach
-│   └── cross_tenant_collab.py   # Phase 6 — multi-party compute
-├── openrouter/
-│   └── client.py                # LLM reasoning layer (OpenRouter wrapper)
+│   ├── delegation_protocol.py   # signed delegation requests
+│   ├── delegation_policy.py     # role/trust/action policy engine
+│   ├── agent_delegation_network.py
+│   ├── blind_auction.py
+│   ├── reputation_ledger.py
+│   ├── secret_vault_agent.py
+│   ├── temporal_delegation.py
+│   ├── agent_dao.py
+│   ├── decision_audit_agent.py
+│   ├── kyc_pipeline.py
+│   ├── performance_bond.py
+│   ├── personalization_agent.py
+│   └── cross_tenant_collab.py
 ├── demo/
-│   ├── adn_demo.py              # Phase 1 multi-agent workflow
-│   └── features_demo.py         # All 10 phases orchestrated demo
+│   ├── adn_demo.py              # core multi-agent workflow
+│   └── features_demo.py         # local pattern demo for feature modules
 ├── tests/
-│   └── negative_security.py     # 33 negative security tests (all pass)
+│   └── negative_security.py     # 33 negative security tests
 ├── proof/
-│   ├── live_run_v3.6.0.txt      # v3.6.0 live proof — delegation enforcement
+│   ├── live_run_v3.6.0.txt      # v3.6.0 live proof
 │   └── live_run_v3.5.0.txt      # v3.5.0 baseline proof
 ├── data/
 │   └── sales_Q1-2026_US_premium.csv
-├── velvet_log.md                # Session narrative (Velvet Arc)
-├── PHASES.md                    # Phase tracker
-└── t3n_bridge_proof.txt         # Live testnet output (v3.6.0)
+├── PHASES.md
+├── SUBMISSION_REPORT.md
+└── t3n_bridge_proof.txt         # live testnet output v3.6.0
 ```
+
+---
+
+## Known Boundaries
+
+- Workers are ephemeral Ed25519 sub-agents, not independent T3N tenants.
+- The Agent Auth revocation proof uses short-lived credential expiry for contract-layer rejection. Immediate revocation-registry lookup from inside `generic-input` WASM is documented as a current ADK gap.
+- TEE Secret Vault is implemented as a secure-pattern demo, not a production persistent vault.
+- When the SDK does not return a numeric `contractId`, tenant map ACL setup falls back to `writers/readers: "all"` as a documented BUG-001 workaround.

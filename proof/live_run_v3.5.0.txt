@@ -1,22 +1,22 @@
-(node:22632) ExperimentalWarning: `--experimental-loader` may be removed in the future; instead use `register()`:
+(node:3596) ExperimentalWarning: `--experimental-loader` may be removed in the future; instead use `register()`:
 --import 'data:text/javascript,import { register } from "node:module"; import { pathToFileURL } from "node:url"; register("ts-node/esm", pathToFileURL("./"));'
 (Use `node --trace-warnings ...` to show where the warning was created)
 === Terminal 3 Agent Delegation Network — Full ADK Demo ===
 
 [Phase 1] Authenticating with Terminal 3 testnet...
-(node:22632) [DEP0180] DeprecationWarning: fs.Stats constructor is deprecated.
+(node:3596) [DEP0180] DeprecationWarning: fs.Stats constructor is deprecated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
   [+] handshake() complete
   [+] authenticate() complete
   [+] Authenticated DID (from session): did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
-  [+] Ethereum address: 0x2b765dd9ffb3795303970ac5921f5683375c59a2
+  [+] Ethereum address: 0xeb5dcb19c1150d0b3d983f52797e62330738f802
   [+] TenantClient initialized
 
 [Phase 0] Agent Auth SDK — delegation credential + enforcement cycle...
-  [+] credential built: vc_id=bed1f150d31275e6ba62f845c8ac43b3
+  [+] credential built: vc_id=2174e2940ff03ab547d22bf43bbe023e
   [+] granted functions: delegate-task, process-data
-  [+] signed with EIP-191: user_sig=_2q306UHkCarFri3...
-  [+] envelope: agent_sig=I1Rfj4OIWXkPgqj8... nonce=EQ1wpPyd...
+  [+] signed with EIP-191: user_sig=MQFN9VPLI3MeYAJ8...
+  [+] envelope: agent_sig=mhSBox8kjz5Qf1kH... nonce=r8HOWuqj...
   [+] pre-revocation call:  ACCEPTED: {"delegation_id":"tee-del-did:key:","status":"ROUTED","routed_to":"did:key:ed255
   [+] revocation: SUCCESS (tee:delegation/contracts::revoke)
   [+] post-revocation call: ACCEPTED: {"delegation_id":"tee-del-did:key:","status":"ROUTED","routed_to":"did:key:ed255
@@ -44,23 +44,23 @@
 
 [Phase 4] Full Feature Contract Coverage — invoking all 20 WIT exports...
   (waiting 65s for fuel window reset, then 7s/call — ~3 min total)
-  [+] delegate-task: {"delegation_id":"tee-del-did:key:","status":"ROUTED","routed_to":"did:key:ed25519:worker-demo-1781165093"}
-  [+] submit-bid: {"bid_hash":"8340912db8767e12","item_id":"item-001","sealed_in_tee":true,"receipt":"bid-receipt-8340912db876"}
-  [+] resolve-auction: {"winner_did":"did:key:ed25519:worker2-demo-1781165093","winning_amount":185,"item_id":"item-001","total_bids":2,"resolv
-  [+] record-completion: {"agent_did":"did:key:ed25519:worker-demo-1781165093","task_id":"task-001","reputation_delta":0.94,"recorded_in_tee":tru
-  [+] get-reputation: {"agent_did":"did:key:ed25519:worker-demo-1781165093","reputation_score":0.84,"tier":"SILVER","tasks_evaluated":3,"compu
+  [+] delegate-task: {"delegation_id":"tee-del-did:key:","status":"ROUTED","routed_to":"did:key:ed25519:worker-demo-1781165902"}
+  [+] submit-bid: {"bid_hash":"d0f604897f39f99b","item_id":"item-001","sealed_in_tee":true,"receipt":"bid-receipt-d0f604897f39"}
+  [+] resolve-auction: {"winner_did":"did:key:ed25519:worker2-demo-1781165902","winning_amount":185,"item_id":"item-001","total_bids":2,"resolv
+  [+] record-completion: {"agent_did":"did:key:ed25519:worker-demo-1781165902","task_id":"task-001","reputation_delta":0.94,"recorded_in_tee":tru
+  [+] get-reputation: {"agent_did":"did:key:ed25519:worker-demo-1781165902","reputation_score":0.84,"tier":"SILVER","tasks_evaluated":3,"compu
   [+] send-personalized-outreach: {"customer_id":"cust-001","message_variant":"tmpl-premium:standard_offer","personalization_score":0.7,"raw_data_exposed"
-  [+] issue-time-grant: {"grant_token":"tgrant-931e8b7bc9663de","grantee_did":"did:key:ed25519:worker-demo-1781165093","action":"VALIDATE_DATA",
-  [+] check-grant: {"valid":true,"reason":"VALID until epoch 1781168693","checked_in_tee":true}
+  [+] issue-time-grant: {"grant_token":"tgrant-57465ca31991e513","grantee_did":"did:key:ed25519:worker-demo-1781165902","action":"VALIDATE_DATA"
+  [+] check-grant: {"valid":true,"reason":"VALID until epoch 1781169502","checked_in_tee":true}
   [+] kyc-submit-step: {"applicant_id":"applicant-001","step":"identity_check","step_receipt":"kyc-identity_check-cafebabe","progress_pct":25,"
   [+] kyc-get-status: {"applicant_id":"applicant-001","status":"PENDING","steps_completed":1,"steps_required":4,"missing_steps":["identity","a
   [+] store-secret: {"vault_id":"vault-3efe7edb3b326f54","owner_did":"did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02","label":"api-key","s
   [+] invoke-with-secret: {"vault_id":"vault-demo","action_executed":"decrypt","tee_attested":true,"raw_secret_exposed":false}
-  [+] cast-vote: {"voter_did":"did:key:ed25519:worker-demo-1781165093","proposal_id":"prop-001","vote_receipt":"vote-8bd90d1829071ef2","r
+  [+] cast-vote: {"voter_did":"did:key:ed25519:worker-demo-1781165902","proposal_id":"prop-001","vote_receipt":"vote-ba0498009b00b8f5","r
   [+] tally-votes: {"proposal_id":"prop-001","result":"PASSED","votes_for":2,"votes_against":1,"quorum_met":true,"tallied_in_tee":true}
   [+] log-decision: {"decision_id":"dec-001","agent_did":"did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02","entry_hash":"45003997662c893d",
   [+] audit-decisions: {"total_decisions":2,"anomalies_detected":1,"risk_score":0.5,"attestation":"audit-9d16d11daa5c6c11","audited_in_tee":tru
-  [+] lock-bond: {"bond_id":"bond-9747b0beba82cbb3","agent_did":"did:key:ed25519:worker-demo-1781165093","task_id":"task-001","bond_amoun
+  [+] lock-bond: {"bond_id":"bond-dd49f664f66c511c","agent_did":"did:key:ed25519:worker-demo-1781165902","task_id":"task-001","bond_amoun
   [+] verify-and-settle: {"bond_id":"bond-demo","settlement":"FULL","payout_pct":1,"payout_amount":500,"reason":"EXCELLENT_DELIVERY","settled_in_
   [+] All 20 WIT exports invoked via live T3N TEE bridge.
 

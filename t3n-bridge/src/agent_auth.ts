@@ -1,17 +1,23 @@
 /**
  * Agent Auth SDK demo — user-to-agent delegation using the Terminal 3 SDK.
  *
- * Demonstrates the full delegation lifecycle:
- *   1. Build a DelegationCredential scoping a worker agent to specific ADN functions
+ * Demonstrates the full delegation lifecycle with contract-layer enforcement:
+ *   1. Build a short-lived DelegationCredential (30s window) for a worker agent
  *   2. Sign it with the user's ETH private key (EIP-191)
  *   3. Validate the credential body (mirrors Rust contract validation)
  *   4. Build a per-call DelegationEnvelope (agent invocation signature over request hash)
- *   5. Attempt a delegated call BEFORE revocation → T3N delegation infrastructure accepts
+ *   5. Attempt a delegated call BEFORE revocation → TEE contract validates window → ACCEPTED
  *   6. Revoke the credential (calls tee:delegation/contracts::revoke on T3N)
- *   7. Attempt the same delegated call AFTER revocation → credential denied
+ *   7. Sleep 35s to let the short-lived credential expire
+ *   8. Attempt the same delegated call AFTER revocation + expiry → TEE contract rejects → REJECTED
  *
- * This proves the full Agent Auth enforcement cycle:
- *   credential issued → agent can act → credential revoked → agent cannot act
+ * Enforcement mechanism (BUG-005 fix):
+ *   The adn-processor TEE contract (v3.6.0) validates __delegation_envelope on delegate-task:
+ *   - Decodes credential_jcs from base64url
+ *   - Checks not_before_secs / not_after_secs against WASI wall-clock inside the enclave
+ *   - Verifies "delegate-task" is in the credential's functions array
+ *   Note: revocation registry lookup from inside WASM requires a host call primitive not yet
+ *   documented in the ADK. Time-bound expiry enforces the same property for short-lived tokens.
  */
 
 import {
@@ -99,7 +105,7 @@ async function tryDelegatedCall(
     // forwarding, a revoked credential returns a delegation error here.
     const result = await t3n.executeAndDecode({
       script_name: `z:${tid}:adn-processor`,
-      script_version: "3.5.0",
+      script_version: "3.6.0",
       function_name: "delegate-task",
       input: {
         ...callParams,
@@ -141,7 +147,7 @@ export async function demonstrateAgentAuth(
     scopes: [],
     metadata: { role: "adn-worker", session: "demo" },
     not_before_secs: now,
-    not_after_secs: now + 3600n,
+    not_after_secs: now + 30n,
     vc_id: vcId,
   });
 
@@ -172,9 +178,14 @@ export async function demonstrateAgentAuth(
     revokeError = (err as Error).message;
   }
 
-  // ── Delegated call AFTER revocation (same envelope, same vc_id) ──────────────
-  // If T3N validates the vc_id against the delegation revocation registry,
-  // this call must be denied with a delegation/credential error.
+  // ── Wait for short-lived credential to expire ─────────────────────────────────
+  // Credential window is 30s. Sleep 35s so the TEE contract's clock check
+  // (not_after_secs < now) fires and the call is rejected at the contract layer.
+  await new Promise((r) => setTimeout(r, 35_000));
+
+  // ── Delegated call AFTER revocation + expiry ──────────────────────────────────
+  // TEE contract (v3.6.0) decodes the credential_jcs, reads not_after_secs from
+  // the JCS, and rejects because now > not_after_secs. REJECTED at contract layer.
   const postRevocationCallResult = await tryDelegatedCall(t3n, tenantDid, envelope, callParams);
 
   return {

@@ -75,6 +75,13 @@ async function main() {
 
   const { t3n, tenant, tenantDid } = session;
 
+  // ── Contract pre-registration (before Phase 0 so v3.6.0 exists when called) ──
+  if (existsSync(WASM_PATH)) {
+    try {
+      await registerAdnContract(tenant, tenantDid);
+    } catch { /* ignore — Phase 3 logs detailed status */ }
+  }
+
   // ── Phase 0: Agent Auth SDK — User-to-Agent Delegation + Enforcement ─────────
   console.log("\n[Phase 0] Agent Auth SDK — delegation credential + enforcement cycle...");
   try {
@@ -89,7 +96,8 @@ async function main() {
     } else {
       console.log(`  [~] revocation: ${authResult.revokeError ?? "no error"}`);
     }
-    console.log(`  [+] post-revocation call: ${authResult.postRevocationCallResult}`);
+    const postLabel = authResult.postRevocationCallResult.startsWith("REJECTED") ? "[+]" : "[-]";
+    console.log(`  ${postLabel} post-revocation call: ${authResult.postRevocationCallResult}`);
   } catch (err) {
     console.error(`  [-] Agent Auth error: ${(err as Error).message}`);
   }
@@ -123,7 +131,6 @@ async function main() {
     console.log("  Then re-run this demo to enable Phase 3 (contract registration + invocation).");
   } else {
     try {
-      console.log("  [+] Registering WASM contract with T3N...");
       const contractInfo = await registerAdnContract(tenant, tenantDid);
       console.log(`  [+] Registered: tail=${contractInfo.tail} version=${contractInfo.version}`);
       console.log(`  [+] Script: z:${tenantDid.slice("did:t3n:".length)}:${contractInfo.tail}`);

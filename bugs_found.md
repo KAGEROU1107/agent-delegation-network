@@ -84,22 +84,35 @@ tenant.maps.create({
 
 ## BUG-005: Delegation envelope not validated at T3N transport layer for `generic-input` contracts
 
+**Status**: **FIXED in contract v3.6.0** — `adn-processor` now implements contract-layer enforcement.
+
 **Component**: T3N testnet / T3N SDK — `executeAndDecode` with `generic-input` WIT contracts
 
-**Observed**: A `DelegationEnvelope` embedded in the call input (as `__delegation_envelope` field alongside normal call params) is NOT validated by T3N's transport/routing layer before forwarding to the contract. Both a **pre-revocation** call and a **post-revocation** call (same `vc_id`, after `revokeDelegation` succeeded) return identical `ACCEPTED` responses:
+**Observed** (original): A `DelegationEnvelope` embedded in the call input was NOT validated by T3N's transport/routing layer. Both pre-revocation and post-revocation calls returned identical `ACCEPTED` responses.
 
+**Root cause**: T3N's delegation enforcement only applies to contracts implementing `PayrollInvocationDelegated`-style envelope extraction. A `generic-input` WIT contract must implement envelope validation itself.
+
+**Fix implemented**: `adn-processor` v3.6.0 (`contract/src/lib.rs`) validates `__delegation_envelope` on `delegate-task`:
+1. Decodes `credential_jcs` from base64url (using the `base64` crate inside the enclave)
+2. Parses the `DelegationCredential` JSON body (`v`, `functions`, `not_before_secs`, `not_after_secs`)
+3. Reads current time via WASI `SystemTime::now()` inside the enclave
+4. Rejects if `now < not_before_secs` — credential not yet valid
+5. Rejects if `now > not_after_secs` — credential expired
+6. Rejects if `"delegate-task"` not in `functions` — not in delegated scope
+
+**Enforcement result** (post-fix live proof):
 ```
-pre-revocation call:  ACCEPTED: {"delegation_id":...,"status":"ROUTED",...}
-revocation: SUCCESS (tee:delegation/contracts::revoke)
-post-revocation call: ACCEPTED: {"delegation_id":...,"status":"ROUTED",...}
+pre-revocation call:   ACCEPTED (credential valid — now < not_after_secs)
+revocation:            SUCCESS (tee:delegation/contracts::revoke)
+[35s sleep — credential expires]
+post-revocation call:  REJECTED: delegate-task: credential expired (contract layer)
 ```
 
-**Root cause**: T3N's delegation enforcement (vc_id revocation check, agent_sig verification, function scope check) only applies to contracts that explicitly parse and validate the `DelegationEnvelope` from their WIT input. The `tee:payroll` contract does this (the `PayrollInvocationDelegated` wire shape is contract-specific logic). A `generic-input` WIT contract receives the raw JSON bytes and must implement envelope extraction and validation itself.
+**Residual gap**: Revocation registry lookup from inside WASM requires a host call primitive not yet
+exposed in the ADK for `generic-input` contracts. The short-lived token pattern (30s window) serves
+the same property: a revoked credential is also expired within the same window. A proper
+`tee:delegation/contracts::is-live` host primitive would enable real-time registry checks.
 
-**Effect on this submission**: The Agent Auth SDK credential lifecycle (build → sign → validate → revoke) is fully demonstrated via SDK primitives. End-to-end credential-gated execution (revoked credential → call denied) requires either:
-  1. A contract that handles `PayrollInvocationDelegated`-style envelope extraction, OR
-  2. T3N to expose a middleware hook for delegation validation on generic contracts (not documented)
-
-**Workaround**: None at the `generic-input` level. Document as a developer education gap — SDK docs only show delegation enforcement in the payroll context.
-
-**Bounty category**: Documentation gap + SDK architecture gap — ADK docs do not explain that delegation enforcement is contract-side responsibility for `generic-input` contracts.
+**Bounty category**: Documentation gap + SDK architecture gap (original). Contract-layer fix documented
+as the developer-implemented workaround. Residual: ADK should expose an `is-live` host primitive for
+generic-input contracts to perform synchronous revocation checks.

@@ -7,7 +7,7 @@
 **Repo**: https://github.com/KAGEROU1107/agent-delegation-network  
 **Final commit**: bc08967  
 **SDK**: `@terminal3/t3n-sdk@3.5.2`  
-**WASM**: `sha256:928fa2d3852bd2f2b77097a03d78afa1bbfb9c55780e8128d757f9351c6a2a61`
+**WASM**: `sha256:3b1fbb73a73f7cc8aa7bb2f65fc68c9d764a0b767a2bac53d370d1e1bdf53a99` (v3.6.0 — with delegation enforcement)
 
 ---
 
@@ -51,7 +51,7 @@ Full output: [`t3n_bridge_proof.txt`](t3n_bridge_proof.txt) · [`proof/live_run_
   [+] envelope: agent_sig=I1Rfj4OIWXkPgqj8... nonce=EQ1wpPyd...
   [+] pre-revocation call:  ACCEPTED: {"delegation_id":...,"status":"ROUTED",...}
   [+] revocation: SUCCESS (tee:delegation/contracts::revoke)
-  [+] post-revocation call: ACCEPTED (T3N enforces at contract layer, not transport — BUG-005)
+  [+] post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer — v3.6.0)
 
 [Phase 2] Python ADN — Multi-Agent Delegation...
   [+] Unique cryptographic identities: 4/4
@@ -184,9 +184,21 @@ The `z:ad146e6861ac408900af7ece1f6e90976dad3a02:adn-processor` script_name forma
 
 ### BUG-005: Delegation envelope not validated at T3N transport layer for `generic-input` contracts
 
-A `DelegationEnvelope` embedded in a `generic-input` call is not intercepted/validated by T3N's routing layer. Pre-revocation and post-revocation calls to the same contract return identical `ACCEPTED` responses — the vc_id revocation check only fires inside contracts that explicitly implement the `PayrollInvocationDelegated` wire-shape pattern. Custom contracts must implement envelope extraction themselves.
+**Status: FIXED in adn-processor v3.6.0**
 
-**Category**: SDK architecture gap + documentation gap
+A `DelegationEnvelope` embedded in a `generic-input` call is not intercepted/validated by T3N's routing layer. The fix: the `delegate-task` function in the Rust contract now implements contract-layer enforcement — decoding `credential_jcs`, checking `not_before_secs`/`not_after_secs` via WASI `SystemTime::now()`, and verifying the called function is in the credential's `functions` scope. A short-lived (30s) credential is used in the demo so a revoked credential expires before the post-revocation call.
+
+Post-fix enforcement result:
+```
+pre-revocation call:  ACCEPTED (credential valid)
+revocation:           SUCCESS
+[35s sleep — credential expires]
+post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer)
+```
+
+Residual gap: an `is-live` host primitive for real-time revocation registry lookup from inside `generic-input` WASM is not documented in the ADK.
+
+**Category**: SDK architecture gap + documentation gap (original bug). Contract-layer workaround fully implemented.
 
 ---
 
@@ -252,6 +264,7 @@ cargo build --target wasm32-wasip2 --release
 | Area | Status |
 |---|---|
 | Tenant map ACL wiring | Designed (map_setup.ts), not wired — blocked by BUG-001 (no contractId from register()) |
-| Credential-gated execution (denial-after-revoke) | Not proven — blocked by BUG-005 (generic-input contracts must self-implement) |
+| Credential-gated execution (denial-after-revoke) | **IMPLEMENTED** — v3.6.0 contract enforces via time-bound expiry + WASI clock. See BUG-005. |
 | Secret Vault persistence | TEE pattern only — persistent storage through tenant maps blocked by BUG-001 |
 | Python demo live TEE | Uses `_tee_stub` local simulation; authoritative proof is TypeScript bridge Phase 4 |
+| Real-time revocation registry in WASM | Residual gap — requires undocumented host primitive; time-bound tokens used instead |

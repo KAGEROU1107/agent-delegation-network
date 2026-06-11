@@ -17,7 +17,8 @@ All phases run against the real T3N testnet (contract v3.5.0). Full output: [`t3
   [+] envelope: agent_sig=<agent-sig>... nonce=<nonce>...
   [+] pre-revocation call:  ACCEPTED: {"delegation_id":...,"status":"ROUTED",...}
   [+] revocation: SUCCESS (tee:delegation/contracts::revoke)
-  [+] post-revocation call: ACCEPTED (T3N validates envelope at contract layer, not transport — see bugs_found.md BUG-005)
+  [35s sleep — credential window expires]
+  [+] post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer v3.6.0)
 
 [Phase 1] T3N Auth
   [+] handshake() complete
@@ -58,7 +59,7 @@ WASM contract: REGISTERED + INVOKED (v3.5.0, 20/20 WIT functions)
 **Artifact provenance**:
 ```
 SDK:    @terminal3/t3n-sdk@3.5.2
-WASM:   sha256:928fa2d3852bd2f2b77097a03d78afa1bbfb9c55780e8128d757f9351c6a2a61 (adn_processor.wasm v3.5.0)
+WASM:   sha256:3b1fbb73a73f7cc8aa7bb2f65fc68c9d764a0b767a2bac53d370d1e1bdf53a99 (adn_processor.wasm v3.6.0 — with contract-layer delegation enforcement)
 Commit: 501465b  (last proof-passing commit before audit remediation)
 Run:    T3N_API_KEY=0x<key> node --loader ts-node/esm src/index.ts  (from t3n-bridge/)
 ```

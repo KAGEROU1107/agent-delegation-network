@@ -1,4 +1,6 @@
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 wit_bindgen::generate!({
     world: "adn-processor",
@@ -65,11 +67,35 @@ struct ValidateQualityOutput {
     validated_in_tee: bool,
 }
 
+// ── Delegation credential envelope ───────────────────────────────────────────
+// The TypeScript bridge embeds __delegation_envelope alongside normal call params.
+// The contract extracts, decodes, and validates it before executing the function.
+
+#[derive(Deserialize)]
+struct DelegationEnvelopeFields {
+    credential_jcs: String, // base64url-encoded JCS bytes of the DelegationCredential
+}
+
+// Minimal subset of DelegationCredential needed for contract-layer enforcement.
+// Full wire fields: v, user_did, agent_pubkey, org_did, contract, functions,
+// scopes, metadata, not_before_secs, not_after_secs, vc_id.
+// Time fields are JSON strings (decimal) to preserve u64 precision past JS Number.
+#[derive(Deserialize)]
+struct CredentialBody {
+    v: String,
+    functions: Vec<String>,
+    not_before_secs: String,
+    not_after_secs: String,
+}
+
 #[derive(Deserialize)]
 struct DelegateTaskInput {
     to_agent_id: String,
     #[serde(default)]
     action: String,
+    // Optional delegation envelope — present when caller uses Agent Auth SDK.
+    #[serde(rename = "__delegation_envelope")]
+    delegation_envelope: Option<DelegationEnvelopeFields>,
 }
 
 #[derive(Serialize)]
@@ -468,6 +494,53 @@ impl Guest for Component {
     fn delegate_task(req: GenericInput) -> Result<Vec<u8>, String> {
         let bytes = req.input.ok_or("delegate-task: missing input")?;
         let r: DelegateTaskInput = parse_input(&bytes, "delegate-task")?;
+
+        // ── Delegation envelope validation (contract-layer enforcement) ─────────
+        // If the caller embedded __delegation_envelope, validate it here.
+        // This enforces: credential time window + function scope, entirely
+        // inside the TEE without any network call to the revocation registry.
+        // Short-lived credentials (e.g. 30s) paired with T3N revocation mean
+        // a revoked credential becomes unenforced only for the remaining window.
+        if let Some(env) = &r.delegation_envelope {
+            let cred_bytes = URL_SAFE_NO_PAD
+                .decode(&env.credential_jcs)
+                .map_err(|_| "delegate-task: invalid credential_jcs encoding")?;
+
+            let cred: CredentialBody = serde_json::from_slice(&cred_bytes)
+                .map_err(|e| format!("delegate-task: invalid credential body: {e}"))?;
+
+            if cred.v != "ot3.delegation/1" {
+                return Err("delegate-task: invalid credential domain".to_string());
+            }
+
+            let not_before: u64 = cred
+                .not_before_secs
+                .parse()
+                .map_err(|_| "delegate-task: invalid not_before_secs")?;
+            let not_after: u64 = cred
+                .not_after_secs
+                .parse()
+                .map_err(|_| "delegate-task: invalid not_after_secs")?;
+
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|_| "delegate-task: clock error")?
+                .as_secs();
+
+            if now < not_before {
+                return Err("delegate-task: credential not yet valid".to_string());
+            }
+            if now > not_after {
+                return Err(format!(
+                    "delegate-task: credential expired (expired epoch {not_after}, now {now})"
+                ));
+            }
+
+            if !cred.functions.iter().any(|f| f == "delegate-task") {
+                return Err("delegate-task: function not in delegated scope".to_string());
+            }
+        }
+
         let id = &r.to_agent_id[..8.min(r.to_agent_id.len())];
         encode(&DelegateTaskOutput {
             delegation_id: format!("tee-del-{id}"),

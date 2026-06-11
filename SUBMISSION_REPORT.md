@@ -5,7 +5,7 @@
 **Submission date**: 2026-06-11  
 **Deadline**: 2026-06-22  
 **Repo**: https://github.com/KAGEROU1107/agent-delegation-network  
-**Final submission commit**: a6d961d  
+**Final submission commit**: c573443  
 **Last live proof commit**: c3a952c  
 **SDK**: `@terminal3/t3n-sdk@3.5.2`  
 **WASM**: `sha256:3b1fbb73a73f7cc8aa7bb2f65fc68c9d764a0b767a2bac53d370d1e1bdf53a99` (v3.6.0 — with delegation enforcement)

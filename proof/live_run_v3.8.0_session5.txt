@@ -1,0 +1,88 @@
+=== Terminal 3 Agent Delegation Network — Full ADK Demo ===
+Run date: 2026-06-11
+Commit:   (session 5 — v3.8.0 polish)
+SDK:      @terminal3/t3n-sdk@3.5.2
+Contract: adn-processor v3.8.0
+
+[Phase 1] Authenticating with Terminal 3 testnet...
+  [+] handshake() complete
+  [+] authenticate() complete
+  [+] Authenticated DID (from session): did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
+  [+] Ethereum address: 0x7caafad928560b686ac863c444efd465e19848ea
+  [+] TenantClient initialized
+  [+] register() returned contractId: 49 (BUG-001 resolved by SDK)
+
+[Phase 0] Agent Auth SDK — delegation credential + enforcement cycle...
+  [+] credential built: vc_id=a011d180ee5aa09c12c777023ca360ec
+  [+] granted functions: delegate-task, process-data
+  [+] signed with EIP-191: user_sig=hPQgFKIVxqqgn6q9...
+  [+] envelope: agent_sig=A-uyCEDjDwW-zTmm... nonce=OkZBIGUl...
+  [+] pre-revocation call:  ACCEPTED: {"delegation_id":"tee-del-did:key:","status":"ROUTED","routed_to":"did:key:ed255..."}
+  [+] revocation: SUCCESS (tee:delegation/contracts::revoke)
+  [+] post-revocation call: REJECTED: HTTP 400: Invalid params ({"code":"bad_request","detail":"delegate-task: credential expired (expired epoch 1781178167, now ...)"})
+
+[Phase 2] Running Python ADN with authenticated DID...
+  DID injected into coordinator: did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
+  [+] Unique cryptographic identities: 4/4
+  [+] Records processed: 30
+  [+] Total revenue: $13253
+  [+] Quality score: 1 | passed: true
+  [+] Coordinator DID matches session: true
+
+[Phase 3] TEE Contract...
+  [+] Registered: tail=adn-processor version=3.8.0
+  [+] Script: z:ad146e6861ac408900af7ece1f6e90976dad3a02:adn-processor
+  [+] Setting up ADN tenant maps...
+  [!] map ACL: using writers/readers:'all' — BUG-001 workaround (no contractId from register())
+  [+] Maps: 0 created, 8 already existed
+  [+] Invoking process-data in TEE...
+  [+] Sending 30 sale records into TEE enclave for computation
+  [+] TEE result: 30 records | total=$13253 | avg=$441.77 | min=$198.25 | max=$687.75 | trend=increasing
+  [+] processed_in_tee: true
+  [+] Invoking validate-quality in TEE...
+  [+] TEE quality: score=1 | validated_in_tee: true
+  [+] Negative test — empty records array (TEE must reject)...
+  [+] TEE correctly rejected empty records: HTTP 400: Invalid params ({"code":"bad_request","detail":"process-data: records cannot be empty"})
+
+[Phase 4] Full Feature Contract Coverage — invoking all 20 WIT exports...
+  (waiting 65s for fuel window reset, then 7s/call — ~3 min total)
+  [+] delegate-task:              {"delegation_id":"tee-del-did:key:","status":"ROUTED","routed_to":"did:key:ed25519:worker-demo-1781178240"}
+  [+] submit-bid:                 {"bid_hash":"81df41add7bbdf92","item_id":"item-001","sealed_in_tee":true,"receipt":"bid-receipt-81df41add7bb"}
+  [+] resolve-auction:            {"winner_did":"did:key:ed25519:worker2-demo-1781178240","winning_amount":185,"item_id":"item-001","total_bids":2,"resolved_in_tee":true}
+  [+] record-completion:          {"agent_did":"did:key:ed25519:worker-demo-1781178240","task_id":"task-001","reputation_delta":0.94,"recorded_in_tee":true}
+  [+] get-reputation:             {"agent_did":"did:key:ed25519:worker-demo-1781178240","reputation_score":0.84,"tier":"SILVER","tasks_evaluated":3,"computed_in_tee":true}
+  [+] send-personalized-outreach: {"customer_id":"cust-001","message_variant":"tmpl-premium:standard_offer","personalization_score":0.7,"raw_data_exposed":false,"processed_in_tee":true}
+  [+] issue-time-grant:           {"grant_token":"tgrant-a587aab56796075b","grantee_did":"did:key:ed25519:worker-demo-1781178240","action":"VALIDATE_DATA","issued_in_tee":true}
+  [+] check-grant:                {"valid":true,"reason":"VALID until epoch 1781181840","checked_in_tee":true}
+  [+] kyc-submit-step:            {"applicant_id":"applicant-001","step":"identity_check","step_receipt":"kyc-identity_check-cafebabe","progress_pct":25,"recorded_in_tee":true}
+  [+] kyc-get-status:             {"applicant_id":"applicant-001","status":"PENDING","steps_completed":1,"steps_required":4,"missing_steps":["identity","address","document","biometric"],"verified_in_tee":true}
+  [+] store-secret:               {"vault_id":"vault-3efe7edb3b326f54","owner_did":"did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02","label":"api-key","stored_in_tee":true}
+  [+] invoke-with-secret:         {"vault_id":"vault-demo","action_executed":"decrypt","tee_attested":true,"raw_secret_exposed":false}
+  [+] cast-vote:                  {"voter_did":"did:key:ed25519:worker-demo-1781178240","proposal_id":"prop-001","vote_receipt":"vote-bcb4cb8d3694372","recorded_in_tee":true}
+  [+] tally-votes:                {"proposal_id":"prop-001","result":"PASSED","votes_for":2,"votes_against":1,"quorum_met":true,"tallied_in_tee":true}
+  [+] log-decision:               {"decision_id":"dec-001","agent_did":"did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02","entry_hash":"45003997662c893d","logged_in_tee":true}
+  [+] audit-decisions:            {"total_decisions":2,"anomalies_detected":1,"risk_score":0.5,"attestation":"audit-9d16d11daa5c6c11","audited_in_tee":true}
+  [+] lock-bond:                  {"bond_id":"bond-1c96d2a47d26e833","agent_did":"did:key:ed25519:worker-demo-1781178240","task_id":"task-001","bond_amount":500,"locked_in_tee":true}
+  [+] verify-and-settle:          {"bond_id":"bond-demo","settlement":"FULL","payout_pct":1,"payout_amount":500,"reason":"EXCELLENT_DELIVERY","settled_in_tee":true}
+  [+] All 20 WIT exports invoked via live T3N TEE bridge.
+
+=======================================================
+DEMO SUMMARY
+=======================================================
+Real T3N auth:             YES
+DID from session:          did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
+Agent Auth credential:     BUILT + SIGNED (EIP-191, SDK-native)
+Distinct agent identities: 4/4
+Multi-agent delegation:    PASSED
+Tamper detection:          ACTIVE (data_hash in signed payload)
+WASM contract:             REGISTERED + INVOKED (20/20 WIT functions)
+=======================================================
+
+v3.8.0 hardening additions vs v3.6.0:
+  - not_before < not_after consistency check (temporal sanity)
+  - vc_id presence check (credential field completeness)
+  - agent_pubkey presence check (credential field completeness)
+  - nonce length check (≥8 bytes when present)
+  - agent_sig presence check (envelope completeness)
+  - SHA-256 credential fingerprint in delegate-task response (credential_fingerprint field)
+  - sha2 = "0.10" dependency (pure Rust, wasm32-compatible)

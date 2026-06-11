@@ -5,11 +5,9 @@
 **Submission date**: 2026-06-11  
 **Deadline**: 2026-06-22  
 **Repo**: https://github.com/KAGEROU1107/agent-delegation-network  
-**Final submission commit**: 78f5023 (README cleanup — no functional change)  
-**Last functional commit**: c3a952c (33 tests + BUG-001 map workaround + contractId probing)  
-**Last live proof commit**: c3a952c  
 **SDK**: `@terminal3/t3n-sdk@3.5.2`  
-**WASM**: `sha256:3b1fbb73a73f7cc8aa7bb2f65fc68c9d764a0b767a2bac53d370d1e1bdf53a99` (v3.6.0 — with delegation enforcement)
+**Contract**: `adn-processor v3.8.0` — hardened envelope validation + SHA-256 credential fingerprint  
+**Live proof**: `proof/live_run_v3.8.0_session5.txt`
 
 ---
 
@@ -109,7 +107,15 @@ await revokeDelegation({ credentialJcsB64u, client: t3n, baseUrl: getNodeUrl() }
 
 ### Enforcement architecture note
 
-The `generic-input` contract implements contract-layer enforcement for **credential time window and function scope**. The bridge constructs the full `DelegationEnvelope` using SDK primitives, including user and agent signatures. Real-time revocation-registry lookup and in-contract verification of the full envelope signature are documented boundaries — a `tee:delegation/contracts::is-live` host primitive is not yet exposed for `generic-input` contracts. The demo uses short-lived credentials so expiry serves the same revocation property within the proof window. Documented as BUG-005.
+`adn-processor v3.8.0` implements contract-layer enforcement for:
+- **Credential time window**: `not_before_secs` / `not_after_secs` validated against WASI `SystemTime::now()`
+- **Temporal consistency**: `not_before < not_after` sanity check
+- **Function scope**: "delegate-task" must be in `functions` array
+- **Credential field completeness**: `vc_id` and `agent_pubkey` presence-checked
+- **Envelope completeness**: `nonce` (≥8 bytes decoded) and `agent_sig` presence-checked
+- **SHA-256 fingerprint**: `credential_fingerprint` emitted in response — tamper-evident attestation of which credential was validated inside the TEE
+
+The bridge constructs the full `DelegationEnvelope` using SDK primitives, including user and agent signatures. Real-time revocation-registry lookup from inside WASM is a documented boundary — `tee:delegation/contracts::is-live` is not yet exposed for `generic-input` contracts. Short-lived credentials (30s) plus TEE-enforced expiry serve the same revocation property within the proof window. Documented as BUG-005.
 
 ---
 

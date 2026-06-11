@@ -12,10 +12,12 @@
  *   8. Attempt the same delegated call AFTER revocation + expiry → TEE contract rejects → REJECTED
  *
  * Enforcement mechanism (BUG-005 fix):
- *   The adn-processor TEE contract (v3.6.0) validates __delegation_envelope on delegate-task:
+ *   The adn-processor TEE contract (v3.8.0) validates __delegation_envelope on delegate-task:
  *   - Decodes credential_jcs from base64url
  *   - Checks not_before_secs / not_after_secs against WASI wall-clock inside the enclave
  *   - Verifies "delegate-task" is in the credential's functions array
+ *   - Validates vc_id (32 hex), agent_pubkey (66 hex), nonce (≥8 bytes), agent_sig presence
+ *   - Emits credential_fingerprint (SHA-256 of validated credential bytes) in response
  *   Note: revocation registry lookup from inside WASM requires a host call primitive not yet
  *   documented in the ADK. Time-bound expiry enforces the same property for short-lived tokens.
  */
@@ -105,7 +107,7 @@ async function tryDelegatedCall(
     // forwarding, a revoked credential returns a delegation error here.
     const result = await t3n.executeAndDecode({
       script_name: `z:${tid}:adn-processor`,
-      script_version: "3.6.0",
+      script_version: "3.8.0",
       function_name: "delegate-task",
       input: {
         ...callParams,

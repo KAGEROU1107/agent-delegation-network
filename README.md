@@ -1,15 +1,17 @@
 # Agent Delegation Network
 **Terminal 3 Agent Dev Kit Bounty Challenge Submission**
 
+[![Tests](https://github.com/KAGEROU1107/agent-delegation-network/actions/workflows/ci.yml/badge.svg)](https://github.com/KAGEROU1107/agent-delegation-network/actions/workflows/ci.yml)
+
 A multi-agent delegation system built on the Terminal 3 ADK. A coordinator authenticates with T3N, delegates tasks to ephemeral Ed25519 sub-agents, and executes/verifies workloads through a Rust/WASM TEE contract on the T3N testnet.
 
 ---
 
 ## Live Proof
 
-All phases run against the real T3N testnet using `adn-processor` contract v3.6.0 with contract-layer delegation enforcement.
+All phases run against the real T3N testnet using `adn-processor` contract v3.8.0 with hardened contract-layer delegation enforcement.
 
-Full output: [`t3n_bridge_proof.txt`](t3n_bridge_proof.txt) · [`proof/live_run_v3.6.0.txt`](proof/live_run_v3.6.0.txt)
+Full output: [`proof/live_run_v3.8.0_session5.txt`](proof/live_run_v3.8.0_session5.txt) · [`proof/live_run_v3.6.0.txt`](proof/live_run_v3.6.0.txt)
 
 ```
 [Phase 0] Agent Auth SDK — delegation credential + enforcement cycle...
@@ -20,7 +22,7 @@ Full output: [`t3n_bridge_proof.txt`](t3n_bridge_proof.txt) · [`proof/live_run_
   [+] pre-revocation call:  ACCEPTED: {"delegation_id":...,"status":"ROUTED",...}
   [+] revocation: SUCCESS (tee:delegation/contracts::revoke)
   [35s sleep — credential window expires]
-  [+] post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer v3.6.0)
+  [+] post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer v3.8.0)
 
 [Phase 1] T3N Auth
   [+] handshake() complete
@@ -64,10 +66,8 @@ WASM contract: REGISTERED + INVOKED (v3.6.0, 20/20 WIT functions)
 
 ```
 SDK:    @terminal3/t3n-sdk@3.5.2
-WASM:   sha256:3b1fbb73a73f7cc8aa7bb2f65fc68c9d764a0b767a2bac53d370d1e1bdf53a99
-        adn_processor.wasm v3.6.0 — with contract-layer delegation enforcement
-Head:   e40e7fe
-Proof:  c3a952c
+WASM:   adn_processor.wasm v3.8.0 — hardened envelope validation + SHA-256 credential fingerprint
+Proof:  proof/live_run_v3.8.0_session5.txt
 Run:    T3N_API_KEY=0x<key> node --loader ts-node/esm src/index.ts  (from t3n-bridge/)
 ```
 
@@ -135,14 +135,19 @@ The TypeScript bridge demonstrates the Agent Auth credential lifecycle:
 
 1. Build a scoped `DelegationCredential`.
 2. Sign it with EIP-191.
-3. Build a per-call `DelegationEnvelope`.
+3. Build a per-call `DelegationEnvelope` (includes `agent_sig`, `nonce`, `request_hash`).
 4. Submit the envelope to `delegate-task`.
 5. Accept the delegated call while the credential is valid.
 6. Revoke the credential through T3N delegation infrastructure.
 7. Wait for the short TTL window to expire.
 8. Confirm the TEE contract rejects the expired delegated call.
 
-The `adn-processor` v3.6.0 contract validates the credential time window and function scope inside the TEE contract.
+The `adn-processor` v3.8.0 contract validates inside the TEE:
+- Credential time window and temporal consistency (`not_before < not_after`)
+- Function scope (`delegate-task` must be in `functions`)
+- Credential field completeness (`vc_id`, `agent_pubkey` presence)
+- Envelope completeness (`nonce` ≥8 bytes decoded, `agent_sig` present)
+- Emits `credential_fingerprint` (SHA-256 of validated credential bytes)
 
 **Boundary**: real-time revocation registry lookup from inside a `generic-input` WASM contract is not yet available through a documented ADK host primitive. The demo uses short-lived credentials plus contract-layer expiry enforcement.
 

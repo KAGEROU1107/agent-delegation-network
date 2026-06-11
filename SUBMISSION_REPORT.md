@@ -5,7 +5,8 @@
 **Submission date**: 2026-06-11  
 **Deadline**: 2026-06-22  
 **Repo**: https://github.com/KAGEROU1107/agent-delegation-network  
-**Final commit**: c3a952c  
+**Final submission commit**: a6d961d  
+**Last live proof commit**: c3a952c  
 **SDK**: `@terminal3/t3n-sdk@3.5.2`  
 **WASM**: `sha256:3b1fbb73a73f7cc8aa7bb2f65fc68c9d764a0b767a2bac53d370d1e1bdf53a99` (v3.6.0 — with delegation enforcement)
 
@@ -22,7 +23,7 @@ A multi-agent delegation network where a coordinator obtains a real Terminal 3 D
 | T3N handshake + authenticate | Phase 1 — real DID from testnet every run |
 | Rust/WASM TEE contract (v3.6.0) | Registered + invoked: `z:ad146e6861ac408900af7ece1f6e90976dad3a02:adn-processor` |
 | Runtime enclave computation | 30 CSV records → TEE computes total/avg/min/max/trend |
-| All 20 WIT exports invoked | Phase 4 — 18/18 functions `[+]` in clean run |
+| All 20 WIT exports invoked | Phase 3: 2 core functions; Phase 4: remaining 18/18 `[+]` in clean run |
 | Agent Auth SDK — credential lifecycle | buildDelegationCredential → sign → validate → revoke SUCCESS |
 | Per-call DelegationEnvelope | buildInvocationPreimage + signAgentInvocation — full wire shape |
 | Delegation enforcement test | Pre/post revocation calls logged; behavior documented |

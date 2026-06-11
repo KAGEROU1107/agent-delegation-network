@@ -151,9 +151,10 @@ async function main() {
   }
 
   // ── Phase 4: Full Contract Coverage — all 18 remaining WIT functions ─────────
-  // Wait for fuel_per_minute window to reset before firing 18 more TEE calls.
+  // Wait 65s for fuel_per_minute window to reset (Phase 3 used ~3 fuel units).
   console.log("\n[Phase 4] Full Feature Contract Coverage — invoking all 20 WIT exports...");
-  console.log("  (throttled at 7s/call to stay within testnet fuel quota — ~2 min)");
+  console.log("  (waiting 65s for fuel window reset, then 7s/call — ~3 min total)");
+  await new Promise(r => setTimeout(r, 65000));
 
   if (!existsSync(WASM_PATH)) {
     console.log("  [~] WASM not compiled — skipping Phase 4.");

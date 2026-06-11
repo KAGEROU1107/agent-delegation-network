@@ -1,10 +1,10 @@
-(node:23600) ExperimentalWarning: `--experimental-loader` may be removed in the future; instead use `register()`:
+(node:10304) ExperimentalWarning: `--experimental-loader` may be removed in the future; instead use `register()`:
 --import 'data:text/javascript,import { register } from "node:module"; import { pathToFileURL } from "node:url"; register("ts-node/esm", pathToFileURL("./"));'
 (Use `node --trace-warnings ...` to show where the warning was created)
 === Terminal 3 Agent Delegation Network — Full ADK Demo ===
 
 [Phase 1] Authenticating with Terminal 3 testnet...
-(node:23600) [DEP0180] DeprecationWarning: fs.Stats constructor is deprecated.
+(node:10304) [DEP0180] DeprecationWarning: fs.Stats constructor is deprecated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
   [+] handshake() complete
   [+] authenticate() complete
@@ -13,11 +13,11 @@
   [+] TenantClient initialized
 
 [Phase 0] Agent Auth SDK — user-to-agent delegation credential...
-  [+] credential built: vc_id=18afcec5ff2d5f9615aa74a2beea4d31
+  [+] credential built: vc_id=1ffa83f99ec7e63f828b43ae8a1220d2
   [+] user DID: did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
   [+] granted functions: delegate-task, process-data
-  [+] signed with EIP-191: user_sig=btnBQ7gAfjAoINtt...
-  [+] credential_jcs (b64u, first 32): eyJhZ2VudF9wdWJrZXkiOiJBeUhZUGtD...
+  [+] signed with EIP-191: user_sig=URs82JtO_fhvAK0D...
+  [+] credential_jcs (b64u, first 32): eyJhZ2VudF9wdWJrZXkiOiJBd2N1UVIw...
   [+] revocation: SUCCESS (tee:delegation/contracts::revoke)
 
 [Phase 2] Running Python ADN with authenticated DID...
@@ -40,24 +40,24 @@
   [+] TEE quality: score=1 | validated_in_tee: true
 
 [Phase 4] Full Feature Contract Coverage — invoking all 20 WIT exports...
-  (throttled at 7s/call to stay within testnet fuel quota — ~2 min)
-  [+] delegate-task: {"delegation_id":"tee-del-did:key:","status":"ROUTED","routed_to":"did:key:ed25519:worker-demo-1781158810"}
-  [+] submit-bid: {"bid_hash":"b1df825ac94957af","item_id":"item-001","sealed_in_tee":true,"receipt":"bid-receipt-b1df825ac949"}
-  [+] resolve-auction: {"winner_did":"did:key:ed25519:worker2-demo-1781158810","winning_amount":185,"item_id":"item-001","total_bids":2,"resolv
-  [+] record-completion: {"agent_did":"did:key:ed25519:worker-demo-1781158810","task_id":"task-001","reputation_delta":0.94,"recorded_in_tee":tru
-  [+] get-reputation: {"agent_did":"did:key:ed25519:worker-demo-1781158810","reputation_score":0.84,"tier":"SILVER","tasks_evaluated":3,"compu
+  (waiting 65s for fuel window reset, then 7s/call — ~3 min total)
+  [+] delegate-task: {"delegation_id":"tee-del-did:key:","status":"ROUTED","routed_to":"did:key:ed25519:worker-demo-1781163112"}
+  [+] submit-bid: {"bid_hash":"d7164e7cb4c7ebe4","item_id":"item-001","sealed_in_tee":true,"receipt":"bid-receipt-d7164e7cb4c7"}
+  [+] resolve-auction: {"winner_did":"did:key:ed25519:worker2-demo-1781163112","winning_amount":185,"item_id":"item-001","total_bids":2,"resolv
+  [+] record-completion: {"agent_did":"did:key:ed25519:worker-demo-1781163112","task_id":"task-001","reputation_delta":0.94,"recorded_in_tee":tru
+  [+] get-reputation: {"agent_did":"did:key:ed25519:worker-demo-1781163112","reputation_score":0.84,"tier":"SILVER","tasks_evaluated":3,"compu
   [+] send-personalized-outreach: {"customer_id":"cust-001","message_variant":"tmpl-premium:standard_offer","personalization_score":0.7,"raw_data_exposed"
-  [+] issue-time-grant: {"grant_token":"tgrant-61648fabb8684e98","grantee_did":"did:key:ed25519:worker-demo-1781158810","action":"VALIDATE_DATA"
-  [+] check-grant: {"valid":true,"reason":"VALID until epoch 1781162410","checked_in_tee":true}
-  [-] kyc-submit-step: HTTP 500: Rate limit exceeded ({"code":"too_many_requests","detail":"quota exceeded (fuel_per_minute): tenant ad146e6861ac408900af7ece1f6e90976dad3a02 on contract z:ad146e6861ac408900af7ece1f6e90976dad3a02:adn-processor","request_id":"83bf67ef-264d-456a-94e6-ac890962097f"})
+  [+] issue-time-grant: {"grant_token":"tgrant-af5fb286f4bce126","grantee_did":"did:key:ed25519:worker-demo-1781163112","action":"VALIDATE_DATA"
+  [+] check-grant: {"valid":true,"reason":"VALID until epoch 1781166712","checked_in_tee":true}
+  [+] kyc-submit-step: {"applicant_id":"applicant-001","step":"identity_check","step_receipt":"kyc-identity_check-cafebabe","progress_pct":25,"
   [+] kyc-get-status: {"applicant_id":"applicant-001","status":"PENDING","steps_completed":1,"steps_required":4,"missing_steps":["identity","a
   [+] store-secret: {"vault_id":"vault-3efe7edb3b326f54","owner_did":"did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02","label":"api-key","s
   [+] invoke-with-secret: {"vault_id":"vault-demo","action_executed":"decrypt","tee_attested":true,"raw_secret_exposed":false}
-  [+] cast-vote: {"voter_did":"did:key:ed25519:worker-demo-1781158810","proposal_id":"prop-001","vote_receipt":"vote-716ef2934107a39","re
+  [+] cast-vote: {"voter_did":"did:key:ed25519:worker-demo-1781163112","proposal_id":"prop-001","vote_receipt":"vote-85e1296ff5cb2194","r
   [+] tally-votes: {"proposal_id":"prop-001","result":"PASSED","votes_for":2,"votes_against":1,"quorum_met":true,"tallied_in_tee":true}
   [+] log-decision: {"decision_id":"dec-001","agent_did":"did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02","entry_hash":"45003997662c893d",
   [+] audit-decisions: {"total_decisions":2,"anomalies_detected":1,"risk_score":0.5,"attestation":"audit-9d16d11daa5c6c11","audited_in_tee":tru
-  [+] lock-bond: {"bond_id":"bond-6e32e8e44381ecf0","agent_did":"did:key:ed25519:worker-demo-1781158810","task_id":"task-001","bond_amoun
+  [+] lock-bond: {"bond_id":"bond-152c073b3c8480cd","agent_did":"did:key:ed25519:worker-demo-1781163112","task_id":"task-001","bond_amoun
   [+] verify-and-settle: {"bond_id":"bond-demo","settlement":"FULL","payout_pct":1,"payout_amount":500,"reason":"EXCELLENT_DELIVERY","settled_in_
   [+] All 20 WIT exports invoked via live T3N TEE bridge.
 

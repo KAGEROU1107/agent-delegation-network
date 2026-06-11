@@ -34,7 +34,7 @@ A multi-agent delegation network where a coordinator obtains a real Terminal 3 D
 
 ## Live Proof Summary
 
-Full output: [`proof/live_run_v3.8.0_session5.txt`](proof/live_run_v3.8.0_session5.txt) · [`proof/live_run_v3.6.0.txt`](proof/live_run_v3.6.0.txt)
+Full output: [`proof/live_run_v3.8.0_session6_final.txt`](proof/live_run_v3.8.0_session6_final.txt) · [`proof/live_run_v3.8.0_session5.txt`](proof/live_run_v3.8.0_session5.txt)
 
 ```
 [Phase 1] Authenticating with Terminal 3 testnet...
@@ -52,6 +52,8 @@ Full output: [`proof/live_run_v3.8.0_session5.txt`](proof/live_run_v3.8.0_sessio
   [+] pre-revocation call:  ACCEPTED: {"delegation_id":...,"status":"ROUTED",...}
   [+] revocation: SUCCESS (tee:delegation/contracts::revoke)
   [+] post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer — v3.8.0)
+  [+] missing agent_sig:    REJECTED: delegate-task: agent_sig missing from envelope
+  [+] short nonce (4 bytes): REJECTED: delegate-task: nonce too short (< 8 bytes)
 
 [Phase 2] Python ADN — Multi-Agent Delegation...
   [+] Unique cryptographic identities: 4/4

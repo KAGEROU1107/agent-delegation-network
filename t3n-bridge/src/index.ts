@@ -145,8 +145,16 @@ async function main() {
   } else {
     try {
       // Reuse pre-registration result to preserve contractId from the first register() call.
-      const contractInfo = preRegisteredContract ?? await registerAdnContract(tenant, tenantDid);
+      let contractInfo = preRegisteredContract ?? await registerAdnContract(tenant, tenantDid);
       console.log(`  [+] Registered: tail=${contractInfo.tail} version=${contractInfo.version}`);
+
+      // BUG-001 fallback: SDK only returns contractId on the very first registration of
+      // a version. Re-registering the same version returns no ID. 49 is the stable
+      // contractId for adn-processor on this tenant (confirmed on first v3.8.0 deploy).
+      if (contractInfo.contractId === undefined) {
+        contractInfo = { ...contractInfo, contractId: 49 };
+        console.log(`  [+] contractId: 49 (BUG-001 workaround — using known ID from initial registration)`);
+      }
       console.log(`  [+] Script: z:${tenantDid.slice("did:t3n:".length)}:${contractInfo.tail}`);
 
       // ── BUG-001 workaround: wire tenant KV maps (falls back to writers:"all") ──

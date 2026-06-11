@@ -11,7 +11,7 @@ A multi-agent delegation system built on the Terminal 3 ADK. A coordinator authe
 
 All phases run against the real T3N testnet using `adn-processor` contract v3.8.0 with hardened contract-layer delegation enforcement.
 
-Full output: [`proof/live_run_v3.8.0_session5.txt`](proof/live_run_v3.8.0_session5.txt) · [`proof/live_run_v3.6.0.txt`](proof/live_run_v3.6.0.txt)
+Full output: [`proof/live_run_v3.8.0_session6_final.txt`](proof/live_run_v3.8.0_session6_final.txt) · [`proof/live_run_v3.8.0_session5.txt`](proof/live_run_v3.8.0_session5.txt)
 
 ```
 [Phase 0] Agent Auth SDK — delegation credential + enforcement cycle...
@@ -23,6 +23,8 @@ Full output: [`proof/live_run_v3.8.0_session5.txt`](proof/live_run_v3.8.0_sessio
   [+] revocation: SUCCESS (tee:delegation/contracts::revoke)
   [35s sleep — credential window expires]
   [+] post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer v3.8.0)
+  [+] missing agent_sig:    REJECTED: delegate-task: agent_sig missing from envelope
+  [+] short nonce (4 bytes): REJECTED: delegate-task: nonce too short (< 8 bytes)
 
 [Phase 1] T3N Auth
   [+] handshake() complete

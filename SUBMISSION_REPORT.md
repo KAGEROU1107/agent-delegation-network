@@ -5,7 +5,7 @@
 **Submission date**: 2026-06-11  
 **Deadline**: 2026-06-22  
 **Repo**: https://github.com/KAGEROU1107/agent-delegation-network  
-**Final commit**: bc08967  
+**Final commit**: 1318b2d  
 **SDK**: `@terminal3/t3n-sdk@3.5.2`  
 **WASM**: `sha256:3b1fbb73a73f7cc8aa7bb2f65fc68c9d764a0b767a2bac53d370d1e1bdf53a99` (v3.6.0 — with delegation enforcement)
 
@@ -34,7 +34,7 @@ A multi-agent delegation network where a coordinator obtains a real Terminal 3 D
 
 ## Live Proof Summary
 
-Full output: [`t3n_bridge_proof.txt`](t3n_bridge_proof.txt) · [`proof/live_run_v3.5.0.txt`](proof/live_run_v3.5.0.txt)
+Full output: [`t3n_bridge_proof.txt`](t3n_bridge_proof.txt) · [`proof/live_run_v3.5.0.txt`](proof/live_run_v3.5.0.txt) · [`proof/live_run_v3.6.0.txt`](proof/live_run_v3.6.0.txt)
 
 ```
 [Phase 1] Authenticating with Terminal 3 testnet...

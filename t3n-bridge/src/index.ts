@@ -30,6 +30,7 @@ import {
   fetchContractLogs,
 } from "./contract_bridge.js";
 import { demonstrateAgentAuth } from "./agent_auth.js";
+import { setupAdnMaps } from "./map_setup.js";
 import { b64uEncodeBytes } from "@terminal3/t3n-sdk";
 import { existsSync, readFileSync } from "fs";
 import { join, dirname } from "path";
@@ -134,6 +135,18 @@ async function main() {
       const contractInfo = await registerAdnContract(tenant, tenantDid);
       console.log(`  [+] Registered: tail=${contractInfo.tail} version=${contractInfo.version}`);
       console.log(`  [+] Script: z:${tenantDid.slice("did:t3n:".length)}:${contractInfo.tail}`);
+
+      // ── BUG-001 workaround: wire tenant KV maps (falls back to writers:"all") ──
+      console.log("  [+] Setting up ADN tenant maps...");
+      try {
+        const mapResults = await setupAdnMaps(tenant, contractInfo.contractId);
+        const created = mapResults.filter((r) => r.created).length;
+        const skipped = mapResults.filter((r) => !r.created && !r.error).length;
+        const failed = mapResults.filter((r) => r.error).map((r) => `${r.tail}:${r.error}`);
+        console.log(`  [+] Maps: ${created} created, ${skipped} already existed${failed.length ? `, ${failed.length} failed: ${failed.join("; ")}` : ""}`);
+      } catch (err) {
+        console.log(`  [~] Map setup skipped: ${(err as Error).message}`);
+      }
 
       console.log("  [+] Invoking process-data in TEE...");
       const salesRecords = parseSaleAmounts();

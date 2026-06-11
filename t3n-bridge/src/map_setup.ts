@@ -33,23 +33,35 @@ export interface MapSetupResult {
 }
 
 /**
- * Create all ADN feature maps with contract-only ACLs.
- * contractId must be the numeric ID returned after contract registration.
+ * Create all ADN feature maps with contract-only ACLs when possible.
+ *
+ * contractId — numeric ID from register(). If undefined (BUG-001: SDK returns
+ * no ID), maps are created with writers:"all" as a documented workaround so the
+ * map layer is exercised even without per-contract ACL gating. See bugs_found.md.
+ *
  * Safe to call repeatedly — skips maps that already exist.
  */
 export async function setupAdnMaps(
   tenant: TenantClient,
-  contractId: number
+  contractId: number | undefined
 ): Promise<MapSetupResult[]> {
   const results: MapSetupResult[] = [];
+
+  // BUG-001 workaround: fall back to open write access when contractId unavailable.
+  const writers = contractId !== undefined ? { only: [contractId] } : ("all" as const);
+  const readers = contractId !== undefined ? { only: [contractId] } : ("all" as const);
+
+  if (contractId === undefined) {
+    console.log("  [!] map ACL: using writers/readers:'all' — BUG-001 workaround (no contractId from register())");
+  }
 
   for (const map of ADN_MAPS) {
     try {
       await tenant.maps.create({
         tail: map.tail,
         visibility: "private",
-        writers: { only: [contractId] },
-        readers: { only: [contractId] },
+        writers,
+        readers,
       });
       results.push({ tail: map.tail, created: true });
     } catch (err) {

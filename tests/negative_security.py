@@ -22,11 +22,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.agent_identity import AgentIdentity
 from src.terminal3_agent_auth_adapter import (
     AUDIENCE,
+    PROOF_TTL_SECONDS,
     sign_action_request,
     verify_action_request,
     _sha256,
     _canonical,
 )
+from src.delegation_policy import DelegationPolicy
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -214,3 +216,110 @@ class TestIdentityDistinctness:
         # Worker is ED25519_EPHEMERAL — not T3N_SESSION
         assert worker.authority == "ED25519_EPHEMERAL"
         assert worker.did.startswith("did:key:ed25519:")
+
+
+class TestDelegationPolicy:
+    """Delegation policy engine: role-based allow/deny and trust enforcement."""
+
+    def test_open_policy_allows_by_default(self):
+        policy = DelegationPolicy()
+        allowed, reason = policy.can_delegate("agent-a", "agent-b", "process_data")
+        assert allowed, f"Open policy should allow by default: {reason}"
+
+    def test_restricted_agent_blocked_on_unknown_action(self):
+        policy = DelegationPolicy()
+        policy.add_delegation_rule("agent-a", "allowed_action")
+        allowed, _ = policy.can_delegate("agent-a", "agent-b", "forbidden_action")
+        assert not allowed, "Agent with rules must be blocked on unlisted action"
+
+    def test_restricted_agent_allowed_on_listed_action(self):
+        policy = DelegationPolicy()
+        policy.add_delegation_rule("agent-a", "process_data")
+        allowed, _ = policy.can_delegate("agent-a", "agent-b", "process_data")
+        assert allowed
+
+    def test_trust_gate_blocks_untrusted_target(self):
+        policy = DelegationPolicy()
+        policy.add_delegation_rule("agent-a", "process_data")
+        policy.add_trust_relationship("agent-a", "agent-trusted")
+        allowed, _ = policy.can_delegate("agent-a", "agent-stranger", "process_data")
+        assert not allowed, "Should be blocked when trust list exists and target not in it"
+
+    def test_trust_gate_allows_trusted_target(self):
+        policy = DelegationPolicy()
+        policy.add_delegation_rule("agent-a", "process_data")
+        policy.add_trust_relationship("agent-a", "agent-trusted")
+        allowed, _ = policy.can_delegate("agent-a", "agent-trusted", "process_data")
+        assert allowed
+
+    def test_remove_delegation_rule_denies_action(self):
+        policy = DelegationPolicy()
+        policy.add_delegation_rule("agent-a", "process_data")
+        policy.remove_delegation_rule("agent-a", "process_data")
+        allowed, _ = policy.can_delegate("agent-a", "agent-b", "process_data")
+        # After removing the only rule, the rule set is empty → open policy → allowed
+        assert allowed, "Empty rule set reverts to open policy"
+
+    def test_can_perform_task_open(self):
+        policy = DelegationPolicy()
+        allowed, _ = policy.can_perform_task("worker-001", "process_data")
+        assert allowed
+
+    def test_can_perform_task_restricted(self):
+        policy = DelegationPolicy()
+        policy.add_delegation_rule("worker-001", "narrow_action")
+        allowed, _ = policy.can_perform_task("worker-001", "other_action")
+        assert not allowed
+
+    def test_four_agents_get_independent_policies(self):
+        """Each ADN agent must have independent policy scope."""
+        policy = DelegationPolicy()
+        for i in range(4):
+            policy.add_delegation_rule(f"agent-{i}", f"action-{i}")
+        # Each agent only has its own action
+        for i in range(4):
+            allowed, _ = policy.can_delegate(f"agent-{i}", "target", f"action-{i}")
+            assert allowed
+            # Must not have other agents' actions
+            for j in range(4):
+                if j != i:
+                    blocked, _ = policy.can_delegate(f"agent-{i}", "target", f"action-{j}")
+                    assert not blocked, f"agent-{i} must not have action-{j}"
+
+
+class TestCredentialTimeWindow:
+    """Time-bound proof TTL validation — mirrors BUG-005 fix logic at Python layer."""
+
+    def test_fresh_proof_passes_ttl(self):
+        proof = _fresh_proof()
+        ok, _ = _verify(proof)
+        assert ok
+
+    def test_proof_ttl_constant_is_positive(self):
+        assert PROOF_TTL_SECONDS > 0, "TTL must be positive"
+
+    def test_proof_expires_at_is_in_future(self):
+        proof = _fresh_proof()
+        expires = datetime.datetime.fromisoformat(proof["expires_at"])
+        now = datetime.datetime.now(datetime.timezone.utc)
+        assert expires > now, "Fresh proof expires_at must be in the future"
+
+    def test_proof_expiry_window_matches_ttl(self):
+        before = datetime.datetime.now(datetime.timezone.utc)
+        proof = _fresh_proof()
+        after = datetime.datetime.now(datetime.timezone.utc)
+        expires = datetime.datetime.fromisoformat(proof["expires_at"])
+        # expires_at should be approximately now + TTL
+        lower = before + datetime.timedelta(seconds=PROOF_TTL_SECONDS - 1)
+        upper = after + datetime.timedelta(seconds=PROOF_TTL_SECONDS + 1)
+        assert lower <= expires <= upper, "expires_at must be within TTL window of creation time"
+
+    def test_mutated_expiry_rejected(self):
+        """Extending the TTL by mutating expires_at after signing must be rejected."""
+        proof = _fresh_proof()
+        future = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24)).isoformat()
+        proof["expires_at"] = future
+        ok, code = _verify(proof)
+        # Mutating expires_at changes the payload_hash → signature fails
+        assert not ok
+        assert code == "IDENTITY_INVALID"

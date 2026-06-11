@@ -20,6 +20,24 @@ export interface ContractInfo {
   tail: string;
   version: string;
   tenantDid: string;
+  /** Numeric contract ID if the SDK returns it; undefined if BUG-001 still present. */
+  contractId?: number;
+}
+
+/**
+ * Attempt to extract a numeric contract ID from the raw SDK register() response.
+ * SDK types register() as Promise<unknown> — BUG-001 — so we probe the actual
+ * runtime value for any numeric `id` or `contractId` field.
+ */
+function extractContractId(raw: unknown): number | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const obj = raw as Record<string, unknown>;
+  for (const key of ["id", "contractId", "contract_id"]) {
+    const v = obj[key];
+    if (typeof v === "number" && Number.isInteger(v) && v > 0) return v;
+    if (typeof v === "string" && /^\d+$/.test(v)) return parseInt(v, 10);
+  }
+  return undefined;
 }
 
 export async function registerAdnContract(
@@ -31,14 +49,21 @@ export async function registerAdnContract(
   }
 
   const wasm = readFileSync(WASM_PATH);
+  let contractId: number | undefined;
   try {
-    await tenant.contracts.register({ tail: CONTRACT_TAIL, version: CONTRACT_VERSION, wasm });
+    const raw = await tenant.contracts.register({ tail: CONTRACT_TAIL, version: CONTRACT_VERSION, wasm });
+    contractId = extractContractId(raw);
+    if (contractId !== undefined) {
+      console.log(`  [+] register() returned contractId: ${contractId} (BUG-001 resolved by SDK)`);
+    } else {
+      console.log(`  [!] register() returned no contractId (BUG-001 active) — map ACL will use writers:"all"`);
+    }
   } catch (err) {
     const msg = (err as Error).message ?? "";
     if (!msg.includes("not higher") && !msg.includes("already enabled")) throw err;
   }
 
-  return { tail: CONTRACT_TAIL, version: CONTRACT_VERSION, tenantDid };
+  return { tail: CONTRACT_TAIL, version: CONTRACT_VERSION, tenantDid, contractId };
 }
 
 export function invokeProcessData(

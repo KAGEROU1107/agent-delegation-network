@@ -30,7 +30,7 @@ import {
   invokeLockBond, invokeVerifyAndSettle,
   fetchContractLogs,
 } from "./contract_bridge.js";
-import { demonstrateAgentAuth } from "./agent_auth.js";
+import { demonstrateAgentAuth, demonstrateNegativeEnvelopeTests } from "./agent_auth.js";
 import { setupAdnMaps } from "./map_setup.js";
 import { b64uEncodeBytes } from "@terminal3/t3n-sdk";
 import { existsSync, readFileSync } from "fs";
@@ -103,6 +103,14 @@ async function main() {
     }
     const postLabel = authResult.postRevocationCallResult.startsWith("REJECTED") ? "[+]" : "[-]";
     console.log(`  ${postLabel} post-revocation call: ${authResult.postRevocationCallResult}`);
+
+    // ── Negative envelope rejection tests (v3.8.0 hardening proof) ────────────
+    console.log("  [+] Negative envelope tests — proving v3.8.0 contract-layer hardening...");
+    const negResults = await demonstrateNegativeEnvelopeTests(t3n, tenantDid, apiKey);
+    const sigLabel = negResults.missingSig.startsWith("REJECTED") ? "[+]" : "[-]";
+    const nonceLabel = negResults.shortNonce.startsWith("REJECTED") ? "[+]" : "[-]";
+    console.log(`  ${sigLabel} missing agent_sig: ${negResults.missingSig}`);
+    console.log(`  ${nonceLabel} short nonce (4 bytes): ${negResults.shortNonce}`);
   } catch (err) {
     console.error(`  [-] Agent Auth error: ${(err as Error).message}`);
   }

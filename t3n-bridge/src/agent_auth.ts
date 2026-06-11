@@ -186,7 +186,7 @@ export async function demonstrateAgentAuth(
   await new Promise((r) => setTimeout(r, 35_000));
 
   // ── Delegated call AFTER revocation + expiry ──────────────────────────────────
-  // TEE contract (v3.6.0) decodes the credential_jcs, reads not_after_secs from
+  // TEE contract (v3.8.0) decodes the credential_jcs, reads not_after_secs from
   // the JCS, and rejects because now > not_after_secs. REJECTED at contract layer.
   const postRevocationCallResult = await tryDelegatedCall(t3n, tenantDid, envelope, callParams);
 
@@ -202,4 +202,94 @@ export async function demonstrateAgentAuth(
     revokeError,
     postRevocationCallResult,
   };
+}
+
+/**
+ * Negative envelope rejection tests — proves v3.8.0 contract-layer hardening.
+ * Sends deliberately malformed envelopes to the live TEE and asserts rejection.
+ */
+export async function demonstrateNegativeEnvelopeTests(
+  t3n: T3nClient,
+  tenantDid: string,
+  apiKey: string
+): Promise<{ missingSig: string; shortNonce: string }> {
+  const userSecret = Buffer.from(apiKey.replace(/^0x/, ""), "hex");
+  const agentSecret = new Uint8Array(randomBytes(32));
+  const agentPubkey = await pubkeyFromSecret(agentSecret);
+  const now = BigInt(Math.floor(Date.now() / 1000));
+  const vcId = new Uint8Array(randomBytes(16));
+
+  const credential = buildDelegationCredential({
+    user_did: tenantDid,
+    agent_pubkey: agentPubkey,
+    org_did: tenantDid,
+    contract: "adn-processor",
+    functions: ["delegate-task", "process-data"],
+    scopes: [],
+    metadata: {},
+    not_before_secs: now,
+    not_after_secs: now + 300n,
+    vc_id: vcId,
+  });
+
+  const jcs = canonicaliseCredential(credential);
+  const { sig: userSig } = signCredential(jcs, new Uint8Array(userSecret));
+  const callParams: Record<string, unknown> = {
+    to_agent_id: `did:key:ed25519:neg-test-${Buffer.from(vcId).toString("hex").slice(0, 8)}`,
+    action: "NEG_TEST",
+  };
+
+  const tid = tenantDid.slice("did:t3n:".length);
+
+  // ── Test 1: missing agent_sig ─────────────────────────────────────────────────
+  let missingSig: string;
+  try {
+    const result = await t3n.executeAndDecode({
+      script_name: `z:${tid}:adn-processor`,
+      script_version: "3.8.0",
+      function_name: "delegate-task",
+      input: {
+        ...callParams,
+        __delegation_envelope: {
+          credential_jcs: b64uEncodeBytes(jcs),
+          user_sig: b64uEncodeBytes(userSig),
+          agent_sig: "",         // deliberately empty
+          nonce: b64uEncodeBytes(new Uint8Array(randomBytes(16))),
+          request_hash: b64uEncodeBytes(new Uint8Array(32)),
+        },
+      },
+    });
+    missingSig = `UNEXPECTED ACCEPT: ${JSON.stringify(result).slice(0, 60)}`;
+  } catch (err) {
+    missingSig = `REJECTED: ${(err as Error).message.slice(0, 100)}`;
+  }
+
+  // ── Test 2: nonce too short (4 bytes < 8 minimum) ────────────────────────────
+  let shortNonce: string;
+  try {
+    const nonce = new Uint8Array(randomBytes(16));
+    const reqHash = new Uint8Array(createHash("sha256").update(Buffer.from(JSON.stringify(callParams))).digest());
+    const preimage = buildInvocationPreimage(vcId, nonce, reqHash);
+    const agentSig = signAgentInvocation(preimage, agentSecret);
+    const result = await t3n.executeAndDecode({
+      script_name: `z:${tid}:adn-processor`,
+      script_version: "3.8.0",
+      function_name: "delegate-task",
+      input: {
+        ...callParams,
+        __delegation_envelope: {
+          credential_jcs: b64uEncodeBytes(jcs),
+          user_sig: b64uEncodeBytes(userSig),
+          agent_sig: b64uEncodeBytes(agentSig),
+          nonce: b64uEncodeBytes(new Uint8Array([0x01, 0x02, 0x03, 0x04])), // 4 bytes — too short
+          request_hash: b64uEncodeBytes(reqHash),
+        },
+      },
+    });
+    shortNonce = `UNEXPECTED ACCEPT: ${JSON.stringify(result).slice(0, 60)}`;
+  } catch (err) {
+    shortNonce = `REJECTED: ${(err as Error).message.slice(0, 100)}`;
+  }
+
+  return { missingSig, shortNonce };
 }

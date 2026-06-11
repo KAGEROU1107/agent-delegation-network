@@ -51,7 +51,9 @@ export async function setupAdnMaps(
   const writers = contractId !== undefined ? { only: [contractId] } : ("all" as const);
   const readers = contractId !== undefined ? { only: [contractId] } : ("all" as const);
 
-  if (contractId === undefined) {
+  if (contractId !== undefined) {
+    console.log(`  [+] map ACL: using contractId: ${contractId} (contract-only ACL)`);
+  } else {
     console.log("  [!] map ACL: using writers/readers:'all' — BUG-001 workaround (no contractId from register())");
   }
 

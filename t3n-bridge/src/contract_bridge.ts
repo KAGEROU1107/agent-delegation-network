@@ -14,7 +14,7 @@ import type { TenantClient, T3nClient } from "@terminal3/t3n-sdk";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WASM_PATH = join(__dirname, "../../contract/target/wasm32-wasip2/release/adn_processor.wasm");
 const CONTRACT_TAIL = "adn-processor";
-const CONTRACT_VERSION = "3.4.0";
+const CONTRACT_VERSION = "3.5.0";
 
 export interface ContractInfo {
   tail: string;

@@ -17,13 +17,14 @@
 
 [Phase 3] TEE Contract...
   [+] Registering WASM contract with T3N...
-  [+] Registered: tail=adn-processor version=3.2.0
-  [+] Script: z:did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02:adn-processor
+  [+] Registered: tail=adn-processor version=3.4.0
+  [+] Script: z:ad146e6861ac408900af7ece1f6e90976dad3a02:adn-processor
   [+] Invoking process-data in TEE...
-  [+] TEE result: 30 records | avg=$441.77
+  [+] Sending 30 sale records into TEE enclave for computation
+  [+] TEE result: 30 records | total=$13253 | avg=$441.77 | min=$198.25 | max=$687.75 | trend=increasing
   [+] processed_in_tee: true
   [+] Invoking validate-quality in TEE...
-  [+] TEE quality: score=0.9 | validated_in_tee: true
+  [+] TEE quality: score=1 | validated_in_tee: true
 
 =======================================================
 DEMO SUMMARY
@@ -33,5 +34,10 @@ DID from session:         did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
 Distinct agent identities: 4/4
 Multi-agent delegation:   PASSED
 Tamper detection:         ACTIVE (data_hash in signed payload)
-WASM contract:            REGISTERED + INVOKED
+WASM contract:            REGISTERED + INVOKED (v3.4.0)
 =======================================================
+
+Run timestamp: 2026-06-11
+SDK: @terminal3/t3n-sdk@3.5.2
+Contract: z:ad146e6861ac408900af7ece1f6e90976dad3a02:adn-processor@3.4.0
+Real computation: 30 CSV records sent into TEE; contract computed total/avg/min/max/trend inside enclave

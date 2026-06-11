@@ -22,15 +22,19 @@ All three phases run against the real T3N testnet:
   [+] Quality score: 1 | passed: true
   [+] Coordinator DID matches session: true
 
-[Phase 3] TEE Contract
-  [+] Registered: tail=adn-processor version=3.3.0
-  [+] process-data  → 30 records | avg=$441.77 | processed_in_tee: true
+[Phase 3] TEE Contract (v3.4.0 — real computation)
+  [+] Registered: tail=adn-processor version=3.4.0
+  [+] Sending 30 sale records into TEE enclave for computation
+  [+] TEE result: 30 records | total=$13253 | avg=$441.77 | min=$198.25 | max=$687.75 | trend=increasing
+  [+] processed_in_tee: true
   [+] validate-quality → score=1 | validated_in_tee: true
 
-WASM contract: REGISTERED + INVOKED
+WASM contract: REGISTERED + INVOKED (v3.4.0)
 ```
 
-Full output: [`t3n_bridge_proof.txt`](t3n_bridge_proof.txt)
+Full output: [`t3n_bridge_proof.txt`](t3n_bridge_proof.txt) · [`proof/live_run_2026-06-11.txt`](proof/live_run_2026-06-11.txt)
+
+**Real enclave computation**: 30 CSV sale records are sent into the TEE at runtime. The Rust contract computes `total`, `avg`, `min`, `max`, and `trend` inside the hardware-isolated enclave — no hardcoded values.
 
 ---
 

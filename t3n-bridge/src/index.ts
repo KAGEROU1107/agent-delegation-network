@@ -15,12 +15,19 @@
 import { createT3nSession } from "./t3n_auth.js";
 import { runAdnWithRealDid } from "./adn_runner.js";
 import { registerAdnContract, invokeProcessData, invokeValidateQuality, fetchContractLogs } from "./contract_bridge.js";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WASM_PATH = join(__dirname, "../../contract/target/wasm32-wasip2/release/adn_processor.wasm");
+const CSV_PATH = join(__dirname, "../../data/sales_Q1-2026_US_premium.csv");
+
+function parseSaleAmounts(): number[] {
+  const lines = readFileSync(CSV_PATH, "utf-8").trim().split("\n");
+  // Header: id,region,product_type,sale_amount,sale_date,sales_rep
+  return lines.slice(1).map((l) => parseFloat(l.split(",")[3])).filter((v) => !isNaN(v));
+}
 
 async function main() {
   const apiKey = process.env.T3N_API_KEY;
@@ -84,15 +91,18 @@ async function main() {
       console.log("  [+] Registering WASM contract with T3N...");
       const contractInfo = await registerAdnContract(tenant, tenantDid);
       console.log(`  [+] Registered: tail=${contractInfo.tail} version=${contractInfo.version}`);
-      console.log(`  [+] Script: z:${tenantDid}:${contractInfo.tail}`);
+      console.log(`  [+] Script: z:${tenantDid.slice("did:t3n:".length)}:${contractInfo.tail}`);
 
       console.log("  [+] Invoking process-data in TEE...");
+      const salesRecords = parseSaleAmounts();
+      console.log(`  [+] Sending ${salesRecords.length} sale records into TEE enclave for computation`);
       const teeResult = await invokeProcessData(t3n, tenantDid, {
-        data_source: "sales_database_v2",
+        data_source: "sales_Q1-2026_US_premium.csv",
         time_period: "Q1-2026",
         filters: ["region:US", "product_type:premium"],
+        records: salesRecords,
       });
-      console.log(`  [+] TEE result: ${teeResult.records_processed} records | avg=$${teeResult.avg_value}`);
+      console.log(`  [+] TEE result: ${teeResult.records_processed} records | total=$${teeResult.total_revenue} | avg=$${teeResult.avg_value} | min=$${teeResult.min_value} | max=$${teeResult.max_value} | trend=${teeResult.trend}`);
       console.log(`  [+] processed_in_tee: ${teeResult.processed_in_tee}`);
 
       console.log("  [+] Invoking validate-quality in TEE...");

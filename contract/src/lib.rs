@@ -17,6 +17,10 @@ struct ProcessDataInput {
     time_period: String,
     #[serde(default)]
     filters: Vec<String>,
+    // Actual sale amounts — the TEE computes stats from these inside the enclave.
+    // Callers must provide at least one record.
+    #[serde(default)]
+    records: Vec<f64>,
 }
 
 #[derive(Serialize)]
@@ -76,13 +80,45 @@ impl Guest for Component {
         let params: ProcessDataInput = serde_json::from_slice(&bytes)
             .map_err(|e| format!("process-data: bad input: {e}"))?;
 
+        if params.records.is_empty() {
+            return Err("process-data: records array must not be empty".to_string());
+        }
+
+        let n = params.records.len();
+        let total: f64 = params.records.iter().sum();
+        let avg = (total / n as f64 * 100.0).round() / 100.0;
+        let min_val = params.records.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max_val = params.records.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+
+        // Trend: compare first-half avg vs second-half avg.
+        // >5% growth → "increasing"; <−5% → "decreasing"; else "stable".
+        let mid = n / 2;
+        let h1_avg = if mid > 0 {
+            params.records[..mid].iter().sum::<f64>() / mid as f64
+        } else {
+            avg
+        };
+        let h2_avg = if n - mid > 0 {
+            params.records[mid..].iter().sum::<f64>() / (n - mid) as f64
+        } else {
+            avg
+        };
+        let pct_change = if h1_avg != 0.0 { (h2_avg - h1_avg) / h1_avg } else { 0.0 };
+        let trend = if pct_change > 0.05 {
+            "increasing"
+        } else if pct_change < -0.05 {
+            "decreasing"
+        } else {
+            "stable"
+        };
+
         let out = ProcessDataOutput {
-            records_processed: 30,
-            total_revenue: 13253.0,
-            avg_value: 441.77,
-            min_value: 189.0,
-            max_value: 688.0,
-            trend: "increasing".to_string(),
+            records_processed: n as u32,
+            total_revenue: (total * 100.0).round() / 100.0,
+            avg_value: avg,
+            min_value: (min_val * 100.0).round() / 100.0,
+            max_value: (max_val * 100.0).round() / 100.0,
+            trend: trend.to_string(),
             processed_in_tee: true,
             data_source: params.data_source,
             time_period: params.time_period,

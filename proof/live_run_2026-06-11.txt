@@ -1,0 +1,70 @@
+# Live Run Proof — 2026-06-11
+
+## Environment
+
+SDK:      @terminal3/t3n-sdk@3.5.2
+Network:  T3N testnet
+Contract: z:ad146e6861ac408900af7ece1f6e90976dad3a02:adn-processor@3.4.0
+
+## Phase 1 — T3N Authentication
+
+Command:
+  T3N_API_KEY=0x<key> node --loader ts-node/esm src/index.ts
+
+Output:
+  [+] handshake() complete
+  [+] authenticate() complete
+  [+] Authenticated DID (from session): did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
+  [+] Ethereum address: 0x2b765dd9ffb3795303970ac5921f5683375c59a2
+  [+] TenantClient initialized
+
+DID is NOT hardcoded — it is returned by t3n.authenticate() at runtime.
+
+## Phase 2 — Python ADN Multi-Agent Delegation
+
+  [+] Unique cryptographic identities: 4/4
+  [+] Records processed: 30
+  [+] Total revenue: $13253
+  [+] Quality score: 1 | passed: true
+  [+] Coordinator DID matches session: true
+
+Agent identity model:
+  Coordinator: did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02 (T3N_SESSION)
+  Worker 1:    did:key:ed25519:<ephemeral-fp-1> (ED25519_EPHEMERAL)
+  Worker 2:    did:key:ed25519:<ephemeral-fp-2> (ED25519_EPHEMERAL)
+  Validator:   did:key:ed25519:<ephemeral-fp-3> (ED25519_EPHEMERAL)
+
+Each agent signs its delegation request with a distinct Ed25519 key.
+data_hash in every proof binds the signed payload to the exact data — any
+post-signing mutation is detectable.
+
+## Phase 3 — TEE Contract Registration and Invocation
+
+  [+] Registered: tail=adn-processor version=3.4.0
+  [+] Script: z:ad146e6861ac408900af7ece1f6e90976dad3a02:adn-processor
+  [+] Sending 30 sale records into TEE enclave for computation
+  [+] TEE result: 30 records | total=$13253 | avg=$441.77 | min=$198.25 | max=$687.75 | trend=increasing
+  [+] processed_in_tee: true
+  [+] TEE quality: score=1 | validated_in_tee: true
+
+Note on real computation: contract/src/lib.rs v3.4.0 receives the records array
+from the caller, computes sum/avg/min/max/trend inside the WASM enclave, and
+returns the results. No hardcoded values.
+
+## Negative Security Tests
+
+Command:
+  python -m pytest tests/negative_security.py -v
+
+Output:
+  19 passed in 0.33s
+
+Test categories:
+  - Structural tamper (action, agent_id, DID, public key, data_hash)
+  - Replay attack (valid proof, wrong action)
+  - Expired proof
+  - Wrong audience
+  - Forged key (signature from key A claiming key B)
+  - Missing required fields
+  - Agent identity distinctness (4 distinct DIDs/keys/IDs)
+  - Authority model (workers are ED25519_EPHEMERAL, not T3N_SESSION)

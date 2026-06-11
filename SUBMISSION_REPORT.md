@@ -5,7 +5,7 @@
 **Submission date**: 2026-06-11  
 **Deadline**: 2026-06-22  
 **Repo**: https://github.com/KAGEROU1107/agent-delegation-network  
-**Final commit**: 1318b2d  
+**Final commit**: c3a952c  
 **SDK**: `@terminal3/t3n-sdk@3.5.2`  
 **WASM**: `sha256:3b1fbb73a73f7cc8aa7bb2f65fc68c9d764a0b767a2bac53d370d1e1bdf53a99` (v3.6.0 — with delegation enforcement)
 
@@ -20,7 +20,7 @@ A multi-agent delegation network where a coordinator obtains a real Terminal 3 D
 | Capability | Evidence |
 |---|---|
 | T3N handshake + authenticate | Phase 1 — real DID from testnet every run |
-| Rust/WASM TEE contract (v3.5.0) | Registered + invoked: `z:ad146e6861ac408900af7ece1f6e90976dad3a02:adn-processor` |
+| Rust/WASM TEE contract (v3.6.0) | Registered + invoked: `z:ad146e6861ac408900af7ece1f6e90976dad3a02:adn-processor` |
 | Runtime enclave computation | 30 CSV records → TEE computes total/avg/min/max/trend |
 | All 20 WIT exports invoked | Phase 4 — 18/18 functions `[+]` in clean run |
 | Agent Auth SDK — credential lifecycle | buildDelegationCredential → sign → validate → revoke SUCCESS |
@@ -28,7 +28,7 @@ A multi-agent delegation network where a coordinator obtains a real Terminal 3 D
 | Delegation enforcement test | Pre/post revocation calls logged; behavior documented |
 | Negative live TEE test | Empty records → `process-data: records cannot be empty` rejection |
 | Multi-agent Ed25519 delegation | 4 distinct identities, signed payloads, tamper detection |
-| Local negative security tests | 19/19 pass |
+| Local negative security tests | 33/33 pass |
 
 ---
 
@@ -57,8 +57,8 @@ Full output: [`t3n_bridge_proof.txt`](t3n_bridge_proof.txt) · [`proof/live_run_
   [+] Unique cryptographic identities: 4/4
   [+] Records processed: 30 | Quality score: 1 | Coordinator DID matches session: true
 
-[Phase 3] TEE Contract (v3.5.0)...
-  [+] Registered: tail=adn-processor version=3.5.0
+[Phase 3] TEE Contract (v3.6.0)...
+  [+] Registered: tail=adn-processor version=3.6.0
   [+] 30 sale records → total=$13253 | avg=$441.77 | min=$198.25 | max=$687.75 | trend=increasing
   [+] processed_in_tee: true | validated_in_tee: true
   [+] Negative test — empty records → TEE rejected: process-data: records cannot be empty
@@ -204,17 +204,19 @@ Residual gap: an `is-live` host primitive for real-time revocation registry look
 
 ## Security
 
-19 negative security tests across 6 categories:
+33 negative security tests across 8 categories:
 
 | Category | Tests | Result |
 |---|---|---|
-| Structural tamper | 6 | 19/19 PASS |
+| Structural tamper | 6 | 33/33 PASS |
 | Replay attack | 2 | |
 | Expired proof | 2 | |
 | Wrong audience | 2 | |
 | Forged key | 1 | |
 | Missing fields | 4 | |
 | Identity distinctness | 2 | |
+| Delegation policy enforcement | 9 | |
+| Credential TTL window | 5 | |
 
 Run: `python -m pytest tests/negative_security.py -v`
 

@@ -7,7 +7,7 @@ A multi-agent delegation system built on the Terminal 3 ADK. Agents authenticate
 
 ## Live Proof
 
-All phases run against the real T3N testnet (contract v3.5.0). Full output: [`t3n_bridge_proof.txt`](t3n_bridge_proof.txt) · [`proof/live_run_2026-06-11.txt`](proof/live_run_2026-06-11.txt)
+All phases run against the real T3N testnet (contract v3.6.0 — with contract-layer delegation enforcement). Full output: [`t3n_bridge_proof.txt`](t3n_bridge_proof.txt) · [`proof/live_run_v3.6.0.txt`](proof/live_run_v3.6.0.txt)
 
 ```
 [Phase 0] Agent Auth SDK — delegation credential + enforcement cycle...
@@ -32,8 +32,8 @@ All phases run against the real T3N testnet (contract v3.5.0). Full output: [`t3
   [+] Quality score: 1 | passed: true
   [+] Coordinator DID matches session: true
 
-[Phase 3] TEE Contract (v3.5.0 — real computation)
-  [+] Registered: tail=adn-processor version=3.5.0
+[Phase 3] TEE Contract (v3.6.0 — real computation + delegation enforcement)
+  [+] Registered: tail=adn-processor version=3.6.0
   [+] Sending 30 sale records into TEE enclave for computation
   [+] TEE result: 30 records | total=$13253 | avg=$441.77 | min=$198.25 | max=$687.75 | trend=increasing
   [+] processed_in_tee: true
@@ -47,7 +47,7 @@ All phases run against the real T3N testnet (contract v3.5.0). Full output: [`t3
   [+] cast-vote, tally-votes, log-decision, audit-decisions, lock-bond, verify-and-settle
   [+] All 20 WIT exports invoked via live T3N TEE bridge.
 
-WASM contract: REGISTERED + INVOKED (v3.5.0, 20/20 WIT functions)
+WASM contract: REGISTERED + INVOKED (v3.6.0, 20/20 WIT functions)
 ```
 
 **Real enclave computation**: 30 CSV sale records are sent into the TEE at runtime. The Rust contract computes `total`, `avg`, `min`, `max`, and `trend` inside the hardware-isolated enclave — no hardcoded values.
@@ -60,7 +60,7 @@ WASM contract: REGISTERED + INVOKED (v3.5.0, 20/20 WIT functions)
 ```
 SDK:    @terminal3/t3n-sdk@3.5.2
 WASM:   sha256:3b1fbb73a73f7cc8aa7bb2f65fc68c9d764a0b767a2bac53d370d1e1bdf53a99 (adn_processor.wasm v3.6.0 — with contract-layer delegation enforcement)
-Commit: 501465b  (last proof-passing commit before audit remediation)
+Commit: c3a952c
 Run:    T3N_API_KEY=0x<key> node --loader ts-node/esm src/index.ts  (from t3n-bridge/)
 ```
 
@@ -193,12 +193,13 @@ Run the 10-phase demo: `T3N_API_KEY=0x<key> python demo/features_demo.py`
 
 ## Security
 
-19 negative security tests cover: structural tamper, replay attack, expired proof,
-wrong audience, forged key, missing required fields, and agent identity distinctness.
+33 negative security tests across 8 categories: structural tamper, replay attack,
+expired proof, wrong audience, forged key, missing required fields, agent identity
+distinctness, delegation policy enforcement, and credential TTL window validation.
 
 ```
 python -m pytest tests/negative_security.py -v
-# 19 passed in 0.33s
+# 33 passed in 0.25s
 ```
 
 ---
@@ -210,7 +211,7 @@ agent-delegation-network/
 ├── t3n-bridge/                  # TypeScript — real T3N ADK integration
 │   ├── src/
 │   │   ├── t3n_auth.ts          # handshake() + authenticate() → DID
-│   │   ├── contract_bridge.ts   # TEE contract registration + invocation (v3.5.0)
+│   │   ├── contract_bridge.ts   # TEE contract registration + invocation (v3.6.0)
 │   │   ├── map_setup.ts         # KV map creation with contract ACLs
 │   │   ├── adn_runner.ts        # spawns Python ADN with real DID
 │   │   └── index.ts             # main entry point
@@ -238,12 +239,13 @@ agent-delegation-network/
 │   ├── adn_demo.py              # Phase 1 multi-agent workflow
 │   └── features_demo.py         # All 10 phases orchestrated demo
 ├── tests/
-│   └── negative_security.py     # 19 negative security tests (all pass)
+│   └── negative_security.py     # 33 negative security tests (all pass)
 ├── proof/
-│   └── live_run_2026-06-11.txt  # Structured run evidence
+│   ├── live_run_v3.6.0.txt      # v3.6.0 live proof — delegation enforcement
+│   └── live_run_v3.5.0.txt      # v3.5.0 baseline proof
 ├── data/
 │   └── sales_Q1-2026_US_premium.csv
 ├── velvet_log.md                # Session narrative (Velvet Arc)
 ├── PHASES.md                    # Phase tracker
-└── t3n_bridge_proof.txt         # Live testnet output (v3.5.0)
+└── t3n_bridge_proof.txt         # Live testnet output (v3.6.0)
 ```

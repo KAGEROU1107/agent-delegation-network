@@ -142,6 +142,38 @@ The demo:
 
 ---
 
+## Creative Features (10 Phases)
+
+| Phase | Feature | TEE Functions | Status |
+|---|---|---|---|
+| 1 | Core ADN + Auth + TEE | process-data, validate-quality, delegate-task | ✅ LIVE |
+| 2 | Blind Multi-Agent Auction | submit-bid, resolve-auction | ✅ BUILT |
+| 3 | Agent Reputation Ledger | record-completion, get-reputation | ✅ BUILT |
+| 4 | Privacy-Preserving Personalization | send-personalized-outreach | ✅ BUILT |
+| 5 | Temporal Agent Delegation | issue-time-grant, check-grant | ✅ BUILT |
+| 6 | Cross-Tenant Verified Computation | (process-data) | ✅ BUILT |
+| 7 | Agentic KYC Pipeline | kyc-submit-step, kyc-get-status | ✅ BUILT |
+| 8 | TEE Secret Vault | store-secret, invoke-with-secret | ✅ BUILT |
+| 9 | Autonomous Agent DAO | cast-vote, tally-votes | ✅ BUILT |
+| 10 | Verifiable AI Decision Audit | log-decision, audit-decisions | ✅ BUILT |
+| 11 | Agent Performance Bond | lock-bond, verify-and-settle | ✅ BUILT |
+
+Run the 10-phase demo: `T3N_API_KEY=0x<key> python demo/features_demo.py`
+
+---
+
+## Security
+
+19 negative security tests cover: structural tamper, replay attack, expired proof,
+wrong audience, forged key, missing required fields, and agent identity distinctness.
+
+```
+python -m pytest tests/negative_security.py -v
+# 19 passed in 0.33s
+```
+
+---
+
 ## Project Structure
 
 ```
@@ -149,23 +181,40 @@ agent-delegation-network/
 ├── t3n-bridge/                  # TypeScript — real T3N ADK integration
 │   ├── src/
 │   │   ├── t3n_auth.ts          # handshake() + authenticate() → DID
-│   │   ├── contract_bridge.ts   # TEE contract registration + invocation
+│   │   ├── contract_bridge.ts   # TEE contract registration + invocation (v3.5.0)
+│   │   ├── map_setup.ts         # KV map creation with contract ACLs
 │   │   ├── adn_runner.ts        # spawns Python ADN with real DID
 │   │   └── index.ts             # main entry point
 │   ├── package.json             # @terminal3/t3n-sdk@3.5.2
 │   └── tsconfig.json
 ├── contract/                    # Rust WASM TEE contract
-│   ├── wit/world.wit            # WIT interface (z:adn-processor@0.1.0)
-│   ├── src/lib.rs               # process-data, validate-quality, delegate-task
+│   ├── wit/world.wit            # WIT interface — 20 exported functions
+│   ├── src/lib.rs               # all 20 functions implemented
 │   └── Cargo.toml
 ├── src/                         # Python agent delegation network
 │   ├── agent_identity.py        # Ed25519 identity per agent
-│   ├── delegation_protocol.py   # signed request/response protocol
-│   ├── delegation_policy.py     # role-based authorization
-│   └── agent_delegation_network.py
+│   ├── blind_auction.py         # Phase 2 — sealed-bid auction
+│   ├── reputation_ledger.py     # Phase 3 — weighted reputation
+│   ├── secret_vault_agent.py    # Phase 8 — TEE secret vault
+│   ├── temporal_delegation.py   # Phase 5 — time-bounded grants
+│   ├── agent_dao.py             # Phase 9 — sealed-vote DAO
+│   ├── decision_audit_agent.py  # Phase 10 — decision audit trail
+│   ├── kyc_pipeline.py          # Phase 7 — multi-agent KYC
+│   ├── performance_bond.py      # Phase 11 — escrow bond settlement
+│   ├── personalization_agent.py # Phase 4 — privacy-preserving outreach
+│   └── cross_tenant_collab.py   # Phase 6 — multi-party compute
+├── openrouter/
+│   └── client.py                # LLM reasoning layer (OpenRouter wrapper)
 ├── demo/
-│   └── adn_demo.py              # multi-agent workflow
+│   ├── adn_demo.py              # Phase 1 multi-agent workflow
+│   └── features_demo.py         # All 10 phases orchestrated demo
+├── tests/
+│   └── negative_security.py     # 19 negative security tests (all pass)
+├── proof/
+│   └── live_run_2026-06-11.txt  # Structured run evidence
 ├── data/
 │   └── sales_Q1-2026_US_premium.csv
-└── t3n_bridge_proof.txt         # live testnet output
+├── velvet_log.md                # Session narrative (Velvet Arc)
+├── PHASES.md                    # Phase tracker
+└── t3n_bridge_proof.txt         # Live testnet output (v3.5.0)
 ```

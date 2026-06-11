@@ -36,8 +36,8 @@ Full output: [`proof/live_run_v3.8.0_session5.txt`](proof/live_run_v3.8.0_sessio
   [+] Quality score: 1 | passed: true
   [+] Coordinator DID matches session: true
 
-[Phase 3] TEE Contract (v3.6.0 — real computation + delegation enforcement)
-  [+] Registered: tail=adn-processor version=3.6.0
+[Phase 3] TEE Contract (v3.8.0 — real computation + hardened delegation enforcement)
+  [+] Registered: tail=adn-processor version=3.8.0
   [+] Sending 30 sale records into TEE enclave for computation
   [+] TEE result: 30 records | total=$13253 | avg=$441.77 | min=$198.25 | max=$687.75 | trend=increasing
   [+] processed_in_tee: true
@@ -51,7 +51,7 @@ Full output: [`proof/live_run_v3.8.0_session5.txt`](proof/live_run_v3.8.0_sessio
   [+] cast-vote, tally-votes, log-decision, audit-decisions, lock-bond, verify-and-settle
   [+] All 20 WIT exports invoked via live T3N TEE bridge.
 
-WASM contract: REGISTERED + INVOKED (v3.6.0, 20/20 WIT functions)
+WASM contract: REGISTERED + INVOKED (v3.8.0, 20/20 WIT functions)
 ```
 
 **Real enclave computation**: 30 CSV sale records are sent into the TEE at runtime. The Rust contract computes `total`, `avg`, `min`, `max`, and `trend` inside the hardware-isolated enclave. No hardcoded result values are used for the core computation path.

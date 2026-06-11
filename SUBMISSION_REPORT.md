@@ -20,7 +20,7 @@ A multi-agent delegation network where a coordinator obtains a real Terminal 3 D
 | Capability | Evidence |
 |---|---|
 | T3N handshake + authenticate | Phase 1 — real DID from testnet every run |
-| Rust/WASM TEE contract (v3.6.0) | Registered + invoked: `z:ad146e6861ac408900af7ece1f6e90976dad3a02:adn-processor` |
+| Rust/WASM TEE contract (v3.8.0) | Registered + invoked: `z:ad146e6861ac408900af7ece1f6e90976dad3a02:adn-processor` |
 | Runtime enclave computation | 30 CSV records → TEE computes total/avg/min/max/trend |
 | All 20 WIT exports invoked | Phase 3: 2 core functions; Phase 4: remaining 18/18 `[+]` in clean run |
 | Agent Auth SDK — credential lifecycle | buildDelegationCredential → sign → validate → revoke SUCCESS |
@@ -34,31 +34,31 @@ A multi-agent delegation network where a coordinator obtains a real Terminal 3 D
 
 ## Live Proof Summary
 
-Full output: [`t3n_bridge_proof.txt`](t3n_bridge_proof.txt) · [`proof/live_run_v3.5.0.txt`](proof/live_run_v3.5.0.txt) · [`proof/live_run_v3.6.0.txt`](proof/live_run_v3.6.0.txt)
+Full output: [`proof/live_run_v3.8.0_session5.txt`](proof/live_run_v3.8.0_session5.txt) · [`proof/live_run_v3.6.0.txt`](proof/live_run_v3.6.0.txt)
 
 ```
 [Phase 1] Authenticating with Terminal 3 testnet...
   [+] handshake() complete
   [+] authenticate() complete
   [+] Authenticated DID: did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
-  [+] Ethereum address: 0x2b765dd9ffb3795303970ac5921f5683375c59a2
+  [+] Ethereum address: 0x7caafad928560b686ac863c444efd465e19848ea
   [+] TenantClient initialized
 
 [Phase 0] Agent Auth SDK — delegation credential + enforcement cycle...
-  [+] credential built: vc_id=bed1f150d31275e6ba62f845c8ac43b3
+  [+] credential built: vc_id=a011d180ee5aa09c12c777023ca360ec
   [+] granted functions: delegate-task, process-data
-  [+] signed with EIP-191: user_sig=_2q306UHkCarFri3...
-  [+] envelope: agent_sig=I1Rfj4OIWXkPgqj8... nonce=EQ1wpPyd...
+  [+] signed with EIP-191: user_sig=hPQgFKIVxqqgn6q9...
+  [+] envelope: agent_sig=A-uyCEDjDwW-zTmm... nonce=OkZBIGUl...
   [+] pre-revocation call:  ACCEPTED: {"delegation_id":...,"status":"ROUTED",...}
   [+] revocation: SUCCESS (tee:delegation/contracts::revoke)
-  [+] post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer — v3.6.0)
+  [+] post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer — v3.8.0)
 
 [Phase 2] Python ADN — Multi-Agent Delegation...
   [+] Unique cryptographic identities: 4/4
   [+] Records processed: 30 | Quality score: 1 | Coordinator DID matches session: true
 
-[Phase 3] TEE Contract (v3.6.0)...
-  [+] Registered: tail=adn-processor version=3.6.0
+[Phase 3] TEE Contract (v3.8.0)...
+  [+] Registered: tail=adn-processor version=3.8.0
   [+] 30 sale records → total=$13253 | avg=$441.77 | min=$198.25 | max=$687.75 | trend=increasing
   [+] processed_in_tee: true | validated_in_tee: true
   [+] Negative test — empty records → TEE rejected: process-data: records cannot be empty

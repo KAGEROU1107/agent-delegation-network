@@ -16,6 +16,7 @@ import { createT3nSession } from "./t3n_auth.js";
 import { runAdnWithRealDid } from "./adn_runner.js";
 import {
   registerAdnContract,
+  type ContractInfo,
   invokeProcessData, invokeValidateQuality,
   invokeDelegateTask,
   invokeSubmitBid, invokeResolveAuction,
@@ -76,10 +77,13 @@ async function main() {
 
   const { t3n, tenant, tenantDid } = session;
 
-  // ── Contract pre-registration (before Phase 0 so v3.6.0 exists when called) ──
+  // ── Contract pre-registration (before Phase 0 so v3.8.0 exists when called) ──
+  // Cache the result: the first register() call is most likely to return contractId.
+  // If Phase 3 re-registers the same version, the SDK may suppress the response.
+  let preRegisteredContract: ContractInfo | null = null;
   if (existsSync(WASM_PATH)) {
     try {
-      await registerAdnContract(tenant, tenantDid);
+      preRegisteredContract = await registerAdnContract(tenant, tenantDid);
     } catch { /* ignore — Phase 3 logs detailed status */ }
   }
 
@@ -132,7 +136,8 @@ async function main() {
     console.log("  Then re-run this demo to enable Phase 3 (contract registration + invocation).");
   } else {
     try {
-      const contractInfo = await registerAdnContract(tenant, tenantDid);
+      // Reuse pre-registration result to preserve contractId from the first register() call.
+      const contractInfo = preRegisteredContract ?? await registerAdnContract(tenant, tenantDid);
       console.log(`  [+] Registered: tail=${contractInfo.tail} version=${contractInfo.version}`);
       console.log(`  [+] Script: z:${tenantDid.slice("did:t3n:".length)}:${contractInfo.tail}`);
 

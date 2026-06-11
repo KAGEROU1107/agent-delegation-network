@@ -2,17 +2,18 @@
 
 | Phase | Feature | Status | TEE Functions | Map |
 |---|---|---|---|---|
-| 1 | Core ADN + T3N Auth + TEE Contract | ✅ LIVE | process-data, validate-quality, delegate-task | — |
-| 2 | Blind Multi-Agent Auction | ✅ BUILT | submit-bid, resolve-auction | auction-bids |
-| 3 | Agent Reputation Ledger | ✅ BUILT | record-completion, get-reputation | reputation-ledger |
-| 4 | Privacy-Preserving Personalization | ✅ BUILT | send-personalized-outreach | — |
-| 5 | Temporal Agent Delegation | ✅ BUILT | issue-time-grant, check-grant | time-grants |
-| 6 | Cross-Tenant Verified Computation | ✅ BUILT | (uses existing process-data) | — |
-| 7 | Agentic KYC Pipeline | ✅ BUILT | kyc-submit-step, kyc-get-status | kyc-pipeline |
-| 8 | TEE Secret Vault | ✅ BUILT | store-secret, invoke-with-secret | agent-vault |
-| 9 | Autonomous Agent DAO | ✅ BUILT | cast-vote, tally-votes | dao-votes |
-| 10 | Verifiable AI Decision Audit | ✅ BUILT | log-decision, audit-decisions | decision-audit |
-| 11 | Agent Performance Bond | ✅ BUILT | lock-bond, verify-and-settle | perf-bonds |
+| 0 | Agent Auth SDK — User Delegation | ✅ LIVE (T3N testnet) | (SDK-native DelegationCredential) | — |
+| 1 | Core ADN + T3N Auth + TEE Contract | ✅ LIVE (T3N testnet, proof committed) | process-data, validate-quality, delegate-task | — |
+| 2 | Blind Multi-Agent Auction | ✅ Contract live — TEE-invoked via bridge | submit-bid, resolve-auction | auction-bids |
+| 3 | Agent Reputation Ledger | ✅ Contract live — TEE-invoked via bridge | record-completion, get-reputation | reputation-ledger |
+| 4 | Privacy-Preserving Personalization | ✅ Contract live — TEE-invoked via bridge | send-personalized-outreach | — |
+| 5 | Temporal Agent Delegation | ✅ Contract live — TEE-invoked via bridge | issue-time-grant, check-grant | time-grants |
+| 6 | Cross-Tenant Verified Computation | ✅ Contract live — TEE-invoked via bridge | (uses existing process-data) | — |
+| 7 | Agentic KYC Pipeline | ✅ Contract live — TEE-invoked via bridge | kyc-submit-step, kyc-get-status | kyc-pipeline |
+| 8 | TEE Secret Vault | ✅ Contract live — TEE-invoked via bridge | store-secret, invoke-with-secret | agent-vault |
+| 9 | Autonomous Agent DAO | ✅ Contract live — TEE-invoked via bridge | cast-vote, tally-votes | dao-votes |
+| 10 | Verifiable AI Decision Audit | ✅ Contract live — TEE-invoked via bridge | log-decision, audit-decisions | decision-audit |
+| 11 | Agent Performance Bond | ✅ Contract live — TEE-invoked via bridge | lock-bond, verify-and-settle | perf-bonds |
 
 ## TRIAD Gate Criteria
 - **T**ruth: Live T3N testnet execution confirmed

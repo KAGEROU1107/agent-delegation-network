@@ -7,9 +7,14 @@ A multi-agent delegation system built on the Terminal 3 ADK. Agents authenticate
 
 ## Live Proof
 
-All three phases run against the real T3N testnet:
+All phases run against the real T3N testnet (contract v3.5.0). Full output: [`t3n_bridge_proof.txt`](t3n_bridge_proof.txt) · [`proof/live_run_2026-06-11.txt`](proof/live_run_2026-06-11.txt)
 
 ```
+[Phase 0] Agent Auth SDK — user-to-agent delegation credential...
+  [+] credential built: vc_id=<16-byte-id>
+  [+] granted functions: delegate-task, process-data
+  [+] signed with EIP-191: user_sig=<sig-prefix>...
+
 [Phase 1] T3N Auth
   [+] handshake() complete
   [+] authenticate() complete
@@ -22,19 +27,26 @@ All three phases run against the real T3N testnet:
   [+] Quality score: 1 | passed: true
   [+] Coordinator DID matches session: true
 
-[Phase 3] TEE Contract (v3.4.0 — real computation)
-  [+] Registered: tail=adn-processor version=3.4.0
+[Phase 3] TEE Contract (v3.5.0 — real computation)
+  [+] Registered: tail=adn-processor version=3.5.0
   [+] Sending 30 sale records into TEE enclave for computation
   [+] TEE result: 30 records | total=$13253 | avg=$441.77 | min=$198.25 | max=$687.75 | trend=increasing
   [+] processed_in_tee: true
   [+] validate-quality → score=1 | validated_in_tee: true
 
-WASM contract: REGISTERED + INVOKED (v3.4.0)
+[Phase 4] Full Feature Contract Coverage — all 20 WIT exports invoked
+  [+] delegate-task, submit-bid, resolve-auction, record-completion, get-reputation
+  [+] send-personalized-outreach, issue-time-grant, check-grant
+  [+] kyc-submit-step, kyc-get-status, store-secret, invoke-with-secret
+  [+] cast-vote, tally-votes, log-decision, audit-decisions, lock-bond, verify-and-settle
+  [+] All 20 WIT exports invoked via live T3N TEE bridge.
+
+WASM contract: REGISTERED + INVOKED (v3.5.0, 20/20 WIT functions)
 ```
 
-Full output: [`t3n_bridge_proof.txt`](t3n_bridge_proof.txt) · [`proof/live_run_2026-06-11.txt`](proof/live_run_2026-06-11.txt)
-
 **Real enclave computation**: 30 CSV sale records are sent into the TEE at runtime. The Rust contract computes `total`, `avg`, `min`, `max`, and `trend` inside the hardware-isolated enclave — no hardcoded values.
+
+> **Note on the 10-phase Python demo**: `demo/features_demo.py` demonstrates the interaction patterns of each feature using a local TEE simulation (`_tee_stub`). The authoritative live proof of all 20 contract functions is the TypeScript bridge run above — every WIT export is invoked against the real T3N testnet in Phase 4.
 
 ---
 
@@ -146,17 +158,18 @@ The demo:
 
 | Phase | Feature | TEE Functions | Status |
 |---|---|---|---|
-| 1 | Core ADN + Auth + TEE | process-data, validate-quality, delegate-task | ✅ LIVE |
-| 2 | Blind Multi-Agent Auction | submit-bid, resolve-auction | ✅ BUILT |
-| 3 | Agent Reputation Ledger | record-completion, get-reputation | ✅ BUILT |
-| 4 | Privacy-Preserving Personalization | send-personalized-outreach | ✅ BUILT |
-| 5 | Temporal Agent Delegation | issue-time-grant, check-grant | ✅ BUILT |
-| 6 | Cross-Tenant Verified Computation | (process-data) | ✅ BUILT |
-| 7 | Agentic KYC Pipeline | kyc-submit-step, kyc-get-status | ✅ BUILT |
-| 8 | TEE Secret Vault | store-secret, invoke-with-secret | ✅ BUILT |
-| 9 | Autonomous Agent DAO | cast-vote, tally-votes | ✅ BUILT |
-| 10 | Verifiable AI Decision Audit | log-decision, audit-decisions | ✅ BUILT |
-| 11 | Agent Performance Bond | lock-bond, verify-and-settle | ✅ BUILT |
+| 0 | Agent Auth SDK — User Delegation | (SDK-native, no TEE call) | ✅ LIVE (T3N testnet) |
+| 1 | Core ADN + Auth + TEE | process-data, validate-quality, delegate-task | ✅ LIVE (T3N testnet, proof committed) |
+| 2 | Blind Multi-Agent Auction | submit-bid, resolve-auction | ✅ Contract live — TEE-invoked via bridge |
+| 3 | Agent Reputation Ledger | record-completion, get-reputation | ✅ Contract live — TEE-invoked via bridge |
+| 4 | Privacy-Preserving Personalization | send-personalized-outreach | ✅ Contract live — TEE-invoked via bridge |
+| 5 | Temporal Agent Delegation | issue-time-grant, check-grant | ✅ Contract live — TEE-invoked via bridge |
+| 6 | Cross-Tenant Verified Computation | (process-data) | ✅ Contract live — TEE-invoked via bridge |
+| 7 | Agentic KYC Pipeline | kyc-submit-step, kyc-get-status | ✅ Contract live — TEE-invoked via bridge |
+| 8 | TEE Secret Vault | store-secret, invoke-with-secret | ✅ Contract live — TEE-invoked via bridge |
+| 9 | Autonomous Agent DAO | cast-vote, tally-votes | ✅ Contract live — TEE-invoked via bridge |
+| 10 | Verifiable AI Decision Audit | log-decision, audit-decisions | ✅ Contract live — TEE-invoked via bridge |
+| 11 | Agent Performance Bond | lock-bond, verify-and-settle | ✅ Contract live — TEE-invoked via bridge |
 
 Run the 10-phase demo: `T3N_API_KEY=0x<key> python demo/features_demo.py`
 

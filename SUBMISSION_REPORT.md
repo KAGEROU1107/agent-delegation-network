@@ -5,7 +5,8 @@
 **Submission date**: 2026-06-11  
 **Deadline**: 2026-06-22  
 **Repo**: https://github.com/KAGEROU1107/agent-delegation-network  
-**Final submission commit**: c573443  
+**Final submission commit**: 78f5023 (README cleanup — no functional change)  
+**Last functional commit**: c3a952c (33 tests + BUG-001 map workaround + contractId probing)  
 **Last live proof commit**: c3a952c  
 **SDK**: `@terminal3/t3n-sdk@3.5.2`  
 **WASM**: `sha256:3b1fbb73a73f7cc8aa7bb2f65fc68c9d764a0b767a2bac53d370d1e1bdf53a99` (v3.6.0 — with delegation enforcement)
@@ -108,7 +109,7 @@ await revokeDelegation({ credentialJcsB64u, client: t3n, baseUrl: getNodeUrl() }
 
 ### Enforcement architecture note
 
-The SDK's delegation enforcement (vc_id revocation check, agent_sig verification, function scope) operates at the **contract layer**, not the T3N transport layer, for `generic-input` WIT contracts. The `tee:payroll` contract validates the `DelegationEnvelope` from its typed wire shape. A `generic-input` contract must implement envelope extraction itself. Documented as BUG-005.
+The `generic-input` contract implements contract-layer enforcement for **credential time window and function scope**. The bridge constructs the full `DelegationEnvelope` using SDK primitives, including user and agent signatures. Real-time revocation-registry lookup and in-contract verification of the full envelope signature are documented boundaries — a `tee:delegation/contracts::is-live` host primitive is not yet exposed for `generic-input` contracts. The demo uses short-lived credentials so expiry serves the same revocation property within the proof window. Documented as BUG-005.
 
 ---
 
@@ -161,7 +162,9 @@ Five issues discovered during integration, documented in [`bugs_found.md`](bugs_
 
 ### BUG-001: `tenant.contracts.register()` returns no numeric `contractId`
 
-`TenantContractsNamespace.register()` returns `Promise<unknown>`. `tenant.maps.create()` requires a numeric `contractId` in its ACL fields. No API exists to retrieve it after registration. Map/ACL features designed and ready; cannot be wired without this fix.
+`TenantContractsNamespace.register()` returns `Promise<unknown>`. `tenant.maps.create()` requires a numeric `contractId` in its ACL fields. No documented API exists to retrieve the numeric ID after registration.
+
+**Workaround implemented**: `registerAdnContract()` now probes the raw SDK response for any numeric `id`/`contractId` field. `setupAdnMaps()` is wired into the bridge and creates all 8 ADN feature maps. When the SDK does not return a `contractId`, map ACLs fall back to `writers/readers: "all"` with a diagnostic log. Contract-only ACLs will auto-activate if the SDK begins returning the numeric ID.
 
 **Category**: SDK gap
 
@@ -266,8 +269,8 @@ cargo build --target wasm32-wasip2 --release
 
 | Area | Status |
 |---|---|
-| Tenant map ACL wiring | Designed (map_setup.ts), not wired — blocked by BUG-001 (no contractId from register()) |
+| Tenant map ACL wiring | **Wired** — 8 maps created via `setupAdnMaps()`; ACLs use `writers/readers:"all"` fallback when BUG-001 active (no contractId from SDK) |
 | Credential-gated execution (denial-after-revoke) | **IMPLEMENTED** — v3.6.0 contract enforces via time-bound expiry + WASI clock. See BUG-005. |
-| Secret Vault persistence | TEE pattern only — persistent storage through tenant maps blocked by BUG-001 |
+| Secret Vault persistence | TEE pattern only — persistent map storage depends on contract-only ACLs, which require SDK resolving BUG-001 (contractId from register()) |
 | Python demo live TEE | Uses `_tee_stub` local simulation; authoritative proof is TypeScript bridge Phase 4 |
 | Real-time revocation registry in WASM | Residual gap — requires undocumented host primitive; time-bound tokens used instead |

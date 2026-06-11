@@ -30,6 +30,7 @@ import {
   fetchContractLogs,
 } from "./contract_bridge.js";
 import { demonstrateAgentAuth } from "./agent_auth.js";
+import { b64uEncodeBytes } from "@terminal3/t3n-sdk";
 import { existsSync, readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -74,20 +75,21 @@ async function main() {
 
   const { t3n, tenant, tenantDid } = session;
 
-  // ── Phase 0: Agent Auth SDK — User-to-Agent Delegation ──────────────────────
-  console.log("\n[Phase 0] Agent Auth SDK — user-to-agent delegation credential...");
+  // ── Phase 0: Agent Auth SDK — User-to-Agent Delegation + Enforcement ─────────
+  console.log("\n[Phase 0] Agent Auth SDK — delegation credential + enforcement cycle...");
   try {
     const authResult = await demonstrateAgentAuth(t3n, tenantDid, apiKey);
     console.log(`  [+] credential built: vc_id=${authResult.vcIdHex}`);
-    console.log(`  [+] user DID: ${authResult.credential.user_did}`);
     console.log(`  [+] granted functions: ${authResult.grantedFunctions.join(", ")}`);
     console.log(`  [+] signed with EIP-191: user_sig=${authResult.userSigB64u.slice(0, 16)}...`);
-    console.log(`  [+] credential_jcs (b64u, first 32): ${authResult.credentialJcsB64u.slice(0, 32)}...`);
+    console.log(`  [+] envelope: agent_sig=${b64uEncodeBytes(authResult.envelope.agent_sig).slice(0, 16)}... nonce=${b64uEncodeBytes(authResult.envelope.nonce).slice(0, 8)}...`);
+    console.log(`  [+] pre-revocation call:  ${authResult.preRevocationCallResult}`);
     if (authResult.revoked) {
       console.log(`  [+] revocation: SUCCESS (tee:delegation/contracts::revoke)`);
     } else {
-      console.log(`  [~] revocation: ${authResult.revokeError ?? "no error"} (credential not in T3N delegation ledger — expected for local-signed demo)`);
+      console.log(`  [~] revocation: ${authResult.revokeError ?? "no error"}`);
     }
+    console.log(`  [+] post-revocation call: ${authResult.postRevocationCallResult}`);
   } catch (err) {
     console.error(`  [-] Agent Auth error: ${(err as Error).message}`);
   }
@@ -145,6 +147,17 @@ async function main() {
 
       const logs = await fetchContractLogs(tenant);
       if (logs.length > 0) console.log("  [+] Contract logs:", logs);
+
+      // ── Negative live test: send invalid input to prove TEE enforces validation ─
+      console.log("  [+] Negative test — empty records array (TEE must reject)...");
+      try {
+        await invokeProcessData(t3n, tenantDid, {
+          data_source: "test", time_period: "Q1", filters: [], records: [],
+        });
+        console.log("  [-] UNEXPECTED: TEE accepted empty records (should have rejected)");
+      } catch (err) {
+        console.log(`  [+] TEE correctly rejected empty records: ${(err as Error).message.slice(0, 80)}`);
+      }
     } catch (err) {
       console.error(`  [-] Contract error: ${(err as Error).message}`);
     }

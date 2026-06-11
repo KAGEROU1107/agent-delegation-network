@@ -10,10 +10,14 @@ A multi-agent delegation system built on the Terminal 3 ADK. Agents authenticate
 All phases run against the real T3N testnet (contract v3.5.0). Full output: [`t3n_bridge_proof.txt`](t3n_bridge_proof.txt) · [`proof/live_run_2026-06-11.txt`](proof/live_run_2026-06-11.txt)
 
 ```
-[Phase 0] Agent Auth SDK — user-to-agent delegation credential...
+[Phase 0] Agent Auth SDK — delegation credential + enforcement cycle...
   [+] credential built: vc_id=<16-byte-id>
   [+] granted functions: delegate-task, process-data
   [+] signed with EIP-191: user_sig=<sig-prefix>...
+  [+] envelope: agent_sig=<agent-sig>... nonce=<nonce>...
+  [+] pre-revocation call:  ACCEPTED: {"delegation_id":...,"status":"ROUTED",...}
+  [+] revocation: SUCCESS (tee:delegation/contracts::revoke)
+  [+] post-revocation call: ACCEPTED (T3N validates envelope at contract layer, not transport — see bugs_found.md BUG-005)
 
 [Phase 1] T3N Auth
   [+] handshake() complete
@@ -33,6 +37,7 @@ All phases run against the real T3N testnet (contract v3.5.0). Full output: [`t3
   [+] TEE result: 30 records | total=$13253 | avg=$441.77 | min=$198.25 | max=$687.75 | trend=increasing
   [+] processed_in_tee: true
   [+] validate-quality → score=1 | validated_in_tee: true
+  [+] Negative test — empty records → TEE rejected: process-data: records cannot be empty
 
 [Phase 4] Full Feature Contract Coverage — all 20 WIT exports invoked
   [+] delegate-task, submit-bid, resolve-auction, record-completion, get-reputation
@@ -46,7 +51,17 @@ WASM contract: REGISTERED + INVOKED (v3.5.0, 20/20 WIT functions)
 
 **Real enclave computation**: 30 CSV sale records are sent into the TEE at runtime. The Rust contract computes `total`, `avg`, `min`, `max`, and `trend` inside the hardware-isolated enclave — no hardcoded values.
 
+**Negative live test**: Phase 3 also sends an empty `records: []` to `process-data` and confirms the TEE rejects it (`HTTP 400: process-data: records cannot be empty`). The contract does not blindly return success.
+
 > **Note on the 10-phase Python demo**: `demo/features_demo.py` demonstrates the interaction patterns of each feature using a local TEE simulation (`_tee_stub`). The authoritative live proof of all 20 contract functions is the TypeScript bridge run above — every WIT export is invoked against the real T3N testnet in Phase 4.
+
+**Artifact provenance**:
+```
+SDK:    @terminal3/t3n-sdk@3.5.2
+WASM:   sha256:928fa2d3852bd2f2b77097a03d78afa1bbfb9c55780e8128d757f9351c6a2a61 (adn_processor.wasm v3.5.0)
+Commit: 501465b  (last proof-passing commit before audit remediation)
+Run:    T3N_API_KEY=0x<key> node --loader ts-node/esm src/index.ts  (from t3n-bridge/)
+```
 
 ---
 
@@ -166,7 +181,7 @@ The demo:
 | 5 | Temporal Agent Delegation | issue-time-grant, check-grant | ✅ Contract live — TEE-invoked via bridge |
 | 6 | Cross-Tenant Verified Computation | (process-data) | ✅ Contract live — TEE-invoked via bridge |
 | 7 | Agentic KYC Pipeline | kyc-submit-step, kyc-get-status | ✅ Contract live — TEE-invoked via bridge |
-| 8 | TEE Secret Vault | store-secret, invoke-with-secret | ✅ Contract live — TEE-invoked via bridge |
+| 8 | TEE Secret Vault (pattern) | store-secret, invoke-with-secret | ✅ Contract live — TEE-invoked via bridge |
 | 9 | Autonomous Agent DAO | cast-vote, tally-votes | ✅ Contract live — TEE-invoked via bridge |
 | 10 | Verifiable AI Decision Audit | log-decision, audit-decisions | ✅ Contract live — TEE-invoked via bridge |
 | 11 | Agent Performance Bond | lock-bond, verify-and-settle | ✅ Contract live — TEE-invoked via bridge |

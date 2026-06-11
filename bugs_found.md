@@ -79,3 +79,27 @@ tenant.maps.create({
 **Workaround**: 7-second delays between Phase 4 calls spread invocations across 2+ minutes (crossing the replenishment boundary). 17/18 Phase 4 functions succeeded; the single transient failure on `kyc-submit-step` did not affect correctness — `kyc-get-status` (the next call, same module) succeeded immediately after.
 
 **Bounty category**: Testnet limitation found during integration.
+
+---
+
+## BUG-005: Delegation envelope not validated at T3N transport layer for `generic-input` contracts
+
+**Component**: T3N testnet / T3N SDK — `executeAndDecode` with `generic-input` WIT contracts
+
+**Observed**: A `DelegationEnvelope` embedded in the call input (as `__delegation_envelope` field alongside normal call params) is NOT validated by T3N's transport/routing layer before forwarding to the contract. Both a **pre-revocation** call and a **post-revocation** call (same `vc_id`, after `revokeDelegation` succeeded) return identical `ACCEPTED` responses:
+
+```
+pre-revocation call:  ACCEPTED: {"delegation_id":...,"status":"ROUTED",...}
+revocation: SUCCESS (tee:delegation/contracts::revoke)
+post-revocation call: ACCEPTED: {"delegation_id":...,"status":"ROUTED",...}
+```
+
+**Root cause**: T3N's delegation enforcement (vc_id revocation check, agent_sig verification, function scope check) only applies to contracts that explicitly parse and validate the `DelegationEnvelope` from their WIT input. The `tee:payroll` contract does this (the `PayrollInvocationDelegated` wire shape is contract-specific logic). A `generic-input` WIT contract receives the raw JSON bytes and must implement envelope extraction and validation itself.
+
+**Effect on this submission**: The Agent Auth SDK credential lifecycle (build → sign → validate → revoke) is fully demonstrated via SDK primitives. End-to-end credential-gated execution (revoked credential → call denied) requires either:
+  1. A contract that handles `PayrollInvocationDelegated`-style envelope extraction, OR
+  2. T3N to expose a middleware hook for delegation validation on generic contracts (not documented)
+
+**Workaround**: None at the `generic-input` level. Document as a developer education gap — SDK docs only show delegation enforcement in the payroll context.
+
+**Bounty category**: Documentation gap + SDK architecture gap — ADK docs do not explain that delegation enforcement is contract-side responsibility for `generic-input` contracts.

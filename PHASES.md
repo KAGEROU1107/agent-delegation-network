@@ -22,3 +22,13 @@
 
 ## Build Order
 2 → 3 → 8 → 5 → 9 → 10 → 7 → 11 → 4 → 6
+
+## LLM Cognitive Layer
+
+Feature agents use `llm/client.py` — a generic OpenAI-compatible client configurable via:
+- `LLM_API_KEY` — API key (leave unset to use stub mode)
+- `LLM_BASE_URL` — endpoint URL (default: `https://api.openai.com/v1/chat/completions`)
+- `LLM_MODEL` — model name (default: `gpt-4o-mini`)
+- `LLM_PROVIDER` — informational label
+
+See `.env.example` for the full template. The demo runs fully without an LLM key.

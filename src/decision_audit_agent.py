@@ -14,7 +14,7 @@ T3N TEE functions used:
 import hashlib
 from typing import Dict, List
 from src.agent_identity import AgentIdentity
-from openrouter.client import ask
+from llm.client import ask
 
 
 class DecisionAuditAgent:
@@ -63,7 +63,7 @@ class DecisionAuditAgent:
         return tee_invoke_fn("audit-decisions", payload)
 
     def generate_report(self, audit_result: Dict) -> str:
-        """Use OpenRouter to generate a human-readable audit report."""
+        """Use the LLM to generate a human-readable audit report."""
         return ask(
             f"Write a 2-sentence audit summary. "
             f"Total decisions: {audit_result.get('total_decisions', 0)}. "

@@ -3,7 +3,7 @@ Phase 4 — Privacy-Preserving Personalization
 
 Agents personalize customer outreach without the coordinator ever seeing raw customer data.
 Customer segment is determined inside the T3N TEE — only the message variant comes out.
-OpenRouter generates the personalized message text from the variant, not from raw data.
+The LLM client generates the personalized message text from the variant, not from raw data.
 
 T3N TEE functions used:
   - send-personalized-outreach: maps customer segment to message variant inside the enclave
@@ -11,7 +11,7 @@ T3N TEE functions used:
 
 from typing import Dict, List
 from src.agent_identity import AgentIdentity
-from openrouter.client import ask
+from llm.client import ask
 
 
 class PersonalizationAgent:
@@ -44,8 +44,8 @@ class PersonalizationAgent:
 
     def compose_message(self, variant: str, customer_id: str) -> str:
         """
-        OpenRouter composes the actual message text from the TEE-selected variant.
-        No raw customer data is sent to OpenRouter — only the variant identifier.
+        LLM client composes the actual message text from the TEE-selected variant.
+        No raw customer data is sent to the LLM — only the variant identifier.
         """
         return ask(
             f"Write a 1-sentence personalized outreach message for variant: {variant}. "

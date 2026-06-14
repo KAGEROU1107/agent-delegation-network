@@ -1,5 +1,5 @@
 """
-OpenRouter client — lightweight wrapper for grunt-work LLM calls.
+Generic LLM client — lightweight wrapper for grunt-work LLM calls.
 
 Used by Python ADN agents for reasoning tasks that don't need to run inside the TEE:
   - Writing task specifications for auctions
@@ -7,7 +7,14 @@ Used by Python ADN agents for reasoning tasks that don't need to run inside the 
   - Producing KYC data summaries
   - Drafting DAO proposals
 
-Models are cheap/fast (gpt-4o-mini by default). TEE handles trust; OpenRouter handles cognition.
+Configure via environment variables:
+  LLM_API_KEY   — API key for your LLM provider (required for live calls)
+  LLM_BASE_URL  — Base URL of an OpenAI-compatible API endpoint
+  LLM_MODEL     — Model name (default: gpt-4o-mini)
+  LLM_PROVIDER  — Informational label (e.g. "openai", "groq", "local")
+
+When LLM_API_KEY is not set the client falls back to a deterministic stub so
+the demo runs without any LLM credentials.
 """
 
 import json
@@ -17,20 +24,21 @@ import urllib.error
 from typing import Optional
 
 
-OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-DEFAULT_MODEL = "openai/gpt-4o-mini"
+DEFAULT_BASE_URL = "https://api.openai.com/v1/chat/completions"
+DEFAULT_MODEL = "gpt-4o-mini"
 
 
-class OpenRouterClient:
-    def __init__(self, api_key: Optional[str] = None, model: str = DEFAULT_MODEL):
-        self.api_key = api_key or os.getenv("OPENROUTER_API_KEY", "")
-        self.model = model
+class LLMClient:
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None, base_url: Optional[str] = None):
+        self.api_key = api_key or os.getenv("LLM_API_KEY", "")
+        self.model = model or os.getenv("LLM_MODEL", DEFAULT_MODEL)
+        self.base_url = base_url or os.getenv("LLM_BASE_URL", DEFAULT_BASE_URL)
         self._available = bool(self.api_key)
 
     def complete(self, prompt: str, system: str = "You are a concise AI agent assistant.", max_tokens: int = 256) -> str:
         """
-        Call OpenRouter with a single prompt. Returns the response text.
-        Falls back to a deterministic stub if no API key is configured.
+        Call the configured LLM endpoint with a single prompt. Returns the response text.
+        Falls back to a deterministic stub if LLM_API_KEY is not configured.
         """
         if not self._available:
             return self._stub(prompt)
@@ -45,13 +53,11 @@ class OpenRouterClient:
         }).encode()
 
         req = urllib.request.Request(
-            OPENROUTER_API_URL,
+            self.base_url,
             data=payload,
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
-                "HTTP-Referer": "https://github.com/KAGEROU1107/agent-delegation-network",
-                "X-Title": "ADN-T3N-Bounty",
             },
             method="POST",
         )
@@ -64,10 +70,10 @@ class OpenRouterClient:
             # Quota exceeded or key invalid → graceful fallback so demo still runs
             if e.code in (403, 429):
                 return self._stub(prompt)
-            raise RuntimeError(f"OpenRouter HTTP {e.code}: {body}") from e
+            raise RuntimeError(f"LLM API HTTP {e.code}: {body}") from e
 
     def _stub(self, prompt: str) -> str:
-        """Deterministic stub used when OPENROUTER_API_KEY is not set."""
+        """Deterministic stub used when LLM_API_KEY is not set."""
         keywords = prompt.lower()
         if "auction" in keywords or "bid" in keywords:
             return "Task specification: Analyze Q1 2026 premium sales data. Deliverable: segmented revenue report with regional breakdown. SLA: 2 hours."
@@ -85,13 +91,13 @@ class OpenRouterClient:
 
 
 # Module-level singleton — import and use directly
-_client: Optional[OpenRouterClient] = None
+_client: Optional[LLMClient] = None
 
 
-def get_client() -> OpenRouterClient:
+def get_client() -> LLMClient:
     global _client
     if _client is None:
-        _client = OpenRouterClient()
+        _client = LLMClient()
     return _client
 
 

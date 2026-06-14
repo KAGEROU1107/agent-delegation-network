@@ -13,7 +13,7 @@ T3N TEE functions used:
 import hashlib
 from typing import Dict, List, Optional
 from src.agent_identity import AgentIdentity
-from openrouter.client import ask
+from llm.client import ask
 
 
 class AgentDAO:
@@ -27,7 +27,7 @@ class AgentDAO:
         self._votes: List[Dict] = []
 
     def draft_proposal(self, context: str = "") -> str:
-        """Use OpenRouter to draft the proposal text."""
+        """Use the LLM to draft the proposal text."""
         return ask(
             f"Draft a 2-sentence DAO proposal for a multi-agent system. "
             f"Proposal ID: {self.proposal_id}. Context: {context or 'Q1 2026 premium sales data processing prioritization'}.",

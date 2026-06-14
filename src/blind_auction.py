@@ -15,7 +15,7 @@ import hashlib
 import json
 from typing import Dict, List, Optional
 from src.agent_identity import AgentIdentity
-from openrouter.client import ask
+from llm.client import ask
 
 
 class BlindAuction:
@@ -32,7 +32,7 @@ class BlindAuction:
         self.result: Optional[Dict] = None
 
     def write_task_spec(self) -> str:
-        """Use OpenRouter to generate a task specification for the auction."""
+        """Use the LLM to generate a task specification for the auction."""
         return ask(
             f"Write a concise task specification for an AI agent auction. Task ID: {self.item_id}. "
             "The winning agent will process premium sales data. Include deliverable and SLA.",

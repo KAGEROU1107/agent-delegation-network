@@ -26,6 +26,7 @@ jobs:
 
       - name: Post commit status
         if: always()
+        continue-on-error: true
         run: |
           STATE=$([ "${{ job.status }}" = "success" ] && echo "success" || echo "failure")
           gh api repos/${{ github.repository }}/statuses/${{ github.sha }} \

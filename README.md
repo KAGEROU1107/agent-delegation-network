@@ -212,6 +212,20 @@ cd t3n-bridge && npm install
 T3N_API_KEY=0x<your_key> node --loader ts-node/esm src/index.ts
 ```
 
+### Optional: LLM text generation
+
+The Python feature agents (`blind_auction.py`, `reputation_ledger.py`, etc.) use a generic LLM client for cognitive tasks (writing task specs, audit summaries, personalization messages). **The demo runs without it** — the client stubs out deterministic responses when no key is set.
+
+To enable live LLM calls, copy `.env.example` to `.env` and fill in your credentials:
+
+```bash
+cp .env.example .env
+# Edit .env:
+#   LLM_API_KEY=sk-your-key
+#   LLM_BASE_URL=https://api.openai.com/v1/chat/completions  # or any OpenAI-compatible endpoint
+#   LLM_MODEL=gpt-4o-mini
+```
+
 The demo:
 1. Authenticates with T3N testnet via `handshake()` + `authenticate()`.
 2. Builds and tests an Agent Auth delegation credential.
@@ -298,8 +312,11 @@ agent-delegation-network/
 ├── proof/
 │   ├── live_run_v3.6.0.txt      # v3.6.0 live proof
 │   └── live_run_v3.5.0.txt      # v3.5.0 baseline proof
+├── llm/
+│   └── client.py                # generic LLM client (OpenAI-compatible, stubs when no key)
 ├── data/
 │   └── sales_Q1-2026_US_premium.csv
+├── .env.example                 # environment variable template
 ├── PHASES.md
 ├── SUBMISSION_REPORT.md
 └── t3n_bridge_proof.txt         # live testnet output v3.6.0

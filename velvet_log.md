@@ -59,7 +59,7 @@ The WIT interface grew from 3 functions to 20. The Rust contract expanded
 to handle blind auctions, reputation scoring, temporal grants, KYC pipelines,
 secret vaults, agent DAOs, decision audit trails, and performance bonds.
 
-OpenRouter was wired in for the cognitive layer — the parts that don't need
+A generic LLM client was wired in for the cognitive layer — the parts that don't need
 hardware trust, just intelligence. It stubs gracefully when no key is present.
 
 Each phase has its Python agent. Each agent has its TEE contract function.

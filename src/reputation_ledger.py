@@ -15,7 +15,7 @@ T3N TEE functions used:
 
 from typing import Dict, List, Optional
 from src.agent_identity import AgentIdentity
-from openrouter.client import ask
+from llm.client import ask
 
 
 class ReputationLedger:
@@ -80,7 +80,7 @@ class ReputationLedger:
         return sorted(scores, key=lambda x: x["reputation_score"], reverse=True)
 
     def generate_assessment(self, agent: AgentIdentity, rep: Dict) -> str:
-        """Use OpenRouter to generate a natural-language quality assessment."""
+        """Use the LLM to generate a natural-language quality assessment."""
         return ask(
             f"Write a 2-sentence quality assessment for an AI agent. "
             f"Reputation score: {rep.get('reputation_score', 0):.2f}/1.0. "

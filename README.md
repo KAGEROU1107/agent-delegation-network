@@ -324,6 +324,41 @@ agent-delegation-network/
 
 ---
 
+## Sandbox Test Tokens
+
+Sandbox API keys are available at: **https://www.terminal3.io/claim-page**
+
+> **Security**: Do not commit `.env` or any real API key. Use `.env.example` as your
+> template. All keys in this repo use `REDACTED_API_KEY` or `replace_me` placeholders.
+
+---
+
+## SDK Bugs & Documentation Gaps
+
+Seven bugs and four documentation gaps were discovered and committed as structured
+snapshots during development. These are bounty Track 2 evidence.
+
+See `docs/bugs/` and `docs/doc-gaps/` for full details.
+
+| ID | Title | Severity | Status |
+|---|---|---|---|
+| BUG-001 | `tenant.contracts.register()` returns no numeric contractId | MEDIUM | WORKAROUND_FOUND |
+| BUG-002 | Agent Auth grant APIs not at top level | MEDIUM | UPSTREAM |
+| BUG-003 | `buildDelegationCredential` rejects long `z:{tenant}:{tail}` format | LOW | WORKAROUND_FOUND |
+| BUG-004 | Testnet `fuel_per_minute` quota limits Phase 4 in a single run | MEDIUM | WORKAROUND_FOUND |
+| BUG-005 | Delegation envelope not validated at T3N transport layer for generic-input | HIGH | FIXED (v3.6.0) |
+| BUG-006 | CI red X: `Post commit status` step failed the job | MEDIUM | FIXED (0c7b10b) |
+| BUG-007 | Testnet credits exhausted during development | HIGH | OPEN |
+
+| ID | Title | Status |
+|---|---|---|
+| DOCGAP-001 | DelegationCredential primitives undocumented in ADK overview | OPEN |
+| DOCGAP-002 | `script_name` vs `contract` field distinction not documented | OPEN |
+| DOCGAP-003 | `tee:delegation/contracts::is-live` host primitive not exposed | OPEN |
+| DOCGAP-004 | Sandbox token claim process and credit limits not documented | OPEN |
+
+---
+
 ## Known Boundaries
 
 - Workers are ephemeral Ed25519 sub-agents, not independent T3N tenants.

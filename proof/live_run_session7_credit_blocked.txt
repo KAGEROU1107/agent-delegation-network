@@ -1,0 +1,51 @@
+=== Terminal 3 Agent Delegation Network — Session 7 (2026-06-14) ===
+=== STATUS: CREDIT BLOCKED — available=0 for account ad146e6861ac408900af7ece1f6e90976dad3a02 ===
+
+[Phase 1] Authenticating with Terminal 3 testnet...
+  [+] handshake() complete
+  [+] authenticate() complete
+  [+] Authenticated DID (from session): did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
+  [+] Ethereum address: 0xe4c6a456b68adbabfd93dbab01335017ee9cf9ed
+  [+] TenantClient initialized
+
+[Phase 0] Agent Auth SDK — delegation credential + enforcement cycle...
+  [+] credential built: vc_id=5f3b373373340a018f6cdc6529b0fc26
+  [+] granted functions: delegate-task, process-data
+  [+] signed with EIP-191: user_sig=3YpdbpdgwVOwlPsX...
+  [+] envelope: agent_sig=Pb66Axp3BzBiOdpp... nonce=AR97FGQp...
+  [-] pre-revocation call: HTTP 403 InsufficientCredit (required=10000, available=0)
+  [-] revocation: HTTP 403 InsufficientCredit (required=10000, available=0)
+  [-] post-revocation call: HTTP 403 InsufficientCredit (required=10000, available=0)
+  [-] missing agent_sig test: HTTP 403 InsufficientCredit (available=0)
+  [-] short nonce test: HTTP 403 InsufficientCredit (available=0)
+
+[Phase 2] Running Python ADN with authenticated DID...
+  DID injected into coordinator: did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
+  [+] Unique cryptographic identities: 4/4
+  [+] Records processed: 30
+  [+] Total revenue: $13253
+  [+] Quality score: 1 | passed: true
+  [+] Coordinator DID matches session: true
+
+[Phase 3] TEE Contract...
+  [-] Contract error: HTTP 403 InsufficientCredit (required=10000, available=0)
+
+[Phase 4] Full Feature Contract Coverage — all 20 WIT exports...
+  [-] All 20 WIT exports: HTTP 403 InsufficientCredit (required=10000, available=0)
+
+=======================================================
+DEMO SUMMARY
+=======================================================
+Real T3N auth:             YES
+DID from session:          did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
+Agent Auth credential:     BUILT + SIGNED (EIP-191, SDK-native)
+Distinct agent identities: 4/4
+Multi-agent delegation:    PASSED
+Tamper detection:          ACTIVE (data_hash in signed payload)
+WASM contract:             NOT INVOKED (InsufficientCredit)
+=======================================================
+
+NOTE: Both T3N_API_KEY values tried map to the same account (ad146e6861ac...).
+Credits are per-account, not per-key. A fresh claim at
+https://www.terminal3.io/claim-page that creates a NEW account is needed.
+Authoritative live proof: proof/live_run_v3.8.0_session6_final.txt (all 20/20 WIT exports confirmed)

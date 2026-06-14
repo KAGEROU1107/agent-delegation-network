@@ -39,6 +39,20 @@ import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WASM_PATH = join(__dirname, "../../contract/target/wasm32-wasip2/release/adn_processor.wasm");
+
+// Load .env from project root if env vars not already set
+const _envPath = join(__dirname, "../../.env");
+if (existsSync(_envPath)) {
+  for (const _line of readFileSync(_envPath, "utf-8").split("\n")) {
+    const _t = _line.trim();
+    if (_t && !_t.startsWith("#") && _t.includes("=")) {
+      const _eq = _t.indexOf("=");
+      const _k = _t.slice(0, _eq).trim();
+      const _v = _t.slice(_eq + 1).trim();
+      if (_k && !process.env[_k]) process.env[_k] = _v;
+    }
+  }
+}
 const CSV_PATH = join(__dirname, "../../data/sales_Q1-2026_US_premium.csv");
 
 function parseSaleAmounts(): number[] {

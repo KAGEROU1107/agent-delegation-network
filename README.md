@@ -11,7 +11,7 @@ A multi-agent delegation system built on the Terminal 3 ADK. A coordinator authe
 
 All phases run against the real T3N testnet using `adn-processor` contract v3.8.0 with hardened contract-layer delegation enforcement.
 
-Full output: [`proof/live_run_v3.8.0_session6_final.txt`](proof/live_run_v3.8.0_session6_final.txt) · [`proof/live_run_v3.8.0_session5.txt`](proof/live_run_v3.8.0_session5.txt)
+Full output: [`proof/live_run_v3.8.0_session7_final.txt`](proof/live_run_v3.8.0_session7_final.txt) · [`proof/live_run_v3.8.0_session6_final.txt`](proof/live_run_v3.8.0_session6_final.txt)
 
 ```
 [Phase 0] Agent Auth SDK — delegation credential + enforcement cycle...
@@ -69,7 +69,7 @@ WASM contract: REGISTERED + INVOKED (v3.8.0, 20/20 WIT functions)
 ```
 SDK:    @terminal3/t3n-sdk@3.5.2
 WASM:   adn_processor.wasm v3.8.0 — hardened envelope validation + SHA-256 credential fingerprint
-Proof:  proof/live_run_v3.8.0_session5.txt
+Proof:  proof/live_run_v3.8.0_session7_final.txt
 Run:    T3N_API_KEY=0x<key> node --loader ts-node/esm src/index.ts  (from t3n-bridge/)
 ```
 

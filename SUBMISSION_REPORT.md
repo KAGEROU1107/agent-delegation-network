@@ -7,7 +7,7 @@
 **Repo**: https://github.com/KAGEROU1107/agent-delegation-network  
 **SDK**: `@terminal3/t3n-sdk@3.5.2`  
 **Contract**: `adn-processor v3.8.0` — hardened envelope validation + SHA-256 credential fingerprint  
-**Live proof**: `proof/live_run_v3.8.0_session5.txt`
+**Live proof**: `proof/live_run_v3.8.0_session7_final.txt`
 
 ---
 
@@ -34,7 +34,7 @@ A multi-agent delegation network where a coordinator obtains a real Terminal 3 D
 
 ## Live Proof Summary
 
-Full output: [`proof/live_run_v3.8.0_session6_final.txt`](proof/live_run_v3.8.0_session6_final.txt) · [`proof/live_run_v3.8.0_session5.txt`](proof/live_run_v3.8.0_session5.txt)
+Full output: [`proof/live_run_v3.8.0_session7_final.txt`](proof/live_run_v3.8.0_session7_final.txt) · [`proof/live_run_v3.8.0_session6_final.txt`](proof/live_run_v3.8.0_session6_final.txt)
 
 ```
 [Phase 1] Authenticating with Terminal 3 testnet...
@@ -45,10 +45,10 @@ Full output: [`proof/live_run_v3.8.0_session6_final.txt`](proof/live_run_v3.8.0_
   [+] TenantClient initialized
 
 [Phase 0] Agent Auth SDK — delegation credential + enforcement cycle...
-  [+] credential built: vc_id=a011d180ee5aa09c12c777023ca360ec
+  [+] credential built: vc_id=1c15a3c144723133bdcbfdf2bd6c5873
   [+] granted functions: delegate-task, process-data
-  [+] signed with EIP-191: user_sig=hPQgFKIVxqqgn6q9...
-  [+] envelope: agent_sig=A-uyCEDjDwW-zTmm... nonce=OkZBIGUl...
+  [+] signed with EIP-191: user_sig=eJEZnGDSJSNXTW0B...
+  [+] envelope: agent_sig=hGRYp_3fQKT032Xj... nonce=npXJfmpt...
   [+] pre-revocation call:  ACCEPTED: {"delegation_id":...,"status":"ROUTED",...}
   [+] revocation: SUCCESS (tee:delegation/contracts::revoke)
   [+] post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer — v3.8.0)

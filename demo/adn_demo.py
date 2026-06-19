@@ -29,8 +29,17 @@ from src.delegation_policy import ExamplePolicies
 
 def setup_demo_environment():
     """Set up the demo environment with sample agents and policies."""
-    print("=== Setting up Agent Delegation Network Demo ===\n")
-    
+    print()
+    print("╔══════════════════════════════════════════════════════════════╗")
+    print("║  PHASE 1 — Agent Identity Setup                              ║")
+    print("║  Creating 4 agents, each with a unique Ed25519 keypair.      ║")
+    print("║  Coordinator loads your real T3N API credential (DID).       ║")
+    print("║  Workers and Validator get freshly generated keys —          ║")
+    print("║  no shared-key illusion, every identity is cryptographically ║")
+    print("║  distinct and independently verifiable.                      ║")
+    print("╚══════════════════════════════════════════════════════════════╝")
+    print()
+
     # Create agents for different roles in the network.
     # Coordinator uses the primary T3N identity (loaded from T3N_API_KEY env var).
     # Workers and validator each get a freshly generated Ed25519 key pair so that
@@ -55,6 +64,16 @@ def setup_demo_environment():
     print(f"   [unique cryptographic identities: {unique_ids}/4]")
     
     # Set up custom task handlers for our demo
+    print()
+    print("╔══════════════════════════════════════════════════════════════╗")
+    print("║  PHASE 2 — Task Handler Registration                         ║")
+    print("║  Each agent registers the tasks it is capable of executing.  ║")
+    print("║  Coordinator: result aggregation                             ║")
+    print("║  Worker 1:    data processing (reads real CSV sales data)    ║")
+    print("║  Worker 2:    format conversion (JSON → CSV / XML)           ║")
+    print("║  Validator:   quality gate (score threshold ≥ 0.80 to pass)  ║")
+    print("╚══════════════════════════════════════════════════════════════╝")
+    print()
     print("\n2. Setting up task handlers...")
     
     # Coordinator handlers
@@ -196,6 +215,15 @@ def setup_demo_environment():
     validator.register_task_handler("VALIDATE_QUALITY", validator_handle_validate_quality)
     print("   [+] Validator: registered VALIDATE_QUALITY handler")
     
+    print()
+    print("╔══════════════════════════════════════════════════════════════╗")
+    print("║  PHASE 3 — Delegation Policy Configuration                   ║")
+    print("║  Policies define WHO can delegate WHAT to WHOM.              ║")
+    print("║  Coordinator is the only agent that can issue delegations.   ║")
+    print("║  Workers and Validator only accept tasks from Coordinator.   ║")
+    print("║  Policy keys are agent_id fingerprints — not role strings.   ║")
+    print("╚══════════════════════════════════════════════════════════════╝")
+    print()
     print("\n3. Setting up delegation policies...")
 
     # Policies use identity.agent_id (key fingerprint), not the short instance UUID
@@ -258,7 +286,20 @@ def _delegate_and_execute(delegator, target_agent, action, task_description, par
 
 def run_data_processing_demo(agents):
     """Run a data processing workflow demo using the real delegation protocol."""
-    print("\n=== Running Data Processing Workflow Demo ===\n")
+    print()
+    print("╔══════════════════════════════════════════════════════════════╗")
+    print("║  PHASE 4 — Live Delegation Workflow (4 Steps)                ║")
+    print("║                                                              ║")
+    print("║  Coordinator                                                 ║")
+    print("║    → Worker 1   : PROCESS_DATA   (signed request)           ║")
+    print("║    → Worker 2   : FORMAT_CONVERSION (signed request)        ║")
+    print("║    → Validator  : VALIDATE_QUALITY  (signed request)        ║")
+    print("║    → self       : AGGREGATE_RESULTS (self-delegation)       ║")
+    print("║                                                              ║")
+    print("║  Every delegation is cryptographically signed.              ║")
+    print("║  A tampered or unsigned request will be rejected.           ║")
+    print("╚══════════════════════════════════════════════════════════════╝")
+    print()
 
     coordinator = agents["coordinator"]
     worker1 = agents["worker1"]
@@ -354,6 +395,13 @@ def run_data_processing_demo(agents):
 
 def show_agent_statuses(agents):
     """Show the final status of all agents in the network."""
+    print()
+    print("╔══════════════════════════════════════════════════════════════╗")
+    print("║  PHASE 5 — Agent Status Report                               ║")
+    print("║  Live snapshot of each agent after workflow completion.      ║")
+    print("║  Shows DID, delegation counts, and registered capabilities.  ║")
+    print("╚══════════════════════════════════════════════════════════════╝")
+    print()
     print("\n=== Final Agent Statuses ===\n")
     
     for name, agent in agents.items():
@@ -371,6 +419,14 @@ def show_agent_statuses(agents):
 
 def show_audit_trail(agents):
     """Show the audit trail from the coordinator agent."""
+    print()
+    print("╔══════════════════════════════════════════════════════════════╗")
+    print("║  PHASE 6 — Immutable Audit Trail                             ║")
+    print("║  Every delegation event is logged with timestamp,            ║")
+    print("║  from/to agent IDs, action type, and outcome.               ║")
+    print("║  This is the accountability layer — every action traceable.  ║")
+    print("╚══════════════════════════════════════════════════════════════╝")
+    print()
     print("=== Audit Trail (Coordinator Agent) ===\n")
     
     coordinator = agents["coordinator"]
@@ -398,22 +454,30 @@ def show_audit_trail(agents):
 
 def main():
     """Main demo function."""
-    print("Terminal 3 Agent Delegation Network (ADN) Demo")
-    print("=" * 50)
-    print("This demo shows how multiple AI agents can securely delegate")
-    print("tasks to each other using Terminal 3's Agent Auth SDK.\n")
-    
+    print()
+    print("╔══════════════════════════════════════════════════════════════╗")
+    print("║         TERMINAL 3 — AGENT DELEGATION NETWORK DEMO          ║")
+    print("╠══════════════════════════════════════════════════════════════╣")
+    print("║  What this proves:                                           ║")
+    print("║  • Multiple AI agents with cryptographically unique DIDs     ║")
+    print("║  • Signed task delegation between agents (no shared keys)    ║")
+    print("║  • Policy-based authorization — who can delegate what        ║")
+    print("║  • Full audit trail of every delegation event                ║")
+    print("║  Built on the Terminal 3 Agent Auth SDK                      ║")
+    print("╚══════════════════════════════════════════════════════════════╝")
+    print()
+
     try:
         # Set up the demo environment
         agents = setup_demo_environment()
-        
+
         # Run the data processing workflow demo
         success = run_data_processing_demo(agents)
-        
+
         if success:
             # Show final statuses
             show_agent_statuses(agents)
-            
+
             # Show audit trail
             show_audit_trail(agents)
             

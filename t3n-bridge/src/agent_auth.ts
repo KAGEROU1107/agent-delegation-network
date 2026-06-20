@@ -12,7 +12,7 @@
  *   8. Attempt the same delegated call AFTER revocation + expiry → TEE contract rejects → REJECTED
  *
  * Enforcement mechanism (BUG-005 fix):
- *   The adn-processor TEE contract (v3.9.0) validates __delegation_envelope on delegate-task:
+ *   The adn-processor TEE contract (v3.9.1) validates __delegation_envelope on delegate-task:
  *   - Decodes credential_jcs from base64url
  *   - Checks not_before_secs / not_after_secs against WASI wall-clock inside the enclave
  *   - Verifies "delegate-task" is in the credential's functions array
@@ -100,7 +100,7 @@ async function tryDelegatedCall(
     // forwarding, a revoked credential returns a delegation error here.
     const result = await t3n.executeAndDecode({
       script_name: `z:${tid}:adn-processor`,
-      script_version: "3.9.0",
+      script_version: "3.9.1",
       function_name: "delegate-task",
       input: {
         ...callParams,
@@ -131,7 +131,12 @@ export async function demonstrateAgentAuth(
 
   const now = BigInt(Math.floor(Date.now() / 1000));
   const vcId = new Uint8Array(randomBytes(16));
+  const vcIdHex = Buffer.from(vcId).toString("hex");
   const contractName = "adn-processor";
+
+  // Issuer-signed authorization policy (v3.9.1): binds target + action + max TTL.
+  const targetAgentId = `did:key:ed25519:agent-${vcIdHex.slice(0, 8)}`;
+  const authzPolicy = JSON.stringify({ to_agent_id: targetAgentId, actions: ["PROCESS_DATA"], max_ttl_secs: 300 });
 
   const credential = buildDelegationCredential({
     user_did: tenantDid,
@@ -140,7 +145,7 @@ export async function demonstrateAgentAuth(
     contract: contractName,
     functions: ["delegate-task", "process-data"],
     scopes: [],
-    metadata: { role: "adn-worker", session: "demo" },
+    metadata: { role: "adn-worker", session: "demo", adn_authorization_v1: authzPolicy },
     not_before_secs: now,
     not_after_secs: now + 30n,
     vc_id: vcId,
@@ -153,10 +158,9 @@ export async function demonstrateAgentAuth(
 
   const credentialJcsB64u = b64uEncodeBytes(jcs);
   const userSigB64u = b64uEncodeBytes(userSig);
-  const vcIdHex = Buffer.from(vcId).toString("hex");
 
   // ── Build per-call DelegationEnvelope ────────────────────────────────────────
-  const callParams: Record<string, unknown> = { to_agent_id: `did:key:ed25519:agent-${vcIdHex.slice(0, 8)}`, action: "PROCESS_DATA" };
+  const callParams: Record<string, unknown> = { to_agent_id: targetAgentId, action: "PROCESS_DATA" };
   const envelope = buildEnvelope(vcId, jcs, userSig, agentSecret, callParams);
 
   // ── Delegated call BEFORE revocation ─────────────────────────────────────────
@@ -179,7 +183,7 @@ export async function demonstrateAgentAuth(
   await new Promise((r) => setTimeout(r, 35_000));
 
   // ── Delegated call AFTER revocation + expiry ──────────────────────────────────
-  // TEE contract (v3.9.0) decodes the credential_jcs, reads not_after_secs from
+  // TEE contract (v3.9.1) decodes the credential_jcs, reads not_after_secs from
   // the JCS, and rejects because now > not_after_secs. REJECTED at contract layer.
   const postRevocationCallResult = await tryDelegatedCall(t3n, tenantDid, envelope, callParams);
 
@@ -209,7 +213,7 @@ export interface WireDelegationEnvelope {
  * Build a fresh wire-format DelegationEnvelope for a single delegate-task call.
  *
  * Used by Phase 4 so every delegate-task invocation carries a valid credential,
- * satisfying the mandatory-envelope requirement in the contract (v3.9.0).
+ * satisfying the mandatory-envelope requirement in the contract (v3.9.1).
  */
 export async function buildWireDelegationEnvelope(
   tenantDid: string,
@@ -230,9 +234,9 @@ export async function buildWireDelegationEnvelope(
     contract: "adn-processor",
     functions: ["delegate-task"],
     scopes: [],
-    metadata: { role: "adn-worker", session: "phase4" },
+    metadata: { role: "adn-worker", session: "phase4", adn_authorization_v1: JSON.stringify({ to_agent_id: toAgentDid, actions: [typeof callParams.action === "string" ? callParams.action : "PROCESS_DATA"], max_ttl_secs: 300 }) },
     not_before_secs: now - 5n,
-    not_after_secs: now + 300n,
+    not_after_secs: now + 290n,
     vc_id: vcId,
   });
 
@@ -290,7 +294,7 @@ export async function demonstrateNegativeEnvelopeTests(
   try {
     const result = await t3n.executeAndDecode({
       script_name: `z:${tid}:adn-processor`,
-      script_version: "3.9.0",
+      script_version: "3.9.1",
       function_name: "delegate-task",
       input: {
         ...callParams,
@@ -317,7 +321,7 @@ export async function demonstrateNegativeEnvelopeTests(
     const agentSig = signAgentInvocation(preimage, agentSecret);
     const result = await t3n.executeAndDecode({
       script_name: `z:${tid}:adn-processor`,
-      script_version: "3.9.0",
+      script_version: "3.9.1",
       function_name: "delegate-task",
       input: {
         ...callParams,
@@ -340,7 +344,7 @@ export async function demonstrateNegativeEnvelopeTests(
   try {
     const result = await t3n.executeAndDecode({
       script_name: `z:${tid}:adn-processor`,
-      script_version: "3.9.0",
+      script_version: "3.9.1",
       function_name: "delegate-task",
       input: callParams,  // no __delegation_envelope field at all
     });

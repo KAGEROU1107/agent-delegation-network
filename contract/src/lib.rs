@@ -1,6 +1,7 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 wit_bindgen::generate!({
@@ -100,6 +101,181 @@ struct CredentialBody {
     vc_id: String,          // base64url, decodes to 16 bytes
     #[serde(default)]
     agent_pubkey: String,   // base64url, decodes to 33-byte compressed secp256k1
+    #[serde(default)]
+    user_did: String,
+    #[serde(default)]
+    org_did: String,
+    #[serde(default)]
+    contract: String,
+    #[serde(default)]
+    metadata: BTreeMap<String, String>, // adn_authorization_v1 holds the signed policy (JSON string)
+}
+
+// Issuer-signed authorization policy embedded in credential metadata (and thus
+// covered by user_sig). Binds the delegated target, allowed actions, and max TTL.
+#[derive(Deserialize)]
+struct AuthzPolicy {
+    #[serde(default)]
+    to_agent_id: String,
+    #[serde(default)]
+    actions: Vec<String>,
+    #[serde(default)]
+    max_ttl_secs: u64,
+}
+
+// Verification configuration. trusted_issuer/tenant_did are pinned at build time;
+// when trusted_issuer is None the contract fails closed (refuses to authorize).
+struct DelegationConfig {
+    trusted_issuer: Option<[u8; 20]>,
+    tenant_did: Option<String>,
+    now_secs: u64,
+    max_ttl_secs: u64,
+    clock_skew_secs: u64,
+}
+
+fn parse_addr_hex(s: &str) -> Option<[u8; 20]> {
+    let s = s.strip_prefix("0x").unwrap_or(s);
+    if s.len() != 40 { return None; }
+    let mut a = [0u8; 20];
+    for i in 0..20 {
+        a[i] = u8::from_str_radix(&s[2 * i..2 * i + 2], 16).ok()?;
+    }
+    Some(a)
+}
+
+/// Tenant issuer address pinned at build time via ADN_TRUSTED_ISSUER (20-byte hex).
+/// Unset => None => issuer authorization fails closed (every delegate-task rejected).
+fn trusted_issuer() -> Option<[u8; 20]> {
+    option_env!("ADN_TRUSTED_ISSUER").and_then(parse_addr_hex)
+}
+
+/// Optional tenant DID pin via ADN_TENANT_DID; when set, org_did/user_did must match.
+fn configured_tenant_did() -> Option<String> {
+    option_env!("ADN_TENANT_DID").map(|s| s.to_string())
+}
+
+/// Pure, host-testable delegated-authority verification (v3.9.1).
+fn verify_delegate_task(bytes: &[u8], cfg: &DelegationConfig) -> Result<DelegateTaskOutput, String> {
+    let r: DelegateTaskInput = parse_input(bytes, "delegate-task")?;
+
+    let env = r.delegation_envelope.as_ref().ok_or(
+        "delegate-task: __delegation_envelope required — unauthenticated delegation is not permitted",
+    )?;
+
+    let cred_bytes = URL_SAFE_NO_PAD
+        .decode(&env.credential_jcs)
+        .map_err(|_| "delegate-task: invalid credential_jcs encoding".to_string())?;
+    let cred: CredentialBody = serde_json::from_slice(&cred_bytes)
+        .map_err(|e| format!("delegate-task: invalid credential body: {e}"))?;
+
+    if cred.v != "ot3.delegation/1" {
+        return Err("delegate-task: invalid credential domain".to_string());
+    }
+    if cred.contract != "adn-processor" {
+        return Err("delegate-task: credential contract mismatch".to_string());
+    }
+    if let Some(td) = &cfg.tenant_did {
+        if &cred.org_did != td {
+            return Err("delegate-task: credential org_did is not the configured tenant".to_string());
+        }
+        if &cred.user_did != td {
+            return Err("delegate-task: credential user_did is not the configured tenant".to_string());
+        }
+    }
+    if cred.vc_id.is_empty() {
+        return Err("delegate-task: vc_id missing from credential".to_string());
+    }
+    if cred.agent_pubkey.is_empty() {
+        return Err("delegate-task: agent_pubkey missing from credential".to_string());
+    }
+
+    let not_before: u64 = cred.not_before_secs.parse().map_err(|_| "delegate-task: invalid not_before_secs".to_string())?;
+    let not_after: u64 = cred.not_after_secs.parse().map_err(|_| "delegate-task: invalid not_after_secs".to_string())?;
+    if not_before >= not_after {
+        return Err("delegate-task: credential window invalid (not_before >= not_after)".to_string());
+    }
+    if not_after - not_before > cfg.max_ttl_secs {
+        return Err(format!("delegate-task: credential TTL exceeds maximum {}s", cfg.max_ttl_secs));
+    }
+    if not_before > cfg.now_secs + cfg.clock_skew_secs {
+        return Err("delegate-task: credential not_before is too far in the future".to_string());
+    }
+    if cfg.now_secs < not_before {
+        return Err("delegate-task: credential not yet valid".to_string());
+    }
+    if cfg.now_secs > not_after {
+        return Err(format!("delegate-task: credential expired (expired epoch {not_after}, now {})", cfg.now_secs));
+    }
+
+    if !cred.functions.iter().any(|f| f == "delegate-task") {
+        return Err("delegate-task: function not in delegated scope".to_string());
+    }
+
+    if env.nonce.is_empty() { return Err("delegate-task: nonce required".to_string()); }
+    let nonce_bytes = URL_SAFE_NO_PAD.decode(&env.nonce).map_err(|_| "delegate-task: invalid nonce encoding".to_string())?;
+    if nonce_bytes.len() != 16 { return Err("delegate-task: nonce must be exactly 16 bytes".to_string()); }
+
+    if env.agent_sig.is_empty() { return Err("delegate-task: agent_sig missing from envelope".to_string()); }
+    let agent_sig = URL_SAFE_NO_PAD.decode(&env.agent_sig).map_err(|_| "delegate-task: invalid agent_sig encoding".to_string())?;
+
+    if env.request_hash.is_empty() { return Err("delegate-task: request_hash required".to_string()); }
+    let request_hash = URL_SAFE_NO_PAD.decode(&env.request_hash).map_err(|_| "delegate-task: invalid request_hash encoding".to_string())?;
+    if request_hash.len() != 32 { return Err("delegate-task: request_hash must be 32 bytes".to_string()); }
+
+    #[derive(Serialize)]
+    struct CanonReq<'a> { to_agent_id: &'a str, action: &'a str }
+    let canon = serde_json::to_vec(&CanonReq { to_agent_id: &r.to_agent_id, action: &r.action })
+        .map_err(|e| format!("delegate-task: canonicalisation error: {e}"))?;
+    if Sha256::digest(&canon).as_slice() != request_hash.as_slice() {
+        return Err("delegate-task: request_hash does not bind this call (to_agent_id/action mismatch)".to_string());
+    }
+
+    let vc_id_bytes = URL_SAFE_NO_PAD.decode(&cred.vc_id).map_err(|_| "delegate-task: invalid vc_id encoding".to_string())?;
+    if vc_id_bytes.len() != 16 { return Err("delegate-task: vc_id must be 16 bytes".to_string()); }
+    let agent_pubkey = URL_SAFE_NO_PAD.decode(&cred.agent_pubkey).map_err(|_| "delegate-task: invalid agent_pubkey encoding".to_string())?;
+
+    // Agent possession proof.
+    let preimage = crypto::build_preimage(&vc_id_bytes, &nonce_bytes, &request_hash);
+    crypto::verify_agent_sig(&agent_pubkey, &preimage, &agent_sig).map_err(|e| format!("delegate-task: {e}"))?;
+
+    // Issuer authorization (MANDATORY): user_sig must recover the pinned tenant issuer.
+    if env.user_sig.is_empty() {
+        return Err("delegate-task: user_sig required — credential must be issuer-signed".to_string());
+    }
+    let user_sig = URL_SAFE_NO_PAD.decode(&env.user_sig).map_err(|_| "delegate-task: invalid user_sig encoding".to_string())?;
+    let signer = crypto::recover_eip191_address(&cred_bytes, &user_sig).map_err(|e| format!("delegate-task: {e}"))?;
+    let trusted = cfg.trusted_issuer.ok_or(
+        "delegate-task: trusted issuer not pinned (build with ADN_TRUSTED_ISSUER) — refusing to authorize",
+    )?;
+    if signer != trusted {
+        return Err("delegate-task: credential issuer is not the trusted tenant".to_string());
+    }
+
+    // Issuer-signed authorization policy: binds target, action, and TTL.
+    let policy_str = cred.metadata.get("adn_authorization_v1")
+        .ok_or("delegate-task: missing adn_authorization_v1 policy in credential")?;
+    let policy: AuthzPolicy = serde_json::from_str(policy_str)
+        .map_err(|e| format!("delegate-task: invalid authorization policy: {e}"))?;
+    if policy.to_agent_id != r.to_agent_id {
+        return Err("delegate-task: target not authorized by credential policy".to_string());
+    }
+    if !policy.actions.iter().any(|a| a == &r.action) {
+        return Err("delegate-task: action not authorized by credential policy".to_string());
+    }
+    if policy.max_ttl_secs > 0 && (not_after - not_before) > policy.max_ttl_secs {
+        return Err("delegate-task: credential TTL exceeds policy maximum".to_string());
+    }
+
+    let digest = Sha256::digest(&cred_bytes);
+    let id = r.to_agent_id[..8.min(r.to_agent_id.len())].to_string();
+    Ok(DelegateTaskOutput {
+        delegation_id: format!("tee-del-{id}"),
+        status: "ROUTED".to_string(),
+        routed_to: r.to_agent_id,
+        credential_enforced: Some(true),
+        credential_fingerprint: Some(format!("{digest:x}")),
+        user_signer: Some(format!("0x{}", crypto::hex_lower(&signer))),
+    })
 }
 
 #[derive(Deserialize)]
@@ -513,164 +689,19 @@ impl Guest for Component {
 
     fn delegate_task(req: GenericInput) -> Result<Vec<u8>, String> {
         let bytes = req.input.ok_or("delegate-task: missing input")?;
-        let r: DelegateTaskInput = parse_input(&bytes, "delegate-task")?;
-
-        // ── Delegation envelope validation (contract-layer enforcement, v3.8.0) ─
-        // Envelope is MANDATORY — unauthenticated delegation calls are rejected.
-        // Validates: domain, time window, temporal consistency, function scope,
-        // vc_id format, agent_pubkey format, nonce length, agent_sig presence.
-        // Produces a SHA-256 fingerprint of the validated credential bytes.
-        let mut credential_enforced = None;
-        let mut credential_fingerprint = None;
-        let mut user_signer: Option<String> = None;
-
-        let env = r.delegation_envelope.as_ref().ok_or(
-            "delegate-task: __delegation_envelope required — unauthenticated delegation is not permitted"
-        )?;
-
-        let cred_bytes = URL_SAFE_NO_PAD
-                .decode(&env.credential_jcs)
-                .map_err(|_| "delegate-task: invalid credential_jcs encoding")?;
-
-            let cred: CredentialBody = serde_json::from_slice(&cred_bytes)
-                .map_err(|e| format!("delegate-task: invalid credential body: {e}"))?;
-
-            // Domain check
-            if cred.v != "ot3.delegation/1" {
-                return Err("delegate-task: invalid credential domain".to_string());
-            }
-
-            // vc_id and agent_pubkey: presence-check only.
-            // The SDK serialises these fields in its own encoding inside the JCS;
-            // verifying they are non-empty proves the credential includes them.
-            if cred.vc_id.is_empty() {
-                return Err("delegate-task: vc_id missing from credential".to_string());
-            }
-            if cred.agent_pubkey.is_empty() {
-                return Err("delegate-task: agent_pubkey missing from credential".to_string());
-            }
-
-            // Time window parsing
-            let not_before: u64 = cred
-                .not_before_secs
-                .parse()
-                .map_err(|_| "delegate-task: invalid not_before_secs")?;
-            let not_after: u64 = cred
-                .not_after_secs
-                .parse()
-                .map_err(|_| "delegate-task: invalid not_after_secs")?;
-
-            // Temporal consistency: window must be positive
-            if not_before >= not_after {
-                return Err(
-                    "delegate-task: credential window invalid (not_before >= not_after)"
-                        .to_string(),
-                );
-            }
-
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_err(|_| "delegate-task: clock error")?
-                .as_secs();
-
-            if now < not_before {
-                return Err("delegate-task: credential not yet valid".to_string());
-            }
-            if now > not_after {
-                return Err(format!(
-                    "delegate-task: credential expired (expired epoch {not_after}, now {now})"
-                ));
-            }
-
-            // Function scope check
-            if !cred.functions.iter().any(|f| f == "delegate-task") {
-                return Err("delegate-task: function not in delegated scope".to_string());
-            }
-
-            // ── Cryptographic envelope verification (v3.9.0) ──────────────────
-            // nonce: REQUIRED, base64url, exactly 16 bytes (SDK NONCE_LEN).
-            if env.nonce.is_empty() {
-                return Err("delegate-task: nonce required".to_string());
-            }
-            let nonce_bytes = URL_SAFE_NO_PAD
-                .decode(&env.nonce)
-                .map_err(|_| "delegate-task: invalid nonce encoding")?;
-            if nonce_bytes.len() != 16 {
-                return Err("delegate-task: nonce must be exactly 16 bytes".to_string());
-            }
-
-            // agent_sig: REQUIRED, base64url, 64-byte compact secp256k1.
-            if env.agent_sig.is_empty() {
-                return Err("delegate-task: agent_sig missing from envelope".to_string());
-            }
-            let agent_sig = URL_SAFE_NO_PAD
-                .decode(&env.agent_sig)
-                .map_err(|_| "delegate-task: invalid agent_sig encoding")?;
-
-            // request_hash: REQUIRED, base64url, 32 bytes.
-            if env.request_hash.is_empty() {
-                return Err("delegate-task: request_hash required".to_string());
-            }
-            let request_hash = URL_SAFE_NO_PAD
-                .decode(&env.request_hash)
-                .map_err(|_| "delegate-task: invalid request_hash encoding")?;
-            if request_hash.len() != 32 {
-                return Err("delegate-task: request_hash must be 32 bytes".to_string());
-            }
-
-            // Request binding: recompute sha256(JSON{to_agent_id,action}) and require equality.
-            #[derive(Serialize)]
-            struct CanonReq<'a> { to_agent_id: &'a str, action: &'a str }
-            let canon = serde_json::to_vec(&CanonReq { to_agent_id: &r.to_agent_id, action: &r.action })
-                .map_err(|e| format!("delegate-task: canonicalisation error: {e}"))?;
-            if Sha256::digest(&canon).as_slice() != request_hash.as_slice() {
-                return Err("delegate-task: request_hash does not bind this call (to_agent_id/action mismatch)".to_string());
-            }
-
-            // Decode credential identity fields (base64url in the JCS).
-            let vc_id_bytes = URL_SAFE_NO_PAD
-                .decode(&cred.vc_id)
-                .map_err(|_| "delegate-task: invalid vc_id encoding")?;
-            if vc_id_bytes.len() != 16 {
-                return Err("delegate-task: vc_id must be 16 bytes".to_string());
-            }
-            let agent_pubkey = URL_SAFE_NO_PAD
-                .decode(&cred.agent_pubkey)
-                .map_err(|_| "delegate-task: invalid agent_pubkey encoding")?;
-
-            // Verify the agent signature over DOMAIN||vc_id||nonce||request_hash.
-            let preimage = crypto::build_preimage(&vc_id_bytes, &nonce_bytes, &request_hash);
-            crypto::verify_agent_sig(&agent_pubkey, &preimage, &agent_sig)
-                .map_err(|e| format!("delegate-task: {e}"))?;
-
-            // Verify the user signature (EIP-191) recovers a signer over the exact
-            // credential JCS, binding the credential (which embeds agent_pubkey) to a
-            // real secp256k1 signer. NOTE: the recovered address is NOT checked against
-            // a trusted tenant key — the generic-input runtime exposes no host caller
-            // identity, so the trust anchor is a documented boundary (SUBMISSION_REPORT).
-            if !env.user_sig.is_empty() {
-                let user_sig = URL_SAFE_NO_PAD
-                    .decode(&env.user_sig)
-                    .map_err(|_| "delegate-task: invalid user_sig encoding")?;
-                let addr = crypto::recover_eip191_address(&cred_bytes, &user_sig)
-                    .map_err(|e| format!("delegate-task: {e}"))?;
-                user_signer = Some(format!("0x{}", crypto::hex_lower(&addr)));
-            }
-
-            // SHA-256 fingerprint of the verified credential bytes.
-            let digest = Sha256::digest(&cred_bytes);
-        credential_fingerprint = Some(format!("{digest:x}"));
-        credential_enforced = Some(true);
-
-        let id = &r.to_agent_id[..8.min(r.to_agent_id.len())];
-        encode(&DelegateTaskOutput {
-            delegation_id: format!("tee-del-{id}"),
-            status: "ROUTED".to_string(),
-            routed_to: r.to_agent_id,
-            credential_enforced,
-            credential_fingerprint,
-            user_signer,
-        })
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| "delegate-task: clock error")?
+            .as_secs();
+        let cfg = DelegationConfig {
+            trusted_issuer: trusted_issuer(),
+            tenant_did: configured_tenant_did(),
+            now_secs: now,
+            max_ttl_secs: 300,
+            clock_skew_secs: 120,
+        };
+        let out = verify_delegate_task(&bytes, &cfg)?;
+        encode(&out)
     }
 
     // ── Phase 2 — Blind Auction ──────────────────────────────────────────────
@@ -996,3 +1027,219 @@ fn simple_hash(s: &str) -> u64 {
 }
 
 
+
+// ── Contract-level delegate_task tests (v3.9.1) ───────────────────────────────
+// Exercise the full verify_delegate_task authorization path (not just crypto helpers)
+// by signing deterministically in-test with k256 and asserting accept/reject.
+#[cfg(test)]
+mod delegate_tests {
+    use super::*;
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
+    use k256::ecdsa::signature::hazmat::PrehashSigner;
+    use k256::ecdsa::{RecoveryId, Signature, SigningKey};
+    use sha3::{Digest as _, Keccak256};
+
+    fn b64(b: &[u8]) -> String { B64.encode(b) }
+    fn agent_key() -> SigningKey { SigningKey::from_slice(&[7u8; 32]).unwrap() }
+    fn legit_user() -> SigningKey { SigningKey::from_slice(&[9u8; 32]).unwrap() }
+
+    fn address_of(sk: &SigningKey) -> [u8; 20] {
+        let pt = sk.verifying_key().to_encoded_point(false);
+        let h = Keccak256::digest(&pt.as_bytes()[1..]);
+        let mut a = [0u8; 20];
+        a.copy_from_slice(&h[12..]);
+        a
+    }
+
+    fn req_hash(to: &str, action: &str) -> Vec<u8> {
+        #[derive(serde::Serialize)]
+        struct CR<'a> { to_agent_id: &'a str, action: &'a str }
+        let canon = serde_json::to_vec(&CR { to_agent_id: to, action }).unwrap();
+        Sha256::digest(&canon).to_vec()
+    }
+
+    fn eip191_sign(msg: &[u8], sk: &SigningKey) -> Vec<u8> {
+        let mut pre = format!("\x19Ethereum Signed Message:\n{}", msg.len()).into_bytes();
+        pre.extend_from_slice(msg);
+        let dig = Keccak256::digest(&pre);
+        let (sig, rec): (Signature, RecoveryId) = sk.sign_prehash_recoverable(&dig).unwrap();
+        let mut v = sig.to_bytes().to_vec();
+        v.push(27 + rec.to_byte());
+        v
+    }
+
+    struct Parts {
+        to: String,
+        action: String,
+        nb: u64,
+        na: u64,
+        contract: String,
+        tenant: String,
+        policy_to: String,
+        policy_actions: Vec<String>,
+        policy_ttl: u64,
+        user_sk: SigningKey,
+        include_user_sig: bool,
+        forge_agent_sig: bool,
+        stale_request_hash: bool,
+        omit_envelope: bool,
+    }
+    impl Default for Parts {
+        fn default() -> Self {
+            Parts {
+                to: "did:key:ed25519:worker-1".into(),
+                action: "PROCESS_DATA".into(),
+                nb: 1_700_000_000,
+                na: 1_700_000_200,
+                contract: "adn-processor".into(),
+                tenant: "did:t3n:test".into(),
+                policy_to: "did:key:ed25519:worker-1".into(),
+                policy_actions: vec!["PROCESS_DATA".into()],
+                policy_ttl: 300,
+                user_sk: legit_user(),
+                include_user_sig: true,
+                forge_agent_sig: false,
+                stale_request_hash: false,
+                omit_envelope: false,
+            }
+        }
+    }
+
+    fn cfg() -> DelegationConfig {
+        DelegationConfig {
+            trusted_issuer: Some(address_of(&legit_user())),
+            tenant_did: Some("did:t3n:test".into()),
+            now_secs: 1_700_000_100,
+            max_ttl_secs: 300,
+            clock_skew_secs: 120,
+        }
+    }
+
+    fn assemble(p: &Parts) -> String {
+        let ak = agent_key();
+        let apk = ak.verifying_key().to_encoded_point(true);
+        let vc_id: [u8; 16] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        let nonce: [u8; 16] = [0xaa; 16];
+
+        let policy = serde_json::json!({
+            "to_agent_id": p.policy_to,
+            "actions": p.policy_actions,
+            "max_ttl_secs": p.policy_ttl,
+        }).to_string();
+
+        let cred = serde_json::json!({
+            "v": "ot3.delegation/1",
+            "contract": p.contract,
+            "functions": ["delegate-task", "process-data"],
+            "not_before_secs": p.nb.to_string(),
+            "not_after_secs": p.na.to_string(),
+            "vc_id": b64(&vc_id),
+            "agent_pubkey": b64(apk.as_bytes()),
+            "user_did": p.tenant,
+            "org_did": p.tenant,
+            "metadata": { "adn_authorization_v1": policy },
+        });
+        let cred_bytes = serde_json::to_vec(&cred).unwrap();
+
+        // request_hash binds the SIGNED (policy) action unless stale_request_hash.
+        let rh = req_hash(&p.to, &p.action);
+        let preimage = crypto::build_preimage(&vc_id, &nonce, &rh);
+        let dig = Sha256::digest(&preimage);
+        let sig: Signature = ak.sign_prehash(&dig).unwrap();
+        let mut agent_sig = sig.to_bytes().to_vec();
+        if p.forge_agent_sig { agent_sig[0] ^= 0xff; }
+
+        let sent_rh = if p.stale_request_hash { req_hash(&p.to, "SOMETHING_ELSE") } else { rh };
+
+        let mut envelope = serde_json::Map::new();
+        envelope.insert("credential_jcs".into(), serde_json::json!(b64(&cred_bytes)));
+        if p.include_user_sig {
+            envelope.insert("user_sig".into(), serde_json::json!(b64(&eip191_sign(&cred_bytes, &p.user_sk))));
+        }
+        envelope.insert("nonce".into(), serde_json::json!(b64(&nonce)));
+        envelope.insert("agent_sig".into(), serde_json::json!(b64(&agent_sig)));
+        envelope.insert("request_hash".into(), serde_json::json!(b64(&sent_rh)));
+
+        let mut input = serde_json::Map::new();
+        input.insert("to_agent_id".into(), serde_json::json!(p.to));
+        input.insert("action".into(), serde_json::json!(p.action));
+        if !p.omit_envelope {
+            input.insert("__delegation_envelope".into(), serde_json::Value::Object(envelope));
+        }
+        serde_json::to_string(&serde_json::Value::Object(input)).unwrap()
+    }
+
+    #[test]
+    fn valid_trusted_issuer_accepts() {
+        let out = verify_delegate_task(assemble(&Parts::default()).as_bytes(), &cfg());
+        assert!(out.is_ok(), "expected accept, got {:?}", out.err());
+    }
+
+    #[test]
+    fn missing_user_sig_rejected() {
+        let p = Parts { include_user_sig: false, ..Default::default() };
+        assert!(verify_delegate_task(assemble(&p).as_bytes(), &cfg()).is_err());
+    }
+
+    #[test]
+    fn untrusted_issuer_rejected() {
+        let p = Parts { user_sk: SigningKey::from_slice(&[3u8; 32]).unwrap(), ..Default::default() };
+        assert!(verify_delegate_task(assemble(&p).as_bytes(), &cfg()).is_err());
+    }
+
+    #[test]
+    fn issuer_not_pinned_rejects() {
+        let mut c = cfg();
+        c.trusted_issuer = None;
+        assert!(verify_delegate_task(assemble(&Parts::default()).as_bytes(), &c).is_err());
+    }
+
+    #[test]
+    fn wrong_contract_rejected() {
+        let p = Parts { contract: "evil-contract".into(), ..Default::default() };
+        assert!(verify_delegate_task(assemble(&p).as_bytes(), &cfg()).is_err());
+    }
+
+    #[test]
+    fn wrong_tenant_did_rejected() {
+        let p = Parts { tenant: "did:t3n:attacker".into(), ..Default::default() };
+        assert!(verify_delegate_task(assemble(&p).as_bytes(), &cfg()).is_err());
+    }
+
+    #[test]
+    fn wrong_signed_target_rejected() {
+        let p = Parts { policy_to: "did:key:ed25519:other".into(), ..Default::default() };
+        assert!(verify_delegate_task(assemble(&p).as_bytes(), &cfg()).is_err());
+    }
+
+    #[test]
+    fn wrong_signed_action_rejected() {
+        let p = Parts { action: "DELETE_ALL".into(), ..Default::default() };
+        // request_hash binds DELETE_ALL, but policy only allows PROCESS_DATA.
+        assert!(verify_delegate_task(assemble(&p).as_bytes(), &cfg()).is_err());
+    }
+
+    #[test]
+    fn modified_request_field_rejected() {
+        let p = Parts { stale_request_hash: true, ..Default::default() };
+        assert!(verify_delegate_task(assemble(&p).as_bytes(), &cfg()).is_err());
+    }
+
+    #[test]
+    fn ttl_exceeds_max_rejected() {
+        let p = Parts { nb: 1_700_000_000, na: 1_700_000_500, ..Default::default() }; // 500s > 300s
+        assert!(verify_delegate_task(assemble(&p).as_bytes(), &cfg()).is_err());
+    }
+
+    #[test]
+    fn forged_agent_sig_rejected() {
+        let p = Parts { forge_agent_sig: true, ..Default::default() };
+        assert!(verify_delegate_task(assemble(&p).as_bytes(), &cfg()).is_err());
+    }
+
+    #[test]
+    fn missing_envelope_rejected() {
+        let p = Parts { omit_envelope: true, ..Default::default() };
+        assert!(verify_delegate_task(assemble(&p).as_bytes(), &cfg()).is_err());
+    }
+}

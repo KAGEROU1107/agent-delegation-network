@@ -1,4 +1,4 @@
-﻿# Terminal 3 Agent Dev Kit Bounty — Submission Report
+# Terminal 3 Agent Dev Kit Bounty — Submission Report
 
 **Project**: Agent Delegation Network (ADN)  
 **Submitter**: KAGEROU1107  
@@ -7,8 +7,8 @@
 **Repo**: https://github.com/KAGEROU1107/agent-delegation-network  
 **Demo Video**: https://youtu.be/ukZQ7F81aho  
 **SDK**: `@terminal3/t3n-sdk@3.5.2`  
-**Contract**: `adn-processor v3.9.0` — cryptographic envelope verification (secp256k1 agent_sig + EIP-191 user_sig + request binding)  
-**Live proof**: `proof/live_run_v3.8.1_final_88b7b88.txt` (v3.8.1 structural — current). Fresh v3.9.0 cryptographic proof pending redeploy of WASM `d04048fad022687bafa03353b0daf4eb4d59d51f058fe83a386204557c050506`.
+**Contract**: `adn-processor v3.9.1` — issuer-authenticated, cryptographically verified, request-bound delegated execution  
+**Live proof**: `proof/live_run_v3.8.1_final_88b7b88.txt` (v3.8.1 structural — current). v3.9.1 is built + unit-tested (19/19) but **not yet deployed**; the last *deployed/invoked* contract is the v3.8.1 structural build in that proof. Operator must build v3.9.1 with `ADN_TRUSTED_ISSUER` (see `t3n-bridge/scripts/derive_issuer.mjs`) and run a fresh live proof.
 
 ---
 
@@ -22,20 +22,20 @@ Live run against T3N testnet — 20/20 WIT exports, real DID, unique per-run has
 
 ## What Was Built
 
-An integration prototype demonstrating real Terminal 3 authentication, SDK-native delegation credential construction, Rust/WASM TEE contract invocation, and — as of **v3.9.0** — **cryptographic** verification of the delegation envelope on `delegate-task`. The agent signature (secp256k1) is verified against the credential's agent public key over the invocation preimage; the request hash is recomputed in-contract and bound to the call's `to_agent_id`/`action`; the user signature (EIP-191) is recovered over the exact credential JCS bytes; the nonce is required at exactly 16 bytes. Verification is pure Rust (`k256`) compiled to `wasm32-wasip2` — **no host primitive** — refuting the earlier claim that ECDSA recovery required one.
+An integration prototype demonstrating real Terminal 3 authentication, SDK-native delegation credential construction, Rust/WASM TEE contract invocation, and — as of **v3.9.1** — **issuer-authenticated, cryptographically verified** delegated execution on `delegate-task`. The agent signature (secp256k1) is verified against the credential's agent public key over the invocation preimage; the request hash is recomputed in-contract and bound to the call's `to_agent_id`/`action`; the user signature (EIP-191) is recovered over the exact credential JCS bytes; the nonce is required at exactly 16 bytes. Verification is pure Rust (`k256`) compiled to `wasm32-wasip2` — **no host primitive** — refuting the earlier claim that ECDSA recovery required one.
 
-Two properties remain **runtime-blocked, not effort-blocked**, and are NOT claimed: (1) **durable replay prevention** — the `generic-input` WIT world imports no KV/storage capability, so consumed nonces cannot be persisted in-contract; (2) **trusted tenant/organisation anchor** — there is no host caller-identity import, so the recovered `user_sig` signer cannot be checked against the authenticated tenant. Consequently a fully self-issued credential and an exact-invocation replay are out of scope. Persistent workflow state for the other 19 exports is likewise unavailable for the same KV reason.
+Authorization root (v3.9.1): a tenant-controlled issuer Ethereum address is pinned into the contract at build time (`ADN_TRUSTED_ISSUER`). `user_sig` is **mandatory**, recovered via EIP-191 over the credential JCS, and required to equal the pinned issuer — so a self-issued credential is rejected. The issuer-signed credential also carries an authorization policy (`adn_authorization_v1`) binding target, action, and max TTL. The pinned address is public (not secret); rotation is a new contract version. **One property remains runtime-blocked, not effort-blocked, and is NOT claimed: durable replay prevention** — this `generic-input` WIT world imports no KV/storage capability, so consumed nonces cannot be persisted *in this contract*. (This bounds the present world; it does not assert Terminal 3 offers no state-capable contract model.) An exact-invocation replay within the credential TTL is therefore not prevented at the contract layer; short (≤300s) TTLs bound the window. Persistent workflow state for the other 19 exports is unavailable for the same KV reason.
 
 ### Core capabilities demonstrated
 
 | Capability | Evidence |
 |---|---|
 | T3N handshake + authenticate | Phase 1 — real DID from testnet every run |
-| Rust/WASM TEE contract (v3.9.0) | Registered + invoked: `z:ad146e6861ac408900af7ece1f6e90976dad3a02:adn-processor`; WASM SHA-256 `d04048fad0…050506` |
+| Rust/WASM TEE contract | **Deployed + invoked: v3.8.1 structural** (`z:ad146e6861…:adn-processor`, committed live proof). **v3.9.1 cryptographic: built + 19/19 tests, not yet deployed** (unpinned WASM SHA-256 `ccc4a0be5b…11abf1`; operator builds pinned). |
 | Runtime enclave computation | 30 CSV records → TEE computes total/avg/min/max/trend |
 | All 20 WIT exports invoked | Phase 3: 2 core functions; Phase 4: remaining 18/18 `[+]` in clean run |
 | Agent Auth SDK — credential lifecycle | buildDelegationCredential → sign → validate → revoke SUCCESS |
-| Agent Auth enforcement scope | **Cryptographic (v3.9.0)**: secp256k1 `agent_sig` verified over preimage, EIP-191 `user_sig` recovered over credential JCS, `request_hash` recomputed and bound to `to_agent_id`/`action`, nonce strict 16 bytes, envelope mandatory (C-01). Verified by 7 Rust unit tests against SDK ground-truth vectors. **Boundaries (runtime-blocked):** durable replay (C-03, no KV import) and trusted tenant anchor (no host caller identity). |
+| Agent Auth enforcement scope | **v3.9.1**: mandatory `user_sig` recovered to a **build-time-pinned trusted issuer**; secp256k1 `agent_sig` verified over preimage; issuer-signed `adn_authorization_v1` policy binds target/action/TTL; `request_hash` recomputed and bound to `to_agent_id`/`action`; nonce strict 16 bytes; TTL ≤ 300s; envelope mandatory (C-01). **19/19 Rust tests** (7 crypto-vector + 12 contract-level accept/reject). **Boundary:** durable replay (C-03) — no KV import in this world. |
 | Per-call DelegationEnvelope | buildInvocationPreimage + signAgentInvocation — full wire shape |
 | Negative live TEE test | Empty records → `process-data: records cannot be empty` rejection |
 | Multi-agent Ed25519 delegation | 4 distinct identities, signed payloads, tamper detection |
@@ -118,26 +118,30 @@ await revokeDelegation({ credentialJcsB64u, client: t3n, baseUrl: getNodeUrl() }
 // → SUCCESS: credential marked revoked in T3N delegation registry
 ```
 
-### Cryptographic verification (v3.9.0)
+### Cryptographic verification + issuer authorization (v3.9.1)
 
-`adn-processor v3.9.0` performs **cryptographic** contract-layer verification on `delegate-task`, in pure Rust (`k256` secp256k1 + `sha3` Keccak-256) compiled to `wasm32-wasip2`. No host primitive is used.
+`adn-processor v3.9.1` performs **issuer-authenticated cryptographic** contract-layer verification on `delegate-task`, in pure Rust (`k256` secp256k1 + `sha3` Keccak-256) compiled to `wasm32-wasip2`. No host primitive is used. Verification logic is a pure, host-testable function (`verify_delegate_task`).
 
 | Property | Enforced | Mechanism |
 |---|---|---|
 | Agent signature | ✅ | `secp256k1` verify of 64-byte `agent_sig` over `sha256("ot3.invocation/1" ‖ vc_id ‖ nonce ‖ request_hash)` against the credential's 33-byte compressed `agent_pubkey` |
 | Request binding | ✅ | `request_hash` recomputed in-contract as `sha256(JSON{to_agent_id,action})` and required to equal the signed value — altering target or action invalidates the call |
-| User signature | ✅ | 65-byte EIP-191 `user_sig` recovered over the exact credential JCS bytes; binds the credential (which embeds `agent_pubkey`) to a real secp256k1 signer; recovered address emitted as `user_signer` |
+| User signature (issuer auth) | ✅ | 65-byte EIP-191 `user_sig` is **mandatory**, recovered over the exact credential JCS, and **required to equal the build-time-pinned tenant issuer** (`ADN_TRUSTED_ISSUER`). A self-issued credential is rejected. |
+| Authorization policy | ✅ | issuer-signed `adn_authorization_v1` in credential metadata binds `to_agent_id`, allowed `actions`, and `max_ttl_secs`; mismatched target/action rejected |
+| Credential TTL cap | ✅ | `not_after - not_before ≤ 300s`; `not_before ≤ now + 120s` skew |
+| Tenant pin (optional) | ✅ | when `ADN_TENANT_DID` set, credential `org_did`/`user_did` must match |
 | Nonce | ✅ | required, base64url, **exactly 16 bytes** (SDK `NONCE_LEN`) — empty/short rejected |
 | Envelope presence | ✅ | `__delegation_envelope` mandatory (C-01) |
 | Credential window / scope / domain | ✅ | `not_before/after` vs WASI clock, `delegate-task` in `functions`, domain `ot3.delegation/1` |
 | Credential fingerprint | ✅ | SHA-256 of verified credential bytes emitted in response |
 
-Verified by **7 Rust unit tests** (`contract/src/crypto.rs`) against ground-truth vectors generated from the installed `@terminal3/t3n-sdk` (`t3n-bridge/scripts/gen_vectors.mjs`, `gen_jcs.mjs`): valid sig accepted; forged-but-non-empty sig rejected; tampered `request_hash` rejected; wrong pubkey rejected; `user_sig` recovers the expected address; tampered credential recovers a different address.
+Verified by **19 Rust tests** — 7 crypto-vector tests (`contract/src/crypto.rs`, vs SDK ground truth from `t3n-bridge/scripts/gen_vectors.mjs`/`gen_jcs.mjs`) plus 12 contract-level `verify_delegate_task` tests (`delegate_tests`): valid-trusted-issuer accepted; and rejected — missing `user_sig`, untrusted issuer, issuer-not-pinned, wrong contract, wrong tenant DID, wrong signed target, wrong signed action, modified request field, TTL over max, forged `agent_sig`, missing envelope.
 
-**Boundaries — runtime-blocked, not effort-blocked (precise):**
-- **Durable replay prevention (C-03):** the `generic-input` WIT world (`contract/wit/world.wit`) imports no KV/storage interface; the SDK exposes none for `generic-input` contracts. Consumed `(vc_id, nonce, request_hash)` cannot be persisted in-contract, so an *exact-invocation* replay within the credential TTL is not prevented at the contract layer. Short-lived (30s) credentials bound the window only.
-- **Trusted tenant/org anchor:** there is no host caller-identity import. The contract recovers the `user_sig` signer but has no trusted tenant address to compare it against, so a fully *self-issued* credential (attacker's own user+agent keypair) is not distinguishable from a tenant-issued one. The recovered address is exposed for off-chain checking.
-- **Live revocation registry:** `tee:delegation/contracts::is-live` is not exposed to `generic-input` WASM; post-revocation enforcement is via 30s TTL + 35s wait (BUG-005).
+**Resolved in v3.9.1:** the trusted-issuer anchor (previously mislabelled "runtime-blocked") is implemented by pinning the tenant issuer address at build time — no host caller-identity import is required. A self-issued credential is now rejected.
+
+**Boundary that remains (genuinely runtime-blocked):**
+- **Durable replay prevention (C-03):** the `generic-input` WIT world (`contract/wit/world.wit`) imports no KV/storage interface, so consumed `(vc_id, nonce, request_hash)` cannot be persisted *in this contract*. This bounds the present world; it is not a claim that Terminal 3 offers no state-capable contract model. An exact-invocation replay within the (≤300s) TTL is therefore not prevented at the contract layer. A durable fix needs either a state-capable contract world or a gateway that is the sole path to the TEE.
+- **Live revocation registry:** `is-live` lookup is not exposed to `generic-input` WASM; post-revocation enforcement is via TTL + wait (BUG-005).
 
 ---
 
@@ -192,7 +196,7 @@ Five issues discovered during integration, documented in [`bugs_found.md`](bugs_
 
 `TenantContractsNamespace.register()` returns `Promise<unknown>`. `tenant.maps.create()` requires a numeric `contractId` in its ACL fields. No documented API exists to retrieve the numeric ID after registration.
 
-**Workaround implemented**: `registerAdnContract()` now probes the raw SDK response for any numeric `id`/`contractId` field. `setupAdnMaps()` is wired into the bridge and creates all 8 ADN feature maps. When the SDK does not return a `contractId`, map ACLs fall back to `writers/readers: "all"` with a diagnostic log. Contract-only ACLs will auto-activate if the SDK begins returning the numeric ID.
+**Workaround implemented**: `registerAdnContract()` now probes the raw SDK response for any numeric `id`/`contractId` field. `setupAdnMaps()` is wired into the bridge and creates all 8 ADN feature maps. When the SDK does not return a `contractId`, `setupAdnMaps()` **fails closed** (no map is created with an open ACL); a known contractId (49) is used for the contract-only ACL. There is no `writers/readers: "all"` fallback.
 
 **Category**: SDK gap
 

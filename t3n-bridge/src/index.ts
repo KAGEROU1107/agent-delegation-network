@@ -234,12 +234,16 @@ async function main() {
 
     const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
+    let p4Passed = 0;
+    let p4Failed = 0;
     const p4 = async (label: string, fn: () => Promise<unknown>) => {
       try {
         const r = await fn();
         console.log(`  [+] ${label}:`, JSON.stringify(r).slice(0, 120));
+        p4Passed++;
       } catch (err) {
         console.error(`  [-] ${label}: ${(err as Error).message}`);
+        p4Failed++;
       }
       await sleep(7000); // spread across fuel_per_minute window (~8 calls/min)
     };
@@ -285,7 +289,13 @@ async function main() {
     await p4("lock-bond", () => invokeLockBond(t3n, tenantDid, { agent_did: workerDid, task_id: "task-001", bond_amount: 500.00, deadline_epoch: now + 86400 }));
     await p4("verify-and-settle", () => invokeVerifyAndSettle(t3n, tenantDid, { bond_id: "bond-demo", agent_did: workerDid, task_id: "task-001", bond_amount: 500.00, deadline_epoch: now + 86400, current_epoch: now, completed: true, quality_score: 0.92 }));
 
-    console.log("  [+] All 20 WIT exports invoked via live T3N TEE bridge.");
+    console.log(`  [+] Phase 4: ${p4Passed}/18 passed | ${p4Failed} failed`);
+    if (p4Passed === 18) {
+      console.log("  [+] All 20 WIT exports invoked via live T3N TEE bridge.");
+    } else {
+      console.log(`  [!] Phase 4 incomplete: ${p4Failed} call(s) failed — review [-] lines above`);
+      process.exitCode = 1;
+    }
   }
 
   // ── Summary ─────────────────────────────────────────────────────────────────
@@ -306,3 +316,4 @@ main().catch((err) => {
   console.error("Fatal:", err);
   process.exit(1);
 });
+

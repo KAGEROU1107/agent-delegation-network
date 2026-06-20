@@ -43,7 +43,6 @@ export async function runAdnWithRealDid(
     const script = `
 import sys, os, json, secrets, logging
 sys.path.insert(0, r'${ADN_ROOT.replace(/\\/g, '\\\\')}')
-os.environ['T3N_API_KEY'] = '${apiKey}'
 os.environ['DID'] = '${tenantDid}'
 os.environ['T3_MOCK'] = 'false'
 logging.disable(9999)
@@ -165,3 +164,4 @@ print(json.dumps({
     });
   });
 }
+

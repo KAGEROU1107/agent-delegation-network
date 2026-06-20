@@ -16,7 +16,7 @@
 
 https://youtu.be/ukZQ7F81aho
 
-Live run against T3N testnet — 20/20 WIT exports, real DID, unique per-run hashes. Compare values in the video against \proof/live_run_v3.8.0_demo_video.txt\ in the repo to confirm independent live runs.
+Live run against T3N testnet — 20/20 WIT exports, real DID, unique per-run hashes. Compare values in the video against `proof/live_run_v3.8.0_demo_video.txt` in the repo to confirm independent live runs.
 
 ---
 
@@ -33,8 +33,9 @@ A multi-agent delegation network where a coordinator obtains a real Terminal 3 D
 | Runtime enclave computation | 30 CSV records → TEE computes total/avg/min/max/trend |
 | All 20 WIT exports invoked | Phase 3: 2 core functions; Phase 4: remaining 18/18 `[+]` in clean run |
 | Agent Auth SDK — credential lifecycle | buildDelegationCredential → sign → validate → revoke SUCCESS |
+| Agent Auth enforcement scope | Structural: scope, TTL, nonce length, agent_sig presence. Cryptographic sig and replay-registry verification documented as ADK host-capability boundary. |
 | Per-call DelegationEnvelope | buildInvocationPreimage + signAgentInvocation — full wire shape |
-| Delegation enforcement test | Pre/post revocation calls logged; behavior documented |
+| Agent Auth enforcement | TEE-enforced structural credential validation: scope, TTL, nonce format, envelope presence. Cryptographic sig verification is a documented boundary (host-capability, not in-WASM). Proven via live HTTP 400 rejections. |
 | Negative live TEE test | Empty records → `process-data: records cannot be empty` rejection |
 | Multi-agent Ed25519 delegation | 4 distinct identities, signed payloads, tamper detection |
 | Local negative security tests | 33/33 pass |
@@ -205,7 +206,7 @@ The `z:ad146e6861ac408900af7ece1f6e90976dad3a02:adn-processor` script_name forma
 
 ### BUG-005: Delegation envelope not validated at T3N transport layer for `generic-input` contracts
 
-**Status: FIXED in adn-processor v3.6.0**
+**Status: FIXED in adn-processor v3.8.0**
 
 A `DelegationEnvelope` embedded in a `generic-input` call is not intercepted/validated by T3N's routing layer. The fix: the `delegate-task` function in the Rust contract now implements contract-layer enforcement — decoding `credential_jcs`, checking `not_before_secs`/`not_after_secs` via WASI `SystemTime::now()`, and verifying the called function is in the credential's `functions` scope. A short-lived (30s) credential is used in the demo so a revoked credential expires before the post-revocation call.
 
@@ -287,8 +288,9 @@ cargo build --target wasm32-wasip2 --release
 | Area | Status |
 |---|---|
 | Tenant map ACL wiring | **Wired** — 8 maps created via `setupAdnMaps()`; ACLs use `writers/readers:"all"` fallback when BUG-001 active (no contractId from SDK) |
-| Credential-gated execution (denial-after-revoke) | **IMPLEMENTED** — v3.6.0 contract enforces via time-bound expiry + WASI clock. See BUG-005. |
+| Credential-gated execution (denial-after-revoke) | **IMPLEMENTED** — v3.8.0 contract enforces via time-bound expiry + WASI clock. See BUG-005. |
 | Secret Vault persistence | TEE pattern only — persistent map storage depends on contract-only ACLs, which require SDK resolving BUG-001 (contractId from register()) |
 | Python demo live TEE | Uses `_tee_stub` local simulation; authoritative proof is TypeScript bridge Phase 4 |
 | Real-time revocation registry in WASM | Residual gap — requires undocumented host primitive; time-bound tokens used instead |
+
 

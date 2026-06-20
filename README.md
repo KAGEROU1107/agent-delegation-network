@@ -279,7 +279,7 @@ agent-delegation-network/
 │   ├── src/
 │   │   ├── t3n_auth.ts          # handshake() + authenticate() → DID
 │   │   ├── agent_auth.ts        # Agent Auth credential + envelope demo
-│   │   ├── contract_bridge.ts   # TEE contract registration + invocation v3.6.0
+│   │   ├── contract_bridge.ts   # TEE contract registration + invocation v3.8.0
 │   │   ├── map_setup.ts         # KV map creation with BUG-001 fallback
 │   │   ├── adn_runner.ts        # spawns Python ADN with real DID
 │   │   └── index.ts             # main entry point
@@ -289,7 +289,7 @@ agent-delegation-network/
 │   ├── wit/world.wit            # WIT interface — 20 exported functions
 │   ├── src/lib.rs               # all 20 functions implemented
 │   └── Cargo.toml
-├── src/                         # Python agent delegation network
+├── src/                         # Python application orchestration layer (not ADK — TypeScript bridge is the ADK layer)
 │   ├── agent_identity.py        # Ed25519 identity per agent
 │   ├── delegation_protocol.py   # signed delegation requests
 │   ├── delegation_policy.py     # role/trust/action policy engine
@@ -310,7 +310,7 @@ agent-delegation-network/
 ├── tests/
 │   └── negative_security.py     # 33 negative security tests
 ├── proof/
-│   ├── live_run_v3.6.0.txt      # v3.6.0 live proof
+│   ├── live_run_v3.6.0.txt      # v3.6.0 baseline proof
 │   └── live_run_v3.5.0.txt      # v3.5.0 baseline proof
 ├── llm/
 │   └── client.py                # generic LLM client (OpenAI-compatible, stubs when no key)
@@ -319,7 +319,7 @@ agent-delegation-network/
 ├── .env.example                 # environment variable template
 ├── PHASES.md
 ├── SUBMISSION_REPORT.md
-└── t3n_bridge_proof.txt         # live testnet output v3.6.0
+└── t3n_bridge_proof.txt         # live testnet output v3.8.0
 ```
 
 ---
@@ -346,7 +346,7 @@ See `docs/bugs/` and `docs/doc-gaps/` for full details.
 | BUG-002 | Agent Auth grant APIs not at top level | MEDIUM | UPSTREAM |
 | BUG-003 | `buildDelegationCredential` rejects long `z:{tenant}:{tail}` format | LOW | WORKAROUND_FOUND |
 | BUG-004 | Testnet `fuel_per_minute` quota limits Phase 4 in a single run | MEDIUM | WORKAROUND_FOUND |
-| BUG-005 | Delegation envelope not validated at T3N transport layer for generic-input | HIGH | FIXED (v3.6.0) |
+| BUG-005 | Delegation envelope not validated at T3N transport layer for generic-input | HIGH | FIXED (v3.8.0) |
 | BUG-006 | CI red X: `Post commit status` step failed the job | MEDIUM | FIXED (0c7b10b) |
 | BUG-007 | Testnet credits exhausted during development | HIGH | OPEN |
 
@@ -365,3 +365,4 @@ See `docs/bugs/` and `docs/doc-gaps/` for full details.
 - The Agent Auth revocation proof uses short-lived credential expiry for contract-layer rejection. Immediate revocation-registry lookup from inside `generic-input` WASM is documented as a current ADK gap.
 - TEE Secret Vault is implemented as a secure-pattern demo, not a production persistent vault.
 - When the SDK does not return a numeric `contractId`, tenant map ACL setup falls back to `writers/readers: "all"` as a documented BUG-001 workaround.
+

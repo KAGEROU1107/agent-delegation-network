@@ -93,11 +93,16 @@ coord_id = coordinator.identity.agent_id
 w1_id    = worker1.identity.agent_id
 val_id   = validator.identity.agent_id
 
-# Register explicit action + trust rules (dual default-deny requires both)
+# Register explicit action + trust rules (dual default-deny requires both).
+# Coordinator rules: what actions coord_id is allowed to delegate
 coordinator.policy_engine.policy.add_delegation_rule(coord_id, 'PROCESS_DATA')
 coordinator.policy_engine.policy.add_delegation_rule(coord_id, 'VALIDATE_QUALITY')
 coordinator.policy_engine.policy.add_trust_relationship(coord_id, w1_id)
 coordinator.policy_engine.policy.add_trust_relationship(coord_id, val_id)
+# Performer rules: coordinator policy also checks can_perform_task(to_agent_id, action)
+# so the worker/validator also need explicit action rules in the coordinator's engine.
+coordinator.policy_engine.policy.add_delegation_rule(w1_id, 'PROCESS_DATA')
+coordinator.policy_engine.policy.add_delegation_rule(val_id, 'VALIDATE_QUALITY')
 
 def process_handler(p):
     total = round(sum(amounts), 2) if amounts else 0
@@ -180,3 +185,4 @@ print(json.dumps({
     });
   });
 }
+

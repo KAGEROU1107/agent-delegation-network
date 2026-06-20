@@ -12,7 +12,7 @@
  *   8. Attempt the same delegated call AFTER revocation + expiry → TEE contract rejects → REJECTED
  *
  * Enforcement mechanism (BUG-005 fix):
- *   The adn-processor TEE contract (v3.8.0) validates __delegation_envelope on delegate-task:
+ *   The adn-processor TEE contract (v3.8.1) validates __delegation_envelope on delegate-task:
  *   - Decodes credential_jcs from base64url
  *   - Checks not_before_secs / not_after_secs against WASI wall-clock inside the enclave
  *   - Verifies "delegate-task" is in the credential's functions array
@@ -107,7 +107,7 @@ async function tryDelegatedCall(
     // forwarding, a revoked credential returns a delegation error here.
     const result = await t3n.executeAndDecode({
       script_name: `z:${tid}:adn-processor`,
-      script_version: "3.8.0",
+      script_version: "3.8.1",
       function_name: "delegate-task",
       input: {
         ...callParams,
@@ -186,7 +186,7 @@ export async function demonstrateAgentAuth(
   await new Promise((r) => setTimeout(r, 35_000));
 
   // ── Delegated call AFTER revocation + expiry ──────────────────────────────────
-  // TEE contract (v3.8.0) decodes the credential_jcs, reads not_after_secs from
+  // TEE contract (v3.8.1) decodes the credential_jcs, reads not_after_secs from
   // the JCS, and rejects because now > not_after_secs. REJECTED at contract layer.
   const postRevocationCallResult = await tryDelegatedCall(t3n, tenantDid, envelope, callParams);
 
@@ -216,7 +216,7 @@ export interface WireDelegationEnvelope {
  * Build a fresh wire-format DelegationEnvelope for a single delegate-task call.
  *
  * Used by Phase 4 so every delegate-task invocation carries a valid credential,
- * satisfying the mandatory-envelope requirement in the contract (v3.8.0).
+ * satisfying the mandatory-envelope requirement in the contract (v3.8.1).
  */
 export async function buildWireDelegationEnvelope(
   tenantDid: string,
@@ -263,7 +263,7 @@ export async function demonstrateNegativeEnvelopeTests(
   t3n: T3nClient,
   tenantDid: string,
   apiKey: string
-): Promise<{ missingSig: string; shortNonce: string }> {
+): Promise<{ missingSig: string; shortNonce: string; noEnvelope: string }> {
   const userSecret = Buffer.from(apiKey.replace(/^0x/, ""), "hex");
   const agentSecret = new Uint8Array(randomBytes(32));
   const agentPubkey = await pubkeyFromSecret(agentSecret);
@@ -297,7 +297,7 @@ export async function demonstrateNegativeEnvelopeTests(
   try {
     const result = await t3n.executeAndDecode({
       script_name: `z:${tid}:adn-processor`,
-      script_version: "3.8.0",
+      script_version: "3.8.1",
       function_name: "delegate-task",
       input: {
         ...callParams,
@@ -324,7 +324,7 @@ export async function demonstrateNegativeEnvelopeTests(
     const agentSig = signAgentInvocation(preimage, agentSecret);
     const result = await t3n.executeAndDecode({
       script_name: `z:${tid}:adn-processor`,
-      script_version: "3.8.0",
+      script_version: "3.8.1",
       function_name: "delegate-task",
       input: {
         ...callParams,
@@ -342,6 +342,23 @@ export async function demonstrateNegativeEnvelopeTests(
     shortNonce = `REJECTED: ${(err as Error).message.slice(0, 100)}`;
   }
 
-  return { missingSig, shortNonce };
+  // ── Test 3: no envelope at all (C-01 proof — mandatory envelope) ─────────────
+  let noEnvelope: string;
+  try {
+    const result = await t3n.executeAndDecode({
+      script_name: `z:${tid}:adn-processor`,
+      script_version: "3.8.1",
+      function_name: "delegate-task",
+      input: callParams,  // no __delegation_envelope field at all
+    });
+    noEnvelope = `UNEXPECTED ACCEPT: ${JSON.stringify(result).slice(0, 60)}`;
+  } catch (err) {
+    noEnvelope = `REJECTED: ${(err as Error).message.slice(0, 120)}`;
+  }
+
+  return { missingSig, shortNonce, noEnvelope };
 }
+
+
+
 

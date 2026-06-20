@@ -121,10 +121,12 @@ async function main() {
     // ── Negative envelope rejection tests (v3.8.0 hardening proof) ────────────
     console.log("  [+] Negative envelope tests — proving v3.8.0 contract-layer hardening...");
     const negResults = await demonstrateNegativeEnvelopeTests(t3n, tenantDid, apiKey);
-    const sigLabel = negResults.missingSig.startsWith("REJECTED") ? "[+]" : "[-]";
-    const nonceLabel = negResults.shortNonce.startsWith("REJECTED") ? "[+]" : "[-]";
-    console.log(`  ${sigLabel} missing agent_sig: ${negResults.missingSig}`);
+    const sigLabel   = negResults.missingSig.startsWith("REJECTED")  ? "[+]" : "[-]";
+    const nonceLabel = negResults.shortNonce.startsWith("REJECTED")  ? "[+]" : "[-]";
+    const envLabel   = negResults.noEnvelope.startsWith("REJECTED")  ? "[+]" : "[-]";
+    console.log(`  ${sigLabel}   missing agent_sig:    ${negResults.missingSig}`);
     console.log(`  ${nonceLabel} short nonce (4 bytes): ${negResults.shortNonce}`);
+    console.log(`  ${envLabel}   no envelope at all:   ${negResults.noEnvelope}`);
   } catch (err) {
     console.error(`  [-] Agent Auth error: ${(err as Error).message}`);
   }
@@ -323,5 +325,6 @@ main().catch((err) => {
   console.error("Fatal:", err);
   process.exit(1);
 });
+
 
 

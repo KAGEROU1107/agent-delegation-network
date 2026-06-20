@@ -297,7 +297,7 @@ class ExamplePolicies:
         """
         return {
             "delegation_rules": {},  # Empty = DENY ALL (default-deny). Populate explicitly.
-            "agent_trust": {},       # Empty means trust all by default
+            "agent_trust": {},       # Empty = DENY ALL target agents (default-deny; add_trust_relationship() required)
             "rate_limits": {},
             "delegation_quotas": {}
         }
@@ -357,5 +357,6 @@ class ExamplePolicies:
                 "report_generator": set(),
             }
         }
+
 
 

@@ -251,11 +251,11 @@ Run: `python -m pytest tests/negative_security.py -v`
 |---|---|---|
 | 0 | Agent Auth SDK | User delegates scoped authority to worker agent via EIP-191-signed credential |
 | 1 | Core ADN + T3N Auth | Coordinator DID from T3N session; 4-agent Ed25519 delegation network |
-| 2 | Blind Multi-Agent Auction | TEE auction-resolution computation pattern; inputs caller-supplied |
+| 2 | TEE Auction-Resolution Pattern | TEE auction-resolution computation pattern; inputs caller-supplied |
 | 3 | Agent Reputation Ledger | TEE reputation-score computation pattern; history caller-supplied (SILVER/GOLD/PLATINUM) |
-| 4 | Privacy-Preserving Personalization | Customer segmentation + outreach computed in enclave; raw data never exposed |
+| 4 | Privacy-Preserving Personalization | TEE personalization pattern; caller-supplied segment data computed in enclave |
 | 5 | Temporal Agent Delegation | Time-bounded access grants; TEE validates `current_epoch < valid_until_epoch` |
-| 6 | Cross-Tenant Verified Computation | Multi-party input sent into single TEE computation; result attested |
+| 6 | Cross-Tenant Verified Computation | TEE cross-input computation pattern; caller-supplied inputs aggregated in single TEE call |
 | 7 | Agentic KYC Pipeline | TEE KYC-status computation pattern; step list caller-supplied |
 | 8 | TEE Secret Vault (pattern) | TEE secret-vault interaction pattern; no persistent secret storage (no WIT KV import) |
 | 9 | Autonomous Agent DAO | TEE vote-tally computation pattern; votes caller-supplied |
@@ -293,6 +293,7 @@ cargo build --target wasm32-wasip2 --release
 | Secret Vault persistence | TEE pattern only — persistent map storage depends on contract-only ACLs, which require SDK resolving BUG-001 (contractId from register()) |
 | Python demo live TEE | Uses `_tee_stub` local simulation; authoritative proof is TypeScript bridge Phase 4 |
 | Real-time revocation registry in WASM | Residual gap — requires undocumented host primitive; time-bound tokens used instead |
+
 
 
 

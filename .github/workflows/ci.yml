@@ -46,6 +46,10 @@ jobs:
         working-directory: contract
         run: cargo build --locked --target wasm32-wasip2 --release
 
+      - name: Run Rust contract unit tests
+        working-directory: contract
+        run: cargo test --locked
+
       - name: Post commit status
         if: always()
         continue-on-error: true
@@ -57,5 +61,6 @@ jobs:
             -f description="pytest 34 Python signing and policy tests"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
 

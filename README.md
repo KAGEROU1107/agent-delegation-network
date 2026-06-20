@@ -262,9 +262,9 @@ Run the local feature-pattern demo: `T3N_API_KEY=0x<key> python demo/features_de
 
 ## Security
 
-**What is enforced:** T3N authentication, SDK-native credential construction, Rust/WASM TEE structural validation of envelope presence, credential domain, TTL, delegated function scope, nonce format (≥8 bytes), and `agent_sig` presence. Delegation envelope is now **mandatory** on `delegate-task` (v3.8.0 source). Trust policy requires both action rule AND explicit trust relationship (dual default-deny).
+**What is enforced:** T3N authentication, SDK-native credential construction, Rust/WASM TEE structural validation of envelope presence, credential domain, TTL, delegated function scope, nonce format (≥8 bytes), and `agent_sig` presence. Delegation envelope is **mandatory** on `delegate-task` in v3.8.0 source (contract rebuild + redeploy + fresh proof pending). Trust policy requires both action rule AND explicit trust relationship (dual default-deny).
 
-**Explicit boundaries (not implemented):** Full cryptographic signature verification (secp256k1 host primitive), request binding (`request_hash` not verified), nonce replay registry, persistent workflow state, immediate revocation-registry lookup.
+**Explicit boundaries (not implemented):** Full cryptographic signature verification (in-guest Rust implementation is possible; current boundary is implementation scope, not categorical impossibility), request binding (`request_hash` not verified), nonce replay registry, persistent workflow state, immediate revocation-registry lookup.
 
 34 Python signing and policy tests across 8 categories: structural tamper, replay attack,
 expired proof, wrong audience, forged key, missing required fields, agent identity
@@ -372,6 +372,7 @@ See `docs/bugs/` and `docs/doc-gaps/` for full details.
 - The Agent Auth revocation proof uses short-lived credential expiry for contract-layer rejection. Immediate revocation-registry lookup from inside `generic-input` WASM is documented as a current ADK gap.
 - TEE Secret Vault is implemented as a secure-pattern demo, not a production persistent vault.
 - When the SDK does not return a numeric `contractId`, tenant map ACL setup falls back to `writers/readers: "all"` as a documented BUG-001 workaround.
+
 
 
 

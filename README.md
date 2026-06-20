@@ -366,3 +366,5 @@ See `docs/bugs/` and `docs/doc-gaps/` for full details.
 - TEE Secret Vault is implemented as a secure-pattern demo, not a production persistent vault.
 - When the SDK does not return a numeric `contractId`, tenant map ACL setup falls back to `writers/readers: "all"` as a documented BUG-001 workaround.
 
+
+

@@ -101,16 +101,10 @@ class DelegationPolicy:
             Tuple of (allowed, reason)
         """
         allowed_actions = self._delegation_rules.get(from_agent_id, set())
-        
-        # If no specific rules are defined, allow by default (open policy)
-        # In a secure deployment, you might want to deny by default instead
+
+        # Default deny: explicit policy must be registered before any delegation is permitted.
         if not allowed_actions:
-            # No specific rules - check if we trust the target agent
-            trusted_agents = self._agent_trust.get(from_agent_id, set())
-            if not trusted_agents or to_agent_id in trusted_agents:
-                return True, "Delegation allowed (open trust policy)"
-            else:
-                return False, f"Agent {from_agent_id} not trusted to delegate to {to_agent_id}"
+            return False, f"Delegation denied — no explicit policy registered for agent {from_agent_id} (default deny)"
         
         # Check if the action is in the allowed list
         if action in allowed_actions:
@@ -140,7 +134,7 @@ class DelegationPolicy:
         """
         allowed_actions = self._delegation_rules.get(agent_id, set())
         if not allowed_actions:
-            return True, f"Agent allowed to perform {action} (open policy)"
+            return False, f"Action {action} denied — no policy registered for agent {agent_id} (default deny)"
         if action in allowed_actions:
             return True, f"Agent allowed to perform {action}"
         return False, f"Action {action} not in allowed list for agent {agent_id}"

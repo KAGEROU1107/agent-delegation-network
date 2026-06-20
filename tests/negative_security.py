@@ -221,10 +221,11 @@ class TestIdentityDistinctness:
 class TestDelegationPolicy:
     """Delegation policy engine: role-based allow/deny and trust enforcement."""
 
-    def test_open_policy_allows_by_default(self):
+    def test_empty_policy_denies_by_default(self):
         policy = DelegationPolicy()
         allowed, reason = policy.can_delegate("agent-a", "agent-b", "process_data")
-        assert allowed, f"Open policy should allow by default: {reason}"
+        assert not allowed, f"Empty policy must deny by default (default-deny): {reason}"
+        assert "default deny" in reason, f"Reason must mention default deny: {reason}"
 
     def test_restricted_agent_blocked_on_unknown_action(self):
         policy = DelegationPolicy()
@@ -256,14 +257,16 @@ class TestDelegationPolicy:
         policy = DelegationPolicy()
         policy.add_delegation_rule("agent-a", "process_data")
         policy.remove_delegation_rule("agent-a", "process_data")
-        allowed, _ = policy.can_delegate("agent-a", "agent-b", "process_data")
-        # After removing the only rule, the rule set is empty → open policy → allowed
-        assert allowed, "Empty rule set reverts to open policy"
+        allowed, reason = policy.can_delegate("agent-a", "agent-b", "process_data")
+        # After removing the only rule, the rule set is empty → default deny applies
+        assert not allowed, "Empty rule set must deny (no revert to open access)"
+        assert "default deny" in reason, f"Must cite default-deny rule: {reason}"
 
-    def test_can_perform_task_open(self):
+    def test_can_perform_task_no_policy_denies(self):
         policy = DelegationPolicy()
-        allowed, _ = policy.can_perform_task("worker-001", "process_data")
-        assert allowed
+        allowed, reason = policy.can_perform_task("worker-001", "process_data")
+        assert not allowed, "Worker with no policy must be denied (default deny)"
+        assert "default deny" in reason
 
     def test_can_perform_task_restricted(self):
         policy = DelegationPolicy()
@@ -323,3 +326,4 @@ class TestCredentialTimeWindow:
         # Mutating expires_at changes the payload_hash → signature fails
         assert not ok
         assert code == "IDENTITY_INVALID"
+

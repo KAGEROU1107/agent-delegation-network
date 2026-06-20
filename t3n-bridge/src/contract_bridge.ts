@@ -130,9 +130,17 @@ export interface DelegateTaskResult {
   credential_fingerprint?: string;
 }
 
+export interface DelegateTaskEnvelope {
+  credential_jcs: string;
+  user_sig?: string;
+  agent_sig: string;
+  nonce: string;
+  request_hash?: string;
+}
+
 export function invokeDelegateTask(
   t3n: T3nClient, tenantDid: string,
-  params: { to_agent_id: string; action?: string }
+  params: { to_agent_id: string; action?: string; __delegation_envelope?: DelegateTaskEnvelope }
 ): Promise<DelegateTaskResult> {
   return invoke(t3n, tenantDid, "delegate-task", params);
 }
@@ -404,3 +412,4 @@ export function invokeVerifyAndSettle(
 ): Promise<VerifyAndSettleResult> {
   return invoke(t3n, tenantDid, "verify-and-settle", params);
 }
+

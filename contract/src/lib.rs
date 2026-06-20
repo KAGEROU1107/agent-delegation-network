@@ -507,15 +507,19 @@ impl Guest for Component {
         let bytes = req.input.ok_or("delegate-task: missing input")?;
         let r: DelegateTaskInput = parse_input(&bytes, "delegate-task")?;
 
-        // ── Delegation envelope validation (contract-layer enforcement, v3.7.0) ─
+        // ── Delegation envelope validation (contract-layer enforcement, v3.8.0) ─
+        // Envelope is MANDATORY — unauthenticated delegation calls are rejected.
         // Validates: domain, time window, temporal consistency, function scope,
         // vc_id format, agent_pubkey format, nonce length, agent_sig presence.
         // Produces a SHA-256 fingerprint of the validated credential bytes.
         let mut credential_enforced = None;
         let mut credential_fingerprint = None;
 
-        if let Some(env) = &r.delegation_envelope {
-            let cred_bytes = URL_SAFE_NO_PAD
+        let env = r.delegation_envelope.as_ref().ok_or(
+            "delegate-task: __delegation_envelope required — unauthenticated delegation is not permitted"
+        )?;
+
+        let cred_bytes = URL_SAFE_NO_PAD
                 .decode(&env.credential_jcs)
                 .map_err(|_| "delegate-task: invalid credential_jcs encoding")?;
 
@@ -591,9 +595,8 @@ impl Guest for Component {
 
             // SHA-256 fingerprint of the raw credential bytes
             let digest = Sha256::digest(&cred_bytes);
-            credential_fingerprint = Some(format!("{digest:x}"));
-            credential_enforced = Some(true);
-        }
+        credential_fingerprint = Some(format!("{digest:x}"));
+        credential_enforced = Some(true);
 
         let id = &r.to_agent_id[..8.min(r.to_agent_id.len())];
         encode(&DelegateTaskOutput {
@@ -926,3 +929,5 @@ fn simple_hash(s: &str) -> u64 {
     }
     h
 }
+
+

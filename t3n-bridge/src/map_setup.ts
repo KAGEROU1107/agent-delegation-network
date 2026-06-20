@@ -47,15 +47,17 @@ export async function setupAdnMaps(
 ): Promise<MapSetupResult[]> {
   const results: MapSetupResult[] = [];
 
-  // BUG-001 workaround: fall back to open write access when contractId unavailable.
-  const writers = contractId !== undefined ? { only: [contractId] } : ("all" as const);
-  const readers = contractId !== undefined ? { only: [contractId] } : ("all" as const);
-
-  if (contractId !== undefined) {
-    console.log(`  [+] map ACL: using contractId: ${contractId} (contract-only ACL)`);
-  } else {
-    console.log("  [!] map ACL: using writers/readers:'all' — BUG-001 workaround (no contractId from register())");
+  // Fail closed: contract-only ACL is required. Caller must resolve BUG-001 (hardcode known contractId)
+  // before calling setupAdnMaps. Broad "all" ACL is not acceptable for sensitive maps.
+  if (contractId === undefined) {
+    throw new Error(
+      "setupAdnMaps: contractId required for contract-only ACL — " +
+      "refusing to create maps with writers/readers:'all'. Resolve BUG-001 first."
+    );
   }
+  const writers = { only: [contractId] };
+  const readers = { only: [contractId] };
+  console.log(`  [+] map ACL: contractId=${contractId} (contract-only ACL)`);
 
   for (const map of ADN_MAPS) {
     try {
@@ -79,3 +81,4 @@ export async function setupAdnMaps(
 
   return results;
 }
+

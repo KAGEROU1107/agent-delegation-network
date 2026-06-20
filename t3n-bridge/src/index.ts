@@ -30,7 +30,7 @@ import {
   invokeLockBond, invokeVerifyAndSettle,
   fetchContractLogs,
 } from "./contract_bridge.js";
-import { demonstrateAgentAuth, demonstrateNegativeEnvelopeTests } from "./agent_auth.js";
+import { demonstrateAgentAuth, demonstrateNegativeEnvelopeTests, buildWireDelegationEnvelope } from "./agent_auth.js";
 import { setupAdnMaps } from "./map_setup.js";
 import { b64uEncodeBytes } from "@terminal3/t3n-sdk";
 import { existsSync, readFileSync } from "fs";
@@ -248,7 +248,14 @@ async function main() {
       await sleep(7000); // spread across fuel_per_minute window (~8 calls/min)
     };
 
-    await p4("delegate-task", () => invokeDelegateTask(t3n, tenantDid, { to_agent_id: workerDid, action: "PROCESS_DATA" }));
+    // C-01 fix: delegate-task now requires a signed credential envelope.
+    // Build a fresh 5-minute credential so Phase 4 demonstrates authenticated delegation.
+    const p4DelegEnv = await buildWireDelegationEnvelope(tenantDid, workerDid, apiKey, { action: "PROCESS_DATA" });
+    await p4("delegate-task", () => invokeDelegateTask(t3n, tenantDid, {
+      to_agent_id: workerDid,
+      action: "PROCESS_DATA",
+      __delegation_envelope: p4DelegEnv,
+    }));
 
     await p4("submit-bid", () => invokeSubmitBid(t3n, tenantDid, { bidder_did: workerDid, item_id: "item-001", amount: 210.50, nonce: "nonce-abc" }));
     await p4("resolve-auction", () => invokeResolveAuction(t3n, tenantDid, {
@@ -316,4 +323,5 @@ main().catch((err) => {
   console.error("Fatal:", err);
   process.exit(1);
 });
+
 

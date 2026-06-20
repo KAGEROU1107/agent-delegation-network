@@ -35,9 +35,10 @@ A multi-agent delegation network where a coordinator obtains a real Terminal 3 D
 | Agent Auth SDK — credential lifecycle | buildDelegationCredential → sign → validate → revoke SUCCESS |
 | Agent Auth enforcement scope | Structural: scope, TTL, nonce length, agent_sig presence. Cryptographic sig and replay-registry verification documented as ADK host-capability boundary. |
 | Per-call DelegationEnvelope | buildInvocationPreimage + signAgentInvocation — full wire shape |
-| Agent Auth enforcement | TEE-enforced structural credential validation: scope, TTL, nonce format, envelope presence. Cryptographic sig verification is a documented boundary (host-capability, not in-WASM). Proven via live HTTP 400 rejections. |
+| Agent Auth enforcement | TEE-enforced structural credential validation: domain, TTL, function scope, nonce format, envelope presence (now mandatory). Cryptographic sig verification and replay registry are host-capability boundaries documented in scope notes. |
 | Negative live TEE test | Empty records → `process-data: records cannot be empty` rejection |
 | Multi-agent Ed25519 delegation | 4 distinct identities, signed payloads, tamper detection |
+| Delegation enforcement scope | TEE structural: domain, TTL, function scope, nonce format, agent_sig presence. Envelope now **mandatory** (C-01 fix). Cryptographic sig verification is a host-capability boundary. |
 | Local negative security tests | 33/33 pass |
 
 ---
@@ -61,7 +62,7 @@ Full output: [`proof/live_run_v3.8.0_session7_final.txt`](proof/live_run_v3.8.0_
   [+] envelope: agent_sig=hGRYp_3fQKT032Xj... nonce=npXJfmpt...
   [+] pre-revocation call:  ACCEPTED: {"delegation_id":...,"status":"ROUTED",...}
   [+] revocation: SUCCESS (tee:delegation/contracts::revoke)
-  [+] post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer — v3.8.0)
+  [+] post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer — v3.8.0 TTL expiry; live registry lookup requires undocumented host primitive)
   [+] missing agent_sig:    REJECTED: delegate-task: agent_sig missing from envelope
   [+] short nonce (4 bytes): REJECTED: delegate-task: nonce too short (< 8 bytes)
 
@@ -292,5 +293,6 @@ cargo build --target wasm32-wasip2 --release
 | Secret Vault persistence | TEE pattern only — persistent map storage depends on contract-only ACLs, which require SDK resolving BUG-001 (contractId from register()) |
 | Python demo live TEE | Uses `_tee_stub` local simulation; authoritative proof is TypeScript bridge Phase 4 |
 | Real-time revocation registry in WASM | Residual gap — requires undocumented host primitive; time-bound tokens used instead |
+
 
 

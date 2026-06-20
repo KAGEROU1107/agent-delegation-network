@@ -204,6 +204,57 @@ export async function demonstrateAgentAuth(
   };
 }
 
+export interface WireDelegationEnvelope {
+  credential_jcs: string;
+  user_sig: string;
+  agent_sig: string;
+  nonce: string;
+  request_hash: string;
+}
+
+/**
+ * Build a fresh wire-format DelegationEnvelope for a single delegate-task call.
+ *
+ * Used by Phase 4 so every delegate-task invocation carries a valid credential,
+ * satisfying the mandatory-envelope requirement in the contract (v3.8.0).
+ */
+export async function buildWireDelegationEnvelope(
+  tenantDid: string,
+  toAgentDid: string,
+  apiKey: string,
+  callParams: Record<string, unknown> = {}
+): Promise<WireDelegationEnvelope> {
+  const userSecret = Buffer.from(apiKey.replace(/^0x/, ""), "hex");
+  const agentSecret = new Uint8Array(randomBytes(32));
+  const agentPubkey = await pubkeyFromSecret(agentSecret);
+  const now = BigInt(Math.floor(Date.now() / 1000));
+  const vcId = new Uint8Array(randomBytes(16));
+
+  const credential = buildDelegationCredential({
+    user_did: tenantDid,
+    agent_pubkey: agentPubkey,
+    org_did: tenantDid,
+    contract: "adn-processor",
+    functions: ["delegate-task"],
+    scopes: [],
+    metadata: { role: "adn-worker", session: "phase4" },
+    not_before_secs: now - 5n,
+    not_after_secs: now + 300n,
+    vc_id: vcId,
+  });
+
+  const jcs = canonicaliseCredential(credential);
+  const { sig: userSig } = signCredential(jcs, new Uint8Array(userSecret));
+  const envelope = buildEnvelope(vcId, jcs, userSig, agentSecret, { to_agent_id: toAgentDid, ...callParams });
+
+  return {
+    credential_jcs: b64uEncodeBytes(envelope.credential_jcs),
+    user_sig: b64uEncodeBytes(envelope.user_sig),
+    agent_sig: b64uEncodeBytes(envelope.agent_sig),
+    nonce: b64uEncodeBytes(envelope.nonce),
+    request_hash: b64uEncodeBytes(envelope.request_hash),
+  };
+}
 /**
  * Negative envelope rejection tests — proves v3.8.0 contract-layer hardening.
  * Sends deliberately malformed envelopes to the live TEE and asserts rejection.
@@ -293,3 +344,4 @@ export async function demonstrateNegativeEnvelopeTests(
 
   return { missingSig, shortNonce };
 }
+

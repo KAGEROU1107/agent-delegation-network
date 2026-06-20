@@ -118,7 +118,7 @@ async function main() {
     const postLabel = authResult.postRevocationCallResult.startsWith("REJECTED") ? "[+]" : "[-]";
     console.log(`  ${postLabel} post-revocation call: ${authResult.postRevocationCallResult}`);
 
-    // ── Negative envelope rejection tests (v3.8.0 hardening proof) ────────────
+    // ── Negative envelope rejection tests (v3.8.1 hardening proof) ────────────
     console.log("  [+] Negative envelope tests — proving v3.8.1 contract-layer hardening...");
     const negResults = await demonstrateNegativeEnvelopeTests(t3n, tenantDid, apiKey);
     const sigLabel   = negResults.missingSig.startsWith("REJECTED")  ? "[+]" : "[-]";
@@ -127,6 +127,9 @@ async function main() {
     console.log(`  ${sigLabel}   missing agent_sig:    ${negResults.missingSig}`);
     console.log(`  ${nonceLabel} short nonce (4 bytes): ${negResults.shortNonce}`);
     console.log(`  ${envLabel}   no envelope at all:   ${negResults.noEnvelope}`);
+    if (!negResults.missingSig.startsWith("REJECTED"))  throw new Error("C-01: empty agent_sig was accepted by contract");
+    if (!negResults.shortNonce.startsWith("REJECTED"))  throw new Error("C-01: short nonce was accepted by contract");
+    if (!negResults.noEnvelope.startsWith("REJECTED"))  throw new Error("C-01: missing envelope was ACCEPTED — mandatory enforcement broken");
   } catch (err) {
     const msg = (err as Error).message;
     if (msg.startsWith("C-01:")) { console.error(`  [-] FATAL: ${msg}`); process.exit(1); }
@@ -154,6 +157,7 @@ async function main() {
   console.log("\n[Phase 3] TEE Contract...");
 
   let teeInvoked = false;
+  let allWitSucceeded = false;
   if (!existsSync(WASM_PATH)) {
     console.log("  [~] WASM not yet compiled — skipping TEE invocation.");
     console.log("  Build the contract with:");
@@ -301,8 +305,12 @@ async function main() {
     await p4("verify-and-settle", () => invokeVerifyAndSettle(t3n, tenantDid, { bond_id: "bond-demo", agent_did: workerDid, task_id: "task-001", bond_amount: 500.00, deadline_epoch: now + 86400, current_epoch: now, completed: true, quality_score: 0.92 }));
 
     console.log(`  [+] Phase 4: ${p4Passed}/18 passed | ${p4Failed} failed`);
-    if (p4Passed === 18 && teeInvoked) {
+    allWitSucceeded = p4Passed === 18 && teeInvoked;
+    if (allWitSucceeded) {
       console.log("  [+] All 20 WIT exports invoked via live T3N TEE bridge.");
+    } else if (p4Passed === 18 && !teeInvoked) {
+      console.log("  [!] Phase 4: 18/18 passed but Phase 3 core calls failed — cannot claim 20/20");
+      process.exitCode = 1;
     } else {
       console.log(`  [!] Phase 4 incomplete: ${p4Failed} call(s) failed — review [-] lines above`);
       process.exitCode = 1;
@@ -319,7 +327,7 @@ async function main() {
   console.log(`Distinct agent identities: ${adnResult.uniqueIdentities}/4`);
   console.log(`Multi-agent delegation:    ${adnResult.success ? "PASSED" : "FAILED"}`);
   console.log(`Tamper detection:          ACTIVE (data_hash in signed payload)`);
-  console.log(`WASM contract:             ${!existsSync(WASM_PATH) ? "NOT YET COMPILED" : teeInvoked ? "REGISTERED + INVOKED (20/20 WIT functions)" : "REGISTERED (invocation failed)"}`);
+  console.log(`WASM contract:             ${!existsSync(WASM_PATH) ? "NOT YET COMPILED" : allWitSucceeded ? "REGISTERED + INVOKED (20/20 WIT functions)" : teeInvoked ? "REGISTERED + INVOKED (Phase 3 OK; Phase 4 partial)" : "REGISTERED (Phase 3 invocation failed)"}`);
   console.log("=".repeat(55));
 }
 

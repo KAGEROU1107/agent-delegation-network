@@ -52,15 +52,8 @@ export interface AgentAuthResult {
 }
 
 async function pubkeyFromSecret(secret: Uint8Array): Promise<Uint8Array> {
-  try {
-    const { secp256k1 } = await import("@noble/curves/secp256k1.js");
-    return secp256k1.getPublicKey(secret, true);
-  } catch {
-    const fallback = new Uint8Array(33);
-    fallback[0] = 0x02;
-    secret.slice(0, 32).forEach((b, i) => { fallback[i + 1] = b; });
-    return fallback;
-  }
+  const { secp256k1 } = await import("@noble/curves/secp256k1.js");
+  return secp256k1.getPublicKey(secret, true);
 }
 
 /**

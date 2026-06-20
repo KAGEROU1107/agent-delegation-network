@@ -56,7 +56,7 @@ export async function registerAdnContract(
     if (contractId !== undefined) {
       console.log(`  [+] register() returned contractId: ${contractId} (BUG-001 resolved by SDK)`);
     } else {
-      console.log(`  [!] register() returned no contractId (BUG-001 active) — map ACL will use writers:"all"`);
+      console.log(`  [!] register() returned no contractId (BUG-001 active) — setupAdnMaps() will throw`);
     }
   } catch (err) {
     const msg = (err as Error).message ?? "";

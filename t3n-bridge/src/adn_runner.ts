@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Python ADN subprocess runner.
  *
  * The TypeScript bridge handles Terminal 3 ADK auth (T3nClient, TenantClient).
@@ -104,6 +104,15 @@ coordinator.policy_engine.policy.add_trust_relationship(coord_id, val_id)
 coordinator.policy_engine.policy.add_delegation_rule(w1_id, 'PROCESS_DATA')
 coordinator.policy_engine.policy.add_delegation_rule(val_id, 'VALIDATE_QUALITY')
 
+# Worker inbound rules: each worker runs its OWN policy engine on process_delegation_request.
+# evaluate_delegation_request(from=coord_id, to=self.id) requires action rule + trust.
+worker1.policy_engine.policy.add_delegation_rule(coord_id, 'PROCESS_DATA')
+worker1.policy_engine.policy.add_trust_relationship(coord_id, w1_id)
+worker1.policy_engine.policy.add_delegation_rule(w1_id, 'PROCESS_DATA')
+validator.policy_engine.policy.add_delegation_rule(coord_id, 'VALIDATE_QUALITY')
+validator.policy_engine.policy.add_trust_relationship(coord_id, val_id)
+validator.policy_engine.policy.add_delegation_rule(val_id, 'VALIDATE_QUALITY')
+
 def process_handler(p):
     total = round(sum(amounts), 2) if amounts else 0
     avg   = round(statistics.mean(amounts), 2) if amounts else 0
@@ -131,13 +140,14 @@ did1 = coordinator.delegate_task(w1_id, 'PROCESS_DATA', 'process sales data', {'
 req1 = coordinator._delegations[did1]
 sig1 = req1.to_action_request(coordinator.identity)
 res1 = worker1.process_delegation_request(sig1)
-pd = res1['result_data'].get('result', {}).get('processed_data', {})
+pd = (res1['result_data'].get('result') or {}).get('processed_data', {})
+if not pd: raise RuntimeError('worker1 returned no processed_data — status: ' + str(res1['result_data'].get('status')) + ' error: ' + str(res1['result_data'].get('error')))
 
 did2 = coordinator.delegate_task(val_id, 'VALIDATE_QUALITY', 'validate data quality', {'data': pd})
 req2 = coordinator._delegations[did2]
 sig2 = req2.to_action_request(coordinator.identity)
 res2 = validator.process_delegation_request(sig2)
-vd = res2['result_data'].get('result', {})
+vd = (res2['result_data'].get('result') or {})
 
 print(json.dumps({
     'success': res1['result_data']['status'] == 'COMPLETED' and res2['result_data']['status'] == 'COMPLETED',

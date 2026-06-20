@@ -37,6 +37,15 @@ jobs:
       - name: Run negative security tests
         run: python -m pytest tests/negative_security.py -v --tb=short
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+
+      - name: Build Rust/WASM contract
+        working-directory: contract
+        run: cargo build --locked --target wasm32-wasip2 --release
+
       - name: Post commit status
         if: always()
         continue-on-error: true
@@ -45,7 +54,8 @@ jobs:
           gh api repos/${{ github.repository }}/statuses/${{ github.sha }} \
             -f state="$STATE" \
             -f context="Tests" \
-            -f description="pytest 33 negative security tests"
+            -f description="pytest 34 Python signing and policy tests"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 

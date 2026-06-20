@@ -239,20 +239,22 @@ The demo:
 
 ## Creative Features
 
-| Phase | Feature | TEE Functions | Status |
+> **Phase 2–11 are TEE computation patterns.** Inputs are caller-supplied; the contract is stateless between calls (no WIT storage imports). TEE executes the computation; authoritative persistence requires persistent map storage not implemented in this version.
+
+| Phase | Feature Label | WIT Functions | Behavior |
 |---|---|---|---|
-| 0 | Agent Auth SDK — User Delegation | SDK-native credential lifecycle | Live on T3N testnet |
-| 1 | Core ADN + Auth + TEE | process-data, validate-quality, delegate-task | Live on T3N testnet |
-| 2 | Blind Multi-Agent Auction | submit-bid, resolve-auction | TEE-invoked via bridge |
-| 3 | Agent Reputation Ledger | record-completion, get-reputation | TEE-invoked via bridge |
-| 4 | Privacy-Preserving Personalization | send-personalized-outreach | TEE-invoked via bridge |
-| 5 | Temporal Agent Delegation | issue-time-grant, check-grant | TEE-invoked via bridge |
-| 6 | Cross-Tenant Verified Computation | process-data | TEE-invoked via bridge |
-| 7 | Agentic KYC Pipeline | kyc-submit-step, kyc-get-status | TEE-invoked via bridge |
-| 8 | TEE Secret Vault Pattern | store-secret, invoke-with-secret | TEE-invoked via bridge |
-| 9 | Autonomous Agent DAO | cast-vote, tally-votes | TEE-invoked via bridge |
-| 10 | Verifiable AI Decision Audit | log-decision, audit-decisions | TEE-invoked via bridge |
-| 11 | Agent Performance Bond | lock-bond, verify-and-settle | TEE-invoked via bridge |
+| 0 | Agent Auth SDK | (SDK calls) | Live credential lifecycle on T3N; envelope mandatory on delegate-task |
+| 1 | Core ADN + T3N Auth | process-data, validate-quality, delegate-task | Real T3N session; authenticated DID; TEE computation + structural delegation enforcement |
+| 2 | TEE Auction-Resolution Pattern | submit-bid, resolve-auction | TEE computes winner from caller-supplied bids; no sealed bid store or commit/reveal |
+| 3 | TEE Reputation-Score Pattern | record-completion, get-reputation | TEE computes score from caller-supplied history; no persistent ledger |
+| 4 | TEE Personalization Pattern | send-personalized-outreach | Customer segmentation computed in enclave over caller-supplied records |
+| 5 | TEE Temporal-Grant Pattern | issue-time-grant, check-grant | TEE validates caller-supplied epoch; no persistent grant store |
+| 6 | TEE Cross-Input Computation | process-data | Multi-party inputs aggregated in a single TEE call |
+| 7 | TEE KYC-Status Pattern | kyc-submit-step, kyc-get-status | TEE computes status from caller-supplied step list; no verified evidence store |
+| 8 | TEE Secret-Vault Interaction Pattern | store-secret, invoke-with-secret | Validates non-empty permission proof; no persistent secret storage (no WIT KV import) |
+| 9 | TEE Vote-Tally Pattern | cast-vote, tally-votes | TEE tallies caller-supplied votes; no persistent ballot store or duplicate prevention |
+| 10 | TEE Decision-Audit Hash | log-decision, audit-decisions | Deterministic hash over caller-supplied records |
+| 11 | TEE Settlement-Calculation Pattern | lock-bond, verify-and-settle | Computes payout from caller-supplied bond facts; no persistent escrow |
 
 Run the local feature-pattern demo: `T3N_API_KEY=0x<key> python demo/features_demo.py`
 
@@ -264,14 +266,14 @@ Run the local feature-pattern demo: `T3N_API_KEY=0x<key> python demo/features_de
 
 **Explicit boundaries (not implemented):** Full cryptographic signature verification (secp256k1 host primitive), request binding (`request_hash` not verified), nonce replay registry, persistent workflow state, immediate revocation-registry lookup.
 
-33 negative security tests across 8 categories: structural tamper, replay attack,
+34 Python signing and policy tests across 8 categories: structural tamper, replay attack,
 expired proof, wrong audience, forged key, missing required fields, agent identity
 distinctness, delegation policy enforcement, and credential TTL window validation.
 Tests cover Python signing adapter and policy logic only — TypeScript bridge and WASM contract enforcement are proven via live T3N proof artifacts.
 
 ```
 python -m pytest tests/negative_security.py -v
-# 33 passed
+# 34 passed
 ```
 
 ---
@@ -313,7 +315,7 @@ agent-delegation-network/
 │   ├── adn_demo.py              # core multi-agent workflow
 │   └── features_demo.py         # local pattern demo for feature modules
 ├── tests/
-│   └── negative_security.py     # 33 negative security tests
+│   └── negative_security.py     # 34 Python signing and policy tests
 ├── proof/
 │   ├── live_run_v3.6.0.txt      # v3.6.0 baseline proof
 │   └── live_run_v3.5.0.txt      # v3.5.0 baseline proof
@@ -370,6 +372,7 @@ See `docs/bugs/` and `docs/doc-gaps/` for full details.
 - The Agent Auth revocation proof uses short-lived credential expiry for contract-layer rejection. Immediate revocation-registry lookup from inside `generic-input` WASM is documented as a current ADK gap.
 - TEE Secret Vault is implemented as a secure-pattern demo, not a production persistent vault.
 - When the SDK does not return a numeric `contractId`, tenant map ACL setup falls back to `writers/readers: "all"` as a documented BUG-001 workaround.
+
 
 
 

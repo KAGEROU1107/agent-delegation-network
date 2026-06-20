@@ -285,12 +285,18 @@ def check_delegation_allowed(
 # Example policy configurations
 class ExamplePolicies:
     """Example policy configurations for different use cases."""
-    
+
     @staticmethod
     def open_network_policy() -> Dict:
-        """Policy for an open network where anyone can delegate to anyone."""
+        """Policy with explicit rules allowing all registered agents.
+        
+        NOTE: Policy engine is default-deny. Empty delegation_rules means DENY ALL.
+        This example is a placeholder — populate delegation_rules and agent_trust
+        before calling can_delegate() or all calls will be denied.
+        See add_delegation_rule() and add_trust_relationship().
+        """
         return {
-            "delegation_rules": {},  # Empty means allow all by default
+            "delegation_rules": {},  # Empty = DENY ALL (default-deny). Populate explicitly.
             "agent_trust": {},       # Empty means trust all by default
             "rate_limits": {},
             "delegation_quotas": {}
@@ -351,4 +357,5 @@ class ExamplePolicies:
                 "report_generator": set(),
             }
         }
+
 

@@ -8,6 +8,8 @@ wit_bindgen::generate!({
     path: "wit",
 });
 
+mod crypto;
+
 struct Component;
 
 export!(Component);
@@ -74,16 +76,20 @@ struct ValidateQualityOutput {
 
 #[derive(Deserialize)]
 struct DelegationEnvelopeFields {
-    credential_jcs: String, // base64url-encoded JCS bytes of the DelegationCredential
+    credential_jcs: String,     // base64url JCS bytes of the DelegationCredential
     #[serde(default)]
-    nonce: String,          // base64url nonce (must decode to ≥8 bytes when present)
+    user_sig: String,           // base64url 65-byte EIP-191 sig over credential JCS
     #[serde(default)]
-    agent_sig: String,      // agent's signature over the invocation preimage (presence-checked)
+    nonce: String,              // base64url 16-byte invocation nonce
+    #[serde(default)]
+    agent_sig: String,          // base64url 64-byte secp256k1 sig over invocation preimage
+    #[serde(default)]
+    request_hash: String,       // base64url 32-byte sha256 of canonical request
 }
 
 // Subset of DelegationCredential fields validated at contract-layer.
 // Time fields are JSON strings (decimal) to preserve u64 precision past JS Number.
-// vc_id: 32 lower-hex chars. agent_pubkey: 66 lower-hex chars (compressed secp256k1).
+// vc_id: base64url of 16 bytes. agent_pubkey: base64url of 33-byte compressed secp256k1.
 #[derive(Deserialize)]
 struct CredentialBody {
     v: String,
@@ -91,9 +97,9 @@ struct CredentialBody {
     not_before_secs: String,
     not_after_secs: String,
     #[serde(default)]
-    vc_id: String,          // 32-char lower-hex
+    vc_id: String,          // base64url, decodes to 16 bytes
     #[serde(default)]
-    agent_pubkey: String,   // 66-char lower-hex compressed secp256k1
+    agent_pubkey: String,   // base64url, decodes to 33-byte compressed secp256k1
 }
 
 #[derive(Deserialize)]
@@ -115,6 +121,8 @@ struct DelegateTaskOutput {
     credential_enforced: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     credential_fingerprint: Option<String>, // SHA-256 hex of credential_jcs bytes
+    #[serde(skip_serializing_if = "Option::is_none")]
+    user_signer: Option<String>, // EIP-191 recovered signer address (0x...) when user_sig present
 }
 
 // ── Phase 2 — Blind Multi-Agent Auction ───────────────────────────────────────
@@ -514,6 +522,7 @@ impl Guest for Component {
         // Produces a SHA-256 fingerprint of the validated credential bytes.
         let mut credential_enforced = None;
         let mut credential_fingerprint = None;
+        let mut user_signer: Option<String> = None;
 
         let env = r.delegation_envelope.as_ref().ok_or(
             "delegate-task: __delegation_envelope required — unauthenticated delegation is not permitted"
@@ -578,22 +587,77 @@ impl Guest for Component {
                 return Err("delegate-task: function not in delegated scope".to_string());
             }
 
-            // Nonce length: must decode to ≥8 bytes when present
-            if !env.nonce.is_empty() {
-                let nonce_bytes = URL_SAFE_NO_PAD
-                    .decode(&env.nonce)
-                    .map_err(|_| "delegate-task: invalid nonce encoding")?;
-                if nonce_bytes.len() < 8 {
-                    return Err("delegate-task: nonce too short (< 8 bytes)".to_string());
-                }
+            // ── Cryptographic envelope verification (v3.9.0) ──────────────────
+            // nonce: REQUIRED, base64url, exactly 16 bytes (SDK NONCE_LEN).
+            if env.nonce.is_empty() {
+                return Err("delegate-task: nonce required".to_string());
+            }
+            let nonce_bytes = URL_SAFE_NO_PAD
+                .decode(&env.nonce)
+                .map_err(|_| "delegate-task: invalid nonce encoding")?;
+            if nonce_bytes.len() != 16 {
+                return Err("delegate-task: nonce must be exactly 16 bytes".to_string());
             }
 
-            // agent_sig: presence-check only (full ECDSA recovery needs secp256k1 host prim)
+            // agent_sig: REQUIRED, base64url, 64-byte compact secp256k1.
             if env.agent_sig.is_empty() {
                 return Err("delegate-task: agent_sig missing from envelope".to_string());
             }
+            let agent_sig = URL_SAFE_NO_PAD
+                .decode(&env.agent_sig)
+                .map_err(|_| "delegate-task: invalid agent_sig encoding")?;
 
-            // SHA-256 fingerprint of the raw credential bytes
+            // request_hash: REQUIRED, base64url, 32 bytes.
+            if env.request_hash.is_empty() {
+                return Err("delegate-task: request_hash required".to_string());
+            }
+            let request_hash = URL_SAFE_NO_PAD
+                .decode(&env.request_hash)
+                .map_err(|_| "delegate-task: invalid request_hash encoding")?;
+            if request_hash.len() != 32 {
+                return Err("delegate-task: request_hash must be 32 bytes".to_string());
+            }
+
+            // Request binding: recompute sha256(JSON{to_agent_id,action}) and require equality.
+            #[derive(Serialize)]
+            struct CanonReq<'a> { to_agent_id: &'a str, action: &'a str }
+            let canon = serde_json::to_vec(&CanonReq { to_agent_id: &r.to_agent_id, action: &r.action })
+                .map_err(|e| format!("delegate-task: canonicalisation error: {e}"))?;
+            if Sha256::digest(&canon).as_slice() != request_hash.as_slice() {
+                return Err("delegate-task: request_hash does not bind this call (to_agent_id/action mismatch)".to_string());
+            }
+
+            // Decode credential identity fields (base64url in the JCS).
+            let vc_id_bytes = URL_SAFE_NO_PAD
+                .decode(&cred.vc_id)
+                .map_err(|_| "delegate-task: invalid vc_id encoding")?;
+            if vc_id_bytes.len() != 16 {
+                return Err("delegate-task: vc_id must be 16 bytes".to_string());
+            }
+            let agent_pubkey = URL_SAFE_NO_PAD
+                .decode(&cred.agent_pubkey)
+                .map_err(|_| "delegate-task: invalid agent_pubkey encoding")?;
+
+            // Verify the agent signature over DOMAIN||vc_id||nonce||request_hash.
+            let preimage = crypto::build_preimage(&vc_id_bytes, &nonce_bytes, &request_hash);
+            crypto::verify_agent_sig(&agent_pubkey, &preimage, &agent_sig)
+                .map_err(|e| format!("delegate-task: {e}"))?;
+
+            // Verify the user signature (EIP-191) recovers a signer over the exact
+            // credential JCS, binding the credential (which embeds agent_pubkey) to a
+            // real secp256k1 signer. NOTE: the recovered address is NOT checked against
+            // a trusted tenant key — the generic-input runtime exposes no host caller
+            // identity, so the trust anchor is a documented boundary (SUBMISSION_REPORT).
+            if !env.user_sig.is_empty() {
+                let user_sig = URL_SAFE_NO_PAD
+                    .decode(&env.user_sig)
+                    .map_err(|_| "delegate-task: invalid user_sig encoding")?;
+                let addr = crypto::recover_eip191_address(&cred_bytes, &user_sig)
+                    .map_err(|e| format!("delegate-task: {e}"))?;
+                user_signer = Some(format!("0x{}", crypto::hex_lower(&addr)));
+            }
+
+            // SHA-256 fingerprint of the verified credential bytes.
             let digest = Sha256::digest(&cred_bytes);
         credential_fingerprint = Some(format!("{digest:x}"));
         credential_enforced = Some(true);
@@ -605,6 +669,7 @@ impl Guest for Component {
             routed_to: r.to_agent_id,
             credential_enforced,
             credential_fingerprint,
+            user_signer,
         })
     }
 

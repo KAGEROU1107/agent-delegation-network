@@ -12,12 +12,12 @@
  *   8. Attempt the same delegated call AFTER revocation + expiry → TEE contract rejects → REJECTED
  *
  * Enforcement mechanism (BUG-005 fix):
- *   The adn-processor TEE contract (v3.8.1) validates __delegation_envelope on delegate-task:
+ *   The adn-processor TEE contract (v3.9.0) validates __delegation_envelope on delegate-task:
  *   - Decodes credential_jcs from base64url
  *   - Checks not_before_secs / not_after_secs against WASI wall-clock inside the enclave
  *   - Verifies "delegate-task" is in the credential's functions array
- *   - Validates vc_id (32 hex), agent_pubkey (66 hex), nonce (≥8 bytes), agent_sig presence
- *   - Emits credential_fingerprint (SHA-256 of validated credential bytes) in response
+ *   - Verifies agent_sig (secp256k1) over the invocation preimage and recomputes request_hash
+ *   - Recovers user_sig (EIP-191) signer and emits credential_fingerprint in response
  *   Note: revocation registry lookup from inside WASM requires a host call primitive not yet
  *   documented in the ADK. Time-bound expiry enforces the same property for short-lived tokens.
  */
@@ -100,7 +100,7 @@ async function tryDelegatedCall(
     // forwarding, a revoked credential returns a delegation error here.
     const result = await t3n.executeAndDecode({
       script_name: `z:${tid}:adn-processor`,
-      script_version: "3.8.1",
+      script_version: "3.9.0",
       function_name: "delegate-task",
       input: {
         ...callParams,
@@ -179,7 +179,7 @@ export async function demonstrateAgentAuth(
   await new Promise((r) => setTimeout(r, 35_000));
 
   // ── Delegated call AFTER revocation + expiry ──────────────────────────────────
-  // TEE contract (v3.8.1) decodes the credential_jcs, reads not_after_secs from
+  // TEE contract (v3.9.0) decodes the credential_jcs, reads not_after_secs from
   // the JCS, and rejects because now > not_after_secs. REJECTED at contract layer.
   const postRevocationCallResult = await tryDelegatedCall(t3n, tenantDid, envelope, callParams);
 
@@ -209,7 +209,7 @@ export interface WireDelegationEnvelope {
  * Build a fresh wire-format DelegationEnvelope for a single delegate-task call.
  *
  * Used by Phase 4 so every delegate-task invocation carries a valid credential,
- * satisfying the mandatory-envelope requirement in the contract (v3.8.1).
+ * satisfying the mandatory-envelope requirement in the contract (v3.9.0).
  */
 export async function buildWireDelegationEnvelope(
   tenantDid: string,
@@ -290,7 +290,7 @@ export async function demonstrateNegativeEnvelopeTests(
   try {
     const result = await t3n.executeAndDecode({
       script_name: `z:${tid}:adn-processor`,
-      script_version: "3.8.1",
+      script_version: "3.9.0",
       function_name: "delegate-task",
       input: {
         ...callParams,
@@ -317,7 +317,7 @@ export async function demonstrateNegativeEnvelopeTests(
     const agentSig = signAgentInvocation(preimage, agentSecret);
     const result = await t3n.executeAndDecode({
       script_name: `z:${tid}:adn-processor`,
-      script_version: "3.8.1",
+      script_version: "3.9.0",
       function_name: "delegate-task",
       input: {
         ...callParams,
@@ -340,7 +340,7 @@ export async function demonstrateNegativeEnvelopeTests(
   try {
     const result = await t3n.executeAndDecode({
       script_name: `z:${tid}:adn-processor`,
-      script_version: "3.8.1",
+      script_version: "3.9.0",
       function_name: "delegate-task",
       input: callParams,  // no __delegation_envelope field at all
     });

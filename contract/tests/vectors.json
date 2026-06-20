@@ -1,0 +1,26 @@
+{
+  "meta": {
+    "domain_utf8": "ot3.invocation/1",
+    "domain_hex": "6f74332e696e766f636174696f6e2f31",
+    "VC_ID_LEN": 16,
+    "NONCE_LEN": 16,
+    "REQUEST_HASH_LEN": 32,
+    "AGENT_PUBKEY_LEN": 33,
+    "agent_sig_len": 64,
+    "noble_self_verify": true
+  },
+  "vector": {
+    "agent_secret_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "agent_pubkey_hex": "034f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+    "vc_id_hex": "0102030405060708090a0b0c0d0e0f10",
+    "nonce_hex": "aabbccddeeff00112233445566778899",
+    "call_params_json": "{\"to_agent_id\":\"did:key:ed25519:worker-1\",\"action\":\"PROCESS_DATA\"}",
+    "request_hash_hex": "186c87d8447e0000dcb1099e9e3475bb19493d547e3e6ce25e546935a919078b",
+    "preimage_hex": "6f74332e696e766f636174696f6e2f310102030405060708090a0b0c0d0e0f10aabbccddeeff00112233445566778899186c87d8447e0000dcb1099e9e3475bb19493d547e3e6ce25e546935a919078b",
+    "agent_sig_hex": "e15e54e74c34d36f00ee8c26e5194e8222d6038e1145eeb35ec029be375cf2144785bc8a67433b51e4663b12041ee78cbf5335f3e2d10ec597aba5d481367be7",
+    "nonce_b64u": "qrvM3e7_ABEiM0RVZneImQ",
+    "request_hash_b64u": "GGyH2ER-AADcsQmenjR1uxlJPVR-PmziXlRpNakZB4s",
+    "agent_sig_b64u": "4V5U50w0028A7owm5RlOgiLWA44RRe6zXsApvjdc8hRHhbyKZ0M7UeRmOxIEHueMv1M18-LRDsWXq6XUgTZ75w",
+    "agent_pubkey_b64u": "A081W9y3zAr3KO88zrlhXZBoS7Wyyl-FmrDwtwQHWHGq"
+  }
+}

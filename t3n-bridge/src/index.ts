@@ -91,7 +91,7 @@ async function main() {
 
   const { t3n, tenant, tenantDid } = session;
 
-  // ── Contract pre-registration (before Phase 0 so v3.8.0 exists when called) ──
+  // ── Contract pre-registration (before Phase 0 so the contract exists when called) ──
   // Cache the result: the first register() call is most likely to return contractId.
   // If Phase 3 re-registers the same version, the SDK may suppress the response.
   let preRegisteredContract: ContractInfo | null = null;
@@ -103,6 +103,7 @@ async function main() {
 
   // ── Phase 0: Agent Auth SDK — User-to-Agent Delegation + Enforcement ─────────
   console.log("\n[Phase 0] Agent Auth SDK — delegation credential + enforcement cycle...");
+  let agentAuthSucceeded = false;
   try {
     const authResult = await demonstrateAgentAuth(t3n, tenantDid, apiKey);
     console.log(`  [+] credential built: vc_id=${authResult.vcIdHex}`);
@@ -110,6 +111,7 @@ async function main() {
     console.log(`  [+] signed with EIP-191: user_sig=${authResult.userSigB64u.slice(0, 16)}...`);
     console.log(`  [+] envelope: agent_sig=${b64uEncodeBytes(authResult.envelope.agent_sig).slice(0, 16)}... nonce=${b64uEncodeBytes(authResult.envelope.nonce).slice(0, 8)}...`);
     console.log(`  [+] pre-revocation call:  ${authResult.preRevocationCallResult}`);
+    if (!authResult.preRevocationCallResult.startsWith("ACCEPTED"))  throw new Error(`AgentAuth: pre-revocation call not accepted: ${authResult.preRevocationCallResult.slice(0, 80)}`);
     if (authResult.revoked) {
       console.log(`  [+] revocation: SUCCESS (tee:delegation/contracts::revoke)`);
     } else {
@@ -117,6 +119,7 @@ async function main() {
     }
     const postLabel = authResult.postRevocationCallResult.startsWith("REJECTED") ? "[+]" : "[-]";
     console.log(`  ${postLabel} post-revocation call: ${authResult.postRevocationCallResult}`);
+    if (!authResult.postRevocationCallResult.startsWith("REJECTED"))  throw new Error(`AgentAuth: post-expiry call not rejected: ${authResult.postRevocationCallResult.slice(0, 80)}`);
 
     // ── Negative envelope rejection tests (v3.8.1 hardening proof) ────────────
     console.log("  [+] Negative envelope tests — proving v3.8.1 contract-layer hardening...");
@@ -130,9 +133,10 @@ async function main() {
     if (!negResults.missingSig.startsWith("REJECTED"))  throw new Error("C-01: empty agent_sig was accepted by contract");
     if (!negResults.shortNonce.startsWith("REJECTED"))  throw new Error("C-01: short nonce was accepted by contract");
     if (!negResults.noEnvelope.startsWith("REJECTED"))  throw new Error("C-01: missing envelope was ACCEPTED — mandatory enforcement broken");
+    agentAuthSucceeded = true;
   } catch (err) {
     const msg = (err as Error).message;
-    if (msg.startsWith("C-01:")) { console.error(`  [-] FATAL: ${msg}`); process.exit(1); }
+    if (msg.startsWith("C-01:") || msg.startsWith("AgentAuth:")) { console.error(`  [-] FATAL: ${msg}`); process.exit(1); }
     console.error(`  [-] Agent Auth error: ${msg}`);
   }
 
@@ -323,7 +327,7 @@ async function main() {
   console.log("=".repeat(55));
   console.log(`Real T3N auth:             YES`);
   console.log(`DID from session:          ${tenantDid}`);
-  console.log(`Agent Auth credential:     BUILT + SIGNED (EIP-191, SDK-native)`);
+  console.log(`Agent Auth credential:     ${agentAuthSucceeded ? "BUILT + SIGNED + ENFORCED (EIP-191, SDK-native, C-01 live)" : "FAILED — see [-] lines above"}`);
   console.log(`Distinct agent identities: ${adnResult.uniqueIdentities}/4`);
   console.log(`Multi-agent delegation:    ${adnResult.success ? "PASSED" : "FAILED"}`);
   console.log(`Tamper detection:          ACTIVE (data_hash in signed payload)`);

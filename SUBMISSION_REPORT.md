@@ -125,7 +125,8 @@ await revokeDelegation({ credentialJcsB64u, client: t3n, baseUrl: getNodeUrl() }
 - **Temporal consistency**: `not_before < not_after` sanity check
 - **Function scope**: "delegate-task" must be in `functions` array
 - **Credential field completeness**: `vc_id` and `agent_pubkey` presence-checked
-- **Envelope presence**: `__delegation_envelope` is **mandatory** — C-01 fix: absent envelope is rejected at entry`n- **Envelope completeness**: `nonce` (≥8 bytes decoded) and `agent_sig` presence-checked
+- **Envelope presence**: `__delegation_envelope` is **mandatory** — C-01 fix: absent envelope is rejected at entry
+- **Envelope completeness**: `nonce` (≥8 bytes decoded) and `agent_sig` presence-checked
 - **SHA-256 fingerprint**: `credential_fingerprint` emitted in response — tamper-evident attestation of which credential was validated inside the TEE
 
 The bridge constructs the full `DelegationEnvelope` using SDK primitives, including user and agent signatures. Real-time revocation-registry lookup from inside WASM is a documented boundary — `tee:delegation/contracts::is-live` is not yet exposed for `generic-input` contracts. Short-lived credentials (30s) plus TEE-enforced expiry serve the same revocation property within the proof window. Documented as BUG-005.
@@ -216,7 +217,7 @@ Post-fix enforcement result:
 pre-revocation call:  ACCEPTED (credential valid)
 revocation:           SUCCESS
 [35s sleep — credential expires]
-post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer — v3.8.1)
+post-revocation call: REJECTED: delegate-task: credential expired (TTL enforced at TEE contract layer — 35s sleep lets 30s window elapse)
 ```
 
 Residual gap: an `is-live` host primitive for real-time revocation registry lookup from inside `generic-input` WASM is not documented in the ADK.
@@ -288,11 +289,11 @@ cargo build --target wasm32-wasip2 --release
 
 | Area | Status |
 |---|---|
-| Tenant map ACL wiring | **Wired** — 8 maps created via `setupAdnMaps()`; contract-only ACL applied (contractId=49); `setupAdnMaps()` throws if contractId is undefined |
+| Tenant map ACL wiring | **Wired** — 8 maps created via `setupAdnMaps()`; contract-only ACL (contractId=49); `setupAdnMaps()` fails closed when contractId is undefined |
 | Credential-gated execution (denial-after-revoke) | **IMPLEMENTED** — v3.8.1 contract enforces via time-bound expiry + WASI clock. See BUG-005. |
 | Secret Vault persistence | TEE pattern only — persistent map storage depends on contract-only ACLs, which require SDK resolving BUG-001 (contractId from register()) |
 | Python demo live TEE | Uses `_tee_stub` local simulation; authoritative proof is TypeScript bridge Phase 4 |
-| Real-time revocation registry in WASM | Residual gap — requires undocumented host primitive; time-bound tokens used instead |
+| Post-revocation enforcement | Implemented via short-lived (30s) credential TTL + 35s sleep. The TEE enforces expiry at contract layer. Live revocation-registry lookup (without TTL wait) requires a host primitive not documented in the ADK. |
 
 
 

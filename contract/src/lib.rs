@@ -262,7 +262,12 @@ fn verify_delegate_task(bytes: &[u8], cfg: &DelegationConfig) -> Result<Delegate
     if !policy.actions.iter().any(|a| a == &r.action) {
         return Err("delegate-task: action not authorized by credential policy".to_string());
     }
-    if policy.max_ttl_secs > 0 && (not_after - not_before) > policy.max_ttl_secs {
+    // Policy TTL is mandatory and bounded: 1..=global max. A zero/missing or
+    // over-cap policy TTL is rejected rather than silently using the global cap.
+    if policy.max_ttl_secs == 0 || policy.max_ttl_secs > cfg.max_ttl_secs {
+        return Err(format!("delegate-task: policy max_ttl_secs must be in 1..={}", cfg.max_ttl_secs));
+    }
+    if (not_after - not_before) > policy.max_ttl_secs {
         return Err("delegate-task: credential TTL exceeds policy maximum".to_string());
     }
 
@@ -1240,6 +1245,18 @@ mod delegate_tests {
     #[test]
     fn missing_envelope_rejected() {
         let p = Parts { omit_envelope: true, ..Default::default() };
+        assert!(verify_delegate_task(assemble(&p).as_bytes(), &cfg()).is_err());
+    }
+
+    #[test]
+    fn policy_ttl_zero_rejected() {
+        let p = Parts { policy_ttl: 0, ..Default::default() };
+        assert!(verify_delegate_task(assemble(&p).as_bytes(), &cfg()).is_err());
+    }
+
+    #[test]
+    fn policy_ttl_over_max_rejected() {
+        let p = Parts { policy_ttl: 400, ..Default::default() };
         assert!(verify_delegate_task(assemble(&p).as_bytes(), &cfg()).is_err());
     }
 }

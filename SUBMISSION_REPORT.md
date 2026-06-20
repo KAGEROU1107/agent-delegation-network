@@ -7,7 +7,7 @@
 **Repo**: https://github.com/KAGEROU1107/agent-delegation-network  
 **Demo Video**: https://youtu.be/ukZQ7F81aho  
 **SDK**: `@terminal3/t3n-sdk@3.5.2`  
-**Contract**: `adn-processor v3.9.1` — issuer-authenticated, cryptographically verified, request-bound delegated execution  
+**Contract**: `adn-processor v3.9.2` — issuer-authenticated delegated execution + verified worker results + mandatory policy TTL  
 **Live proof**: `proof/live_run_v3.8.1_final_88b7b88.txt` (v3.8.1 structural — current). v3.9.1 is built + unit-tested (19/19) but **not yet deployed**; the last *deployed/invoked* contract is the v3.8.1 structural build in that proof. Operator must build v3.9.1 with `ADN_TRUSTED_ISSUER` (see `t3n-bridge/scripts/derive_issuer.mjs`) and run a fresh live proof.
 
 ---
@@ -39,7 +39,8 @@ Authorization root (v3.9.1): a tenant-controlled issuer Ethereum address is pinn
 | Per-call DelegationEnvelope | buildInvocationPreimage + signAgentInvocation — full wire shape |
 | Negative live TEE test | Empty records → `process-data: records cannot be empty` rejection |
 | Multi-agent Ed25519 delegation | 4 distinct identities, signed payloads, tamper detection |
-| Python signing + policy tests | 34/34 pass — covers Python adapter and policy logic; TypeScript bridge and contract enforcement proven via live T3N proof |
+| Python signing + policy tests | 34/34 pass — Python adapter and policy logic |
+| Worker-result verification (v3.9.2, H-05) | Coordinator verifies each worker result before consuming it: Ed25519 signature (`verify_action_request`, `TASK_RESULT`), signer == expected worker, `result_data` bound to signed `data_hash`, originating `delegation_id`, audience == coordinator, status `COMPLETED`, and per-process result-nonce single-use. `src/result_verifier.py`. |
 
 ---
 
@@ -128,7 +129,8 @@ await revokeDelegation({ credentialJcsB64u, client: t3n, baseUrl: getNodeUrl() }
 | Request binding | ✅ | `request_hash` recomputed in-contract as `sha256(JSON{to_agent_id,action})` and required to equal the signed value — altering target or action invalidates the call |
 | User signature (issuer auth) | ✅ | 65-byte EIP-191 `user_sig` is **mandatory**, recovered over the exact credential JCS, and **required to equal the build-time-pinned tenant issuer** (`ADN_TRUSTED_ISSUER`). A self-issued credential is rejected. |
 | Authorization policy | ✅ | issuer-signed `adn_authorization_v1` in credential metadata binds `to_agent_id`, allowed `actions`, and `max_ttl_secs`; mismatched target/action rejected |
-| Credential TTL cap | ✅ | `not_after - not_before ≤ 300s`; `not_before ≤ now + 120s` skew |
+| Credential TTL cap | ✅ | global: `not_after - not_before ≤ 300s`; `not_before ≤ now + 120s` skew |
+| Policy TTL (mandatory) | ✅ | `adn_authorization_v1.max_ttl_secs` must be in `1..=300`; zero/missing/over-cap rejected; credential TTL must be ≤ policy TTL |
 | Tenant pin (optional) | ✅ | when `ADN_TENANT_DID` set, credential `org_did`/`user_did` must match |
 | Nonce | ✅ | required, base64url, **exactly 16 bytes** (SDK `NONCE_LEN`) — empty/short rejected |
 | Envelope presence | ✅ | `__delegation_envelope` mandatory (C-01) |

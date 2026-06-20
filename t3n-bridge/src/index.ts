@@ -121,8 +121,8 @@ async function main() {
     console.log(`  ${postLabel} post-revocation call: ${authResult.postRevocationCallResult}`);
     if (!authResult.postRevocationCallResult.startsWith("REJECTED"))  throw new Error(`AgentAuth: post-expiry call not rejected: ${authResult.postRevocationCallResult.slice(0, 80)}`);
 
-    // ── Negative envelope rejection tests (v3.9.1 hardening proof) ────────────
-    console.log("  [+] Negative envelope tests — proving v3.9.1 cryptographic contract-layer verification...");
+    // ── Negative envelope rejection tests (v3.9.2 hardening proof) ────────────
+    console.log("  [+] Negative envelope tests — proving v3.9.2 cryptographic contract-layer verification...");
     const negResults = await demonstrateNegativeEnvelopeTests(t3n, tenantDid, apiKey);
     const sigLabel   = negResults.missingSig.startsWith("REJECTED")  ? "[+]" : "[-]";
     const nonceLabel = negResults.shortNonce.startsWith("REJECTED")  ? "[+]" : "[-]";

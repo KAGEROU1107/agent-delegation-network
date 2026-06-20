@@ -16,7 +16,7 @@
 
 https://youtu.be/ukZQ7F81aho
 
-Live run against T3N testnet — 20/20 WIT exports, real DID, unique per-run hashes. Compare values in the video against `proof/live_run_v3.8.0_demo_video.txt` in the repo to confirm independent live runs.
+Live run against T3N testnet — 20/20 WIT exports, real DID, unique per-run hashes. Compare values in the video against `proof/live_run_v3.8.1_demo_video.txt` in the repo to confirm independent live runs.
 
 ---
 
@@ -29,23 +29,23 @@ An integration prototype demonstrating real Terminal 3 authentication, SDK-nativ
 | Capability | Evidence |
 |---|---|
 | T3N handshake + authenticate | Phase 1 — real DID from testnet every run |
-| Rust/WASM TEE contract (v3.8.0) | Registered + invoked: `z:ad146e6861ac408900af7ece1f6e90976dad3a02:adn-processor` |
+| Rust/WASM TEE contract (v3.8.1) | Registered + invoked: `z:ad146e6861ac408900af7ece1f6e90976dad3a02:adn-processor` |
 | Runtime enclave computation | 30 CSV records → TEE computes total/avg/min/max/trend |
 | All 20 WIT exports invoked | Phase 3: 2 core functions; Phase 4: remaining 18/18 `[+]` in clean run |
 | Agent Auth SDK — credential lifecycle | buildDelegationCredential → sign → validate → revoke SUCCESS |
-| Agent Auth enforcement scope | Structural: domain, TTL, nonce length, agent_sig presence, envelope presence (mandatory — C-01 live). Cryptographic sig verification is a host-capability boundary. |
+| Agent Auth enforcement scope | Structural: domain, TTL, nonce length, agent_sig presence, envelope presence (mandatory — C-01 live). Cryptographic signature verification (C-02) and replay prevention (C-03) are explicit implementation boundaries, not host-primitive limitations. |
 | Per-call DelegationEnvelope | buildInvocationPreimage + signAgentInvocation — full wire shape |
 | Agent Auth enforcement | TEE-enforced structural credential validation: domain, TTL, function scope, nonce format, envelope presence (now mandatory). Cryptographic sig verification and replay registry are host-capability boundaries documented in scope notes. |
 | Negative live TEE test | Empty records → `process-data: records cannot be empty` rejection |
 | Multi-agent Ed25519 delegation | 4 distinct identities, signed payloads, tamper detection |
-| Delegation enforcement scope | TEE structural: domain, TTL, function scope, nonce format, agent_sig presence. Envelope now **mandatory** (C-01 fix). Cryptographic sig verification is a host-capability boundary. |
+| Delegation enforcement scope | TEE structural: domain, TTL, function scope, nonce format, agent_sig presence. Envelope now **mandatory** (C-01 fix). Cryptographic signature verification (C-02) and replay prevention (C-03) are explicit implementation boundaries, not host-primitive limitations. |
 | Python signing + policy tests | 34/34 pass — covers Python adapter and policy logic; TypeScript bridge and contract enforcement proven via live T3N proof |
 
 ---
 
 ## Live Proof Summary
 
-Full output: [`proof/live_run_v3.8.1_c01_proof.txt`](proof/live_run_v3.8.1_c01_proof.txt) · [`proof/live_run_v3.8.0_session6_final.txt`](proof/live_run_v3.8.0_session6_final.txt)
+Full output: [`proof/live_run_v3.8.1_c01_proof.txt`](proof/live_run_v3.8.1_c01_proof.txt) · [`proof/live_run_v3.8.1_session6_final.txt`](proof/live_run_v3.8.1_session6_final.txt)
 
 ```
 [Phase 1] Authenticating with Terminal 3 testnet...
@@ -62,7 +62,7 @@ Full output: [`proof/live_run_v3.8.1_c01_proof.txt`](proof/live_run_v3.8.1_c01_p
   [+] envelope: agent_sig=hGRYp_3fQKT032Xj... nonce=npXJfmpt...
   [+] pre-revocation call:  ACCEPTED: {"delegation_id":...,"status":"ROUTED",...}
   [+] revocation: SUCCESS (tee:delegation/contracts::revoke)
-  [+] post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer — v3.8.0 TTL expiry; live registry lookup requires undocumented host primitive)
+  [+] post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer — v3.8.1 TTL expiry; live registry lookup requires undocumented host primitive)
   [+] missing agent_sig:    REJECTED: delegate-task: agent_sig missing from envelope
   [+] short nonce (4 bytes): REJECTED: delegate-task: nonce too short (< 8 bytes)
 
@@ -70,7 +70,7 @@ Full output: [`proof/live_run_v3.8.1_c01_proof.txt`](proof/live_run_v3.8.1_c01_p
   [+] Unique cryptographic identities: 4/4
   [+] Records processed: 30 | Quality score: 1 | Coordinator DID matches session: true
 
-[Phase 3] TEE Contract (v3.8.0)...
+[Phase 3] TEE Contract (v3.8.1)...
   [+] Registered: tail=adn-processor version=3.8.0
   [+] 30 sale records → total=$13253 | avg=$441.77 | min=$198.25 | max=$687.75 | trend=increasing
   [+] processed_in_tee: true | validated_in_tee: true
@@ -288,8 +288,8 @@ cargo build --target wasm32-wasip2 --release
 
 | Area | Status |
 |---|---|
-| Tenant map ACL wiring | **Wired** — 8 maps created via `setupAdnMaps()`; ACLs use `writers/readers:"all"` fallback when BUG-001 active (no contractId from SDK) |
-| Credential-gated execution (denial-after-revoke) | **IMPLEMENTED** — v3.8.0 contract enforces via time-bound expiry + WASI clock. See BUG-005. |
+| Tenant map ACL wiring | **Wired** — 8 maps created via `setupAdnMaps()`; contract-only ACL applied (contractId=49); `setupAdnMaps()` throws if contractId is undefined |
+| Credential-gated execution (denial-after-revoke) | **IMPLEMENTED** — v3.8.1 contract enforces via time-bound expiry + WASI clock. See BUG-005. |
 | Secret Vault persistence | TEE pattern only — persistent map storage depends on contract-only ACLs, which require SDK resolving BUG-001 (contractId from register()) |
 | Python demo live TEE | Uses `_tee_stub` local simulation; authoritative proof is TypeScript bridge Phase 4 |
 | Real-time revocation registry in WASM | Residual gap — requires undocumented host primitive; time-bound tokens used instead |

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Negative security tests for the ADN signing and verification protocol.
 
 Each test deliberately crafts an adversarial or malformed proof and asserts
@@ -288,6 +288,7 @@ class TestDelegationPolicy:
         policy = DelegationPolicy()
         for i in range(4):
             policy.add_delegation_rule(f"agent-{i}", f"action-{i}")
+            policy.add_trust_relationship(f"agent-{i}", "target")  # dual-deny requires explicit trust
         # Each agent only has its own action
         for i in range(4):
             allowed, _ = policy.can_delegate(f"agent-{i}", "target", f"action-{i}")

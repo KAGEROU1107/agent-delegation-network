@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Terminal 3 Agent Delegation Network — ADK Bridge
  *
  * Full integration demo:
@@ -119,7 +119,7 @@ async function main() {
     console.log(`  ${postLabel} post-revocation call: ${authResult.postRevocationCallResult}`);
 
     // ── Negative envelope rejection tests (v3.8.0 hardening proof) ────────────
-    console.log("  [+] Negative envelope tests — proving v3.8.0 contract-layer hardening...");
+    console.log("  [+] Negative envelope tests — proving v3.8.1 contract-layer hardening...");
     const negResults = await demonstrateNegativeEnvelopeTests(t3n, tenantDid, apiKey);
     const sigLabel   = negResults.missingSig.startsWith("REJECTED")  ? "[+]" : "[-]";
     const nonceLabel = negResults.shortNonce.startsWith("REJECTED")  ? "[+]" : "[-]";
@@ -128,7 +128,9 @@ async function main() {
     console.log(`  ${nonceLabel} short nonce (4 bytes): ${negResults.shortNonce}`);
     console.log(`  ${envLabel}   no envelope at all:   ${negResults.noEnvelope}`);
   } catch (err) {
-    console.error(`  [-] Agent Auth error: ${(err as Error).message}`);
+    const msg = (err as Error).message;
+    if (msg.startsWith("C-01:")) { console.error(`  [-] FATAL: ${msg}`); process.exit(1); }
+    console.error(`  [-] Agent Auth error: ${msg}`);
   }
 
   // ── Phase 2: Python ADN with real DID ───────────────────────────────────────
@@ -142,7 +144,7 @@ async function main() {
     console.log(`  [+] Records processed: ${adnResult.recordsProcessed}`);
     console.log(`  [+] Total revenue: $${adnResult.totalRevenue}`);
     console.log(`  [+] Quality score: ${adnResult.qualityScore} | passed: ${adnResult.qualityPassed}`);
-    console.log(`  [+] Coordinator DID matches session: ${adnResult.coordinatorDid === tenantDid}`);
+    console.log(`  [+] Session DID injected correctly: ${adnResult.tenantDid === tenantDid}`);
   } catch (err) {
     console.error(`  [-] ADN execution failed: ${(err as Error).message}`);
     process.exit(1);
@@ -299,7 +301,7 @@ async function main() {
     await p4("verify-and-settle", () => invokeVerifyAndSettle(t3n, tenantDid, { bond_id: "bond-demo", agent_did: workerDid, task_id: "task-001", bond_amount: 500.00, deadline_epoch: now + 86400, current_epoch: now, completed: true, quality_score: 0.92 }));
 
     console.log(`  [+] Phase 4: ${p4Passed}/18 passed | ${p4Failed} failed`);
-    if (p4Passed === 18) {
+    if (p4Passed === 18 && teeInvoked) {
       console.log("  [+] All 20 WIT exports invoked via live T3N TEE bridge.");
     } else {
       console.log(`  [!] Phase 4 incomplete: ${p4Failed} call(s) failed — review [-] lines above`);

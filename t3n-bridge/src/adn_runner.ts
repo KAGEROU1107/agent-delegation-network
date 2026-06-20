@@ -65,7 +65,7 @@ logging.disable(9999)
 
 from src.agent_delegation_network import create_agent
 
-coordinator = create_agent('coordinator')
+coordinator = create_agent('coordinator', private_key_hex=secrets.token_hex(32))  # ephemeral — T3N_API_KEY is EIP-191/ETH only
 worker1     = create_agent('worker1',   private_key_hex=secrets.token_hex(32))
 worker2     = create_agent('worker2',   private_key_hex=secrets.token_hex(32))
 validator   = create_agent('validator', private_key_hex=secrets.token_hex(32))

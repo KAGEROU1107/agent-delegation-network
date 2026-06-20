@@ -5,9 +5,18 @@
 **Submission date**: 2026-06-11  
 **Deadline**: 2026-06-22  
 **Repo**: https://github.com/KAGEROU1107/agent-delegation-network  
+**Demo Video**: https://youtu.be/ukZQ7F81aho  
 **SDK**: `@terminal3/t3n-sdk@3.5.2`  
 **Contract**: `adn-processor v3.8.0` — hardened envelope validation + SHA-256 credential fingerprint  
 **Live proof**: `proof/live_run_v3.8.0_session7_final.txt`
+
+---
+
+## Demo Video
+
+https://youtu.be/ukZQ7F81aho
+
+Live run against T3N testnet — 20/20 WIT exports, real DID, unique per-run hashes. Compare values in the video against \proof/live_run_v3.8.0_demo_video.txt\ in the repo to confirm independent live runs.
 
 ---
 
@@ -282,3 +291,4 @@ cargo build --target wasm32-wasip2 --release
 | Secret Vault persistence | TEE pattern only — persistent map storage depends on contract-only ACLs, which require SDK resolving BUG-001 (contractId from register()) |
 | Python demo live TEE | Uses `_tee_stub` local simulation; authoritative proof is TypeScript bridge Phase 4 |
 | Real-time revocation registry in WASM | Residual gap — requires undocumented host primitive; time-bound tokens used instead |
+

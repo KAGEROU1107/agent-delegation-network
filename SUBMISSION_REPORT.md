@@ -1,4 +1,4 @@
-# Terminal 3 Agent Dev Kit Bounty — Submission Report
+﻿# Terminal 3 Agent Dev Kit Bounty — Submission Report
 
 **Project**: Agent Delegation Network (ADN)  
 **Submitter**: KAGEROU1107  
@@ -7,8 +7,8 @@
 **Repo**: https://github.com/KAGEROU1107/agent-delegation-network  
 **Demo Video**: https://youtu.be/ukZQ7F81aho  
 **SDK**: `@terminal3/t3n-sdk@3.5.2`  
-**Contract**: `adn-processor v3.8.0` — hardened envelope validation + SHA-256 credential fingerprint  
-**Live proof**: `proof/live_run_v3.8.0_session7_final.txt`
+**Contract**: `adn-processor v3.8.1` — hardened envelope validation + SHA-256 credential fingerprint  
+**Live proof**: `proof/live_run_v3.8.1_c01_proof.txt`
 
 ---
 
@@ -33,19 +33,19 @@ An integration prototype demonstrating real Terminal 3 authentication, SDK-nativ
 | Runtime enclave computation | 30 CSV records → TEE computes total/avg/min/max/trend |
 | All 20 WIT exports invoked | Phase 3: 2 core functions; Phase 4: remaining 18/18 `[+]` in clean run |
 | Agent Auth SDK — credential lifecycle | buildDelegationCredential → sign → validate → revoke SUCCESS |
-| Agent Auth enforcement scope | Structural: scope, TTL, nonce length, agent_sig presence. Cryptographic sig and replay-registry verification documented as ADK host-capability boundary. |
+| Agent Auth enforcement scope | Structural: domain, TTL, nonce length, agent_sig presence, envelope presence (mandatory — C-01 live). Cryptographic sig verification is a host-capability boundary. |
 | Per-call DelegationEnvelope | buildInvocationPreimage + signAgentInvocation — full wire shape |
 | Agent Auth enforcement | TEE-enforced structural credential validation: domain, TTL, function scope, nonce format, envelope presence (now mandatory). Cryptographic sig verification and replay registry are host-capability boundaries documented in scope notes. |
 | Negative live TEE test | Empty records → `process-data: records cannot be empty` rejection |
 | Multi-agent Ed25519 delegation | 4 distinct identities, signed payloads, tamper detection |
 | Delegation enforcement scope | TEE structural: domain, TTL, function scope, nonce format, agent_sig presence. Envelope now **mandatory** (C-01 fix). Cryptographic sig verification is a host-capability boundary. |
-| Python signing + policy tests | 33/33 pass — covers Python adapter and policy logic; TypeScript bridge and contract enforcement proven via live T3N proof |
+| Python signing + policy tests | 34/34 pass — covers Python adapter and policy logic; TypeScript bridge and contract enforcement proven via live T3N proof |
 
 ---
 
 ## Live Proof Summary
 
-Full output: [`proof/live_run_v3.8.0_session7_final.txt`](proof/live_run_v3.8.0_session7_final.txt) · [`proof/live_run_v3.8.0_session6_final.txt`](proof/live_run_v3.8.0_session6_final.txt)
+Full output: [`proof/live_run_v3.8.1_c01_proof.txt`](proof/live_run_v3.8.1_c01_proof.txt) · [`proof/live_run_v3.8.0_session6_final.txt`](proof/live_run_v3.8.0_session6_final.txt)
 
 ```
 [Phase 1] Authenticating with Terminal 3 testnet...
@@ -120,12 +120,12 @@ await revokeDelegation({ credentialJcsB64u, client: t3n, baseUrl: getNodeUrl() }
 
 ### Enforcement architecture note
 
-`adn-processor v3.8.0` implements contract-layer enforcement for:
+`adn-processor v3.8.1` implements contract-layer enforcement for:
 - **Credential time window**: `not_before_secs` / `not_after_secs` validated against WASI `SystemTime::now()`
 - **Temporal consistency**: `not_before < not_after` sanity check
 - **Function scope**: "delegate-task" must be in `functions` array
 - **Credential field completeness**: `vc_id` and `agent_pubkey` presence-checked
-- **Envelope completeness**: `nonce` (≥8 bytes decoded) and `agent_sig` presence-checked
+- **Envelope presence**: `__delegation_envelope` is **mandatory** — C-01 fix: absent envelope is rejected at entry`n- **Envelope completeness**: `nonce` (≥8 bytes decoded) and `agent_sig` presence-checked
 - **SHA-256 fingerprint**: `credential_fingerprint` emitted in response — tamper-evident attestation of which credential was validated inside the TEE
 
 The bridge constructs the full `DelegationEnvelope` using SDK primitives, including user and agent signatures. Real-time revocation-registry lookup from inside WASM is a documented boundary — `tee:delegation/contracts::is-live` is not yet exposed for `generic-input` contracts. Short-lived credentials (30s) plus TEE-enforced expiry serve the same revocation property within the proof window. Documented as BUG-005.
@@ -207,7 +207,7 @@ The `z:ad146e6861ac408900af7ece1f6e90976dad3a02:adn-processor` script_name forma
 
 ### BUG-005: Delegation envelope not validated at T3N transport layer for `generic-input` contracts
 
-**Status: FIXED in adn-processor v3.8.0**
+**Status: FIXED in adn-processor v3.8.1**
 
 A `DelegationEnvelope` embedded in a `generic-input` call is not intercepted/validated by T3N's routing layer. The fix: the `delegate-task` function in the Rust contract now implements contract-layer enforcement — decoding `credential_jcs`, checking `not_before_secs`/`not_after_secs` via WASI `SystemTime::now()`, and verifying the called function is in the credential's `functions` scope. A short-lived (30s) credential is used in the demo so a revoked credential expires before the post-revocation call.
 
@@ -216,7 +216,7 @@ Post-fix enforcement result:
 pre-revocation call:  ACCEPTED (credential valid)
 revocation:           SUCCESS
 [35s sleep — credential expires]
-post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer)
+post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer — v3.8.1)
 ```
 
 Residual gap: an `is-live` host primitive for real-time revocation registry lookup from inside `generic-input` WASM is not documented in the ADK.
@@ -231,7 +231,7 @@ Residual gap: an `is-live` host primitive for real-time revocation registry look
 
 | Category | Tests | Result |
 |---|---|---|
-| Structural tamper | 6 | 33/33 PASS |
+| Structural tamper | 6 | 34/34 PASS |
 | Replay attack | 2 | |
 | Expired proof | 2 | |
 | Wrong audience | 2 | |

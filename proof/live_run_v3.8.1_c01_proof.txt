@@ -1,0 +1,87 @@
+﻿=== Terminal 3 Agent Delegation Network — Full ADK Demo ===
+Run date: 2026-06-20
+Contract: adn-processor v3.8.1 (mandatory-envelope C-01 fix, rebuilt 2026-06-20)
+Commit: 8e58da7
+
+[Phase 1] Authenticating with Terminal 3 testnet...
+  [+] handshake() complete
+  [+] authenticate() complete
+  [+] Authenticated DID (from session): did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
+  [+] Ethereum address: 0xb5a5808b97bdef6b053bb110be63af0deec60ed9
+  [+] TenantClient initialized
+
+[Phase 0] Agent Auth SDK — delegation credential + enforcement cycle...
+  [+] credential built: vc_id=7752035b5dc61d76fef88a0e994ac3be
+  [+] granted functions: delegate-task, process-data
+  [+] signed with EIP-191: user_sig=wXI1ypQvxK29zOEw...
+  [+] envelope: agent_sig=8XKewaecJQROn3hc... nonce=MVbdWyYk...
+  [+] pre-revocation call:  ACCEPTED: {"delegation_id":"tee-del-did:key:","status":"ROUTED","routed_to":"did:key:ed255
+  [+] revocation: SUCCESS (tee:delegation/contracts::revoke)
+  [+] post-revocation call: REJECTED: HTTP 400: delegate-task: credential expired (expired epoch 1781944401)
+  [+] Negative envelope tests — proving v3.8.1 contract-layer hardening...
+  [+]   missing agent_sig:    REJECTED: HTTP 400: delegate-task: agent_sig missing from envelope
+  [+]   short nonce (4 bytes): REJECTED: HTTP 400: delegate-task: nonce too short (< 8 bytes)
+  [+]   no envelope at all:   REJECTED: HTTP 400: delegate-task: __delegation_envelope required — unauthenticated delegation is not permitted
+
+C-01 PROOF: call with NO __delegation_envelope field -> REJECTED
+"__delegation_envelope required — unauthenticated delegation is not permitted"
+Mandatory envelope enforcement live at contract layer (v3.8.1).
+
+[Phase 2] Running Python ADN with authenticated DID...
+  DID injected into coordinator: did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
+  [+] Unique cryptographic identities: 4/4
+  [+] Records processed: 30
+  [+] Total revenue: $13253
+  [+] Quality score: 1 | passed: true
+  [+] Coordinator DID matches session: true
+
+[Phase 3] TEE Contract...
+  [+] Registered: tail=adn-processor version=3.8.1
+  [+] contractId: 49 (BUG-001 workaround)
+  [+] Script: z:ad146e6861ac408900af7ece1f6e90976dad3a02:adn-processor
+  [+] Maps: 0 created, 8 already existed
+  [+] TEE result: 30 records | total=$13253 | avg=$441.77 | min=$198.25 | max=$687.75 | trend=increasing
+  [+] processed_in_tee: true
+  [+] TEE quality: score=1 | validated_in_tee: true
+  [+] TEE correctly rejected empty records: process-data: records cannot be empty
+
+[Phase 4] Full Feature Contract Coverage — invoking all 20 WIT exports...
+  [+] delegate-task: {"delegation_id":"tee-del-did:key:","status":"ROUTED","routed_to":"did:key:ed25519:worker-demo-1781944475",...}
+  [+] submit-bid: {"bid_hash":"721633a7290956bd","item_id":"item-001","sealed_in_tee":true,"receipt":"bid-receipt-721633a72909"}
+  [+] resolve-auction: {"winner_did":"did:key:ed25519:worker2-demo-1781944475","winning_amount":185,"item_id":"item-001","total_bids":2,...}
+  [+] record-completion: {"agent_did":"did:key:ed25519:worker-demo-1781944475","task_id":"task-001","reputation_delta":0.94,"recorded_in_tee":true,...}
+  [+] get-reputation: {"agent_did":"did:key:ed25519:worker-demo-1781944475","reputation_score":0.84,"tier":"SILVER","tasks_evaluated":3,...}
+  [+] send-personalized-outreach: {"customer_id":"cust-001","message_variant":"tmpl-premium:standard_offer","personalization_score":0.7,...}
+  [+] issue-time-grant: {"grant_token":"tgrant-db326295e6c22b57","grantee_did":"did:key:ed25519:worker-demo-1781944475","action":"VALIDATE_DATA",...}
+  [+] check-grant: {"valid":true,"reason":"VALID until epoch 1781948075","checked_in_tee":true}
+  [+] kyc-submit-step: {"applicant_id":"applicant-001","step":"identity_check","step_receipt":"kyc-identity_check-cafebabe","progress_pct":25,...}
+  [+] kyc-get-status: {"applicant_id":"applicant-001","status":"PENDING","steps_completed":1,"steps_required":4,"missing_steps":["identity","a...}
+  [+] store-secret: {"vault_id":"vault-3efe7edb3b326f54","owner_did":"did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02","label":"api-key",...}
+  [+] invoke-with-secret: {"vault_id":"vault-demo","action_executed":"decrypt","tee_attested":true,"raw_secret_exposed":false}
+  [+] cast-vote: {"voter_did":"did:key:ed25519:worker-demo-1781944475","proposal_id":"prop-001","vote_receipt":"vote-58bbbf6b27e308f7",...}
+  [+] tally-votes: {"proposal_id":"prop-001","result":"PASSED","votes_for":2,"votes_against":1,"quorum_met":true,"tallied_in_tee":true}
+  [+] log-decision: {"decision_id":"dec-001","agent_did":"did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02","entry_hash":"45003997662c893d",...}
+  [+] audit-decisions: {"total_decisions":2,"anomalies_detected":1,"risk_score":0.5,"attestation":"audit-9d16d11daa5c6c11","audited_in_tee":true}
+  [+] lock-bond: {"bond_id":"bond-16db7a4367ba2e8e","agent_did":"did:key:ed25519:worker-demo-1781944475","task_id":"task-001","bond_amount":500,...}
+  [+] verify-and-settle: {"bond_id":"bond-demo","settlement":"FULL","payout_pct":1,"payout_amount":500,"reason":"EXCELLENT_DELIVERY","settled_in_tee":true}
+  [+] Phase 4: 18/18 passed | 0 failed
+  [+] All 20 WIT exports invoked via live T3N TEE bridge.
+
+=======================================================
+DEMO SUMMARY
+=======================================================
+Real T3N auth:             YES
+DID from session:          did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
+Agent Auth credential:     BUILT + SIGNED (EIP-191, SDK-native)
+Distinct agent identities: 4/4
+Multi-agent delegation:    PASSED
+Tamper detection:          ACTIVE (data_hash in signed payload)
+WASM contract:             REGISTERED + INVOKED (20/20 WIT functions)
+=======================================================
+
+C-01 ENFORCEMENT MATRIX (v3.8.1):
+  valid envelope       -> ACCEPTED (pre-revocation)
+  post-revocation      -> REJECTED (credential expired)
+  missing agent_sig    -> REJECTED
+  nonce < 8 bytes      -> REJECTED
+  no envelope at all   -> REJECTED (__delegation_envelope required)

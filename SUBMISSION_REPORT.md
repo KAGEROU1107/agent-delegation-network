@@ -22,7 +22,7 @@ Live run against T3N testnet — 20/20 WIT exports, real DID, unique per-run has
 
 ## What Was Built
 
-A multi-agent delegation network where a coordinator obtains a real Terminal 3 DID, delegates work to ephemeral signed sub-agents, and executes/verifies agent workflows through a Rust/WASM TEE contract with all 20 WIT exports invoked on T3N testnet.
+An integration prototype demonstrating real Terminal 3 authentication, SDK-native delegation credential construction, Rust/WASM TEE contract invocation, and TEE structural validation of delegation-envelope presence, credential domain, TTL, function scope, nonce format, and signature presence. All 20 WIT exports are invoked on T3N testnet. Cryptographic signature verification, request binding, replay prevention, persistent workflow state, and live revocation-registry enforcement are explicit implementation boundaries.
 
 ### Core capabilities demonstrated
 
@@ -39,7 +39,7 @@ A multi-agent delegation network where a coordinator obtains a real Terminal 3 D
 | Negative live TEE test | Empty records → `process-data: records cannot be empty` rejection |
 | Multi-agent Ed25519 delegation | 4 distinct identities, signed payloads, tamper detection |
 | Delegation enforcement scope | TEE structural: domain, TTL, function scope, nonce format, agent_sig presence. Envelope now **mandatory** (C-01 fix). Cryptographic sig verification is a host-capability boundary. |
-| Local negative security tests | 33/33 pass |
+| Python signing + policy tests | 33/33 pass — covers Python adapter and policy logic; TypeScript bridge and contract enforcement proven via live T3N proof |
 
 ---
 
@@ -293,6 +293,7 @@ cargo build --target wasm32-wasip2 --release
 | Secret Vault persistence | TEE pattern only — persistent map storage depends on contract-only ACLs, which require SDK resolving BUG-001 (contractId from register()) |
 | Python demo live TEE | Uses `_tee_stub` local simulation; authoritative proof is TypeScript bridge Phase 4 |
 | Real-time revocation registry in WASM | Residual gap — requires undocumented host primitive; time-bound tokens used instead |
+
 
 
 

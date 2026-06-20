@@ -260,9 +260,14 @@ Run the local feature-pattern demo: `T3N_API_KEY=0x<key> python demo/features_de
 
 ## Security
 
+**What is enforced:** T3N authentication, SDK-native credential construction, Rust/WASM TEE structural validation of envelope presence, credential domain, TTL, delegated function scope, nonce format (≥8 bytes), and `agent_sig` presence. Delegation envelope is now **mandatory** on `delegate-task` (v3.8.0 source). Trust policy requires both action rule AND explicit trust relationship (dual default-deny).
+
+**Explicit boundaries (not implemented):** Full cryptographic signature verification (secp256k1 host primitive), request binding (`request_hash` not verified), nonce replay registry, persistent workflow state, immediate revocation-registry lookup.
+
 33 negative security tests across 8 categories: structural tamper, replay attack,
 expired proof, wrong audience, forged key, missing required fields, agent identity
 distinctness, delegation policy enforcement, and credential TTL window validation.
+Tests cover Python signing adapter and policy logic only — TypeScript bridge and WASM contract enforcement are proven via live T3N proof artifacts.
 
 ```
 python -m pytest tests/negative_security.py -v
@@ -365,6 +370,8 @@ See `docs/bugs/` and `docs/doc-gaps/` for full details.
 - The Agent Auth revocation proof uses short-lived credential expiry for contract-layer rejection. Immediate revocation-registry lookup from inside `generic-input` WASM is documented as a current ADK gap.
 - TEE Secret Vault is implemented as a secure-pattern demo, not a production persistent vault.
 - When the SDK does not return a numeric `contractId`, tenant map ACL setup falls back to `writers/readers: "all"` as a documented BUG-001 workaround.
+
+
 
 
 

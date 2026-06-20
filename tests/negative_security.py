@@ -236,8 +236,17 @@ class TestDelegationPolicy:
     def test_restricted_agent_allowed_on_listed_action(self):
         policy = DelegationPolicy()
         policy.add_delegation_rule("agent-a", "process_data")
+        policy.add_trust_relationship("agent-a", "agent-b")  # trust must be explicit
         allowed, _ = policy.can_delegate("agent-a", "agent-b", "process_data")
         assert allowed
+
+    def test_action_allowed_but_no_trust_denies(self):
+        policy = DelegationPolicy()
+        policy.add_delegation_rule("agent-a", "process_data")
+        # No trust relationship registered → default deny even with valid action
+        allowed, reason = policy.can_delegate("agent-a", "agent-b", "process_data")
+        assert not allowed, "Action rule alone must not allow delegation — trust is also required"
+        assert "default deny" in reason
 
     def test_trust_gate_blocks_untrusted_target(self):
         policy = DelegationPolicy()
@@ -326,4 +335,5 @@ class TestCredentialTimeWindow:
         # Mutating expires_at changes the payload_hash → signature fails
         assert not ok
         assert code == "IDENTITY_INVALID"
+
 

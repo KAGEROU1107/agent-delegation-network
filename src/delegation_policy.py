@@ -108,12 +108,13 @@ class DelegationPolicy:
         
         # Check if the action is in the allowed list
         if action in allowed_actions:
-            # Additional trust check
+            # Trust check — must have an explicit trust relationship with the target (default deny).
             trusted_agents = self._agent_trust.get(from_agent_id, set())
-            if not trusted_agents or to_agent_id in trusted_agents:
-                return True, f"Delegation of {action} allowed"
-            else:
-                return False, f"Agent {from_agent_id} not trusted to delegate to {to_agent_id} for action {action}"
+            if not trusted_agents:
+                return False, f"Delegation denied — no target-trust policy for agent {from_agent_id} (default deny)"
+            if to_agent_id in trusted_agents:
+                return True, f"Delegation of {action} to {to_agent_id} allowed"
+            return False, f"Agent {from_agent_id} not trusted to delegate to {to_agent_id} for action {action}"
         
         return False, f"Action {action} not in delegation allowed list for agent {from_agent_id}"
     
@@ -350,3 +351,4 @@ class ExamplePolicies:
                 "report_generator": set(),
             }
         }
+

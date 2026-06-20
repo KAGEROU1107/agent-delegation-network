@@ -21,6 +21,19 @@ jobs:
       - name: Install dependencies
         run: pip install pytest cryptography
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install TypeScript bridge dependencies
+        working-directory: t3n-bridge
+        run: npm ci
+
+      - name: Build TypeScript bridge
+        working-directory: t3n-bridge
+        run: npm run build
+
       - name: Run negative security tests
         run: python -m pytest tests/negative_security.py -v --tb=short
 
@@ -35,3 +48,4 @@ jobs:
             -f description="pytest 33 negative security tests"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

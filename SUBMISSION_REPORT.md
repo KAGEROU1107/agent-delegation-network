@@ -8,7 +8,7 @@
 **Demo Video**: https://youtu.be/ukZQ7F81aho  
 **SDK**: `@terminal3/t3n-sdk@3.5.2`  
 **Contract**: `adn-processor v3.9.2` — issuer-authenticated delegated execution + verified worker results + mandatory policy TTL  
-**Live proof**: `proof/live_run_v3.8.1_final_88b7b88.txt` (v3.8.1 structural — current). v3.9.1 is built + unit-tested (19/19) but **not yet deployed**; the last *deployed/invoked* contract is the v3.8.1 structural build in that proof. Operator must build v3.9.1 with `ADN_TRUSTED_ISSUER` (see `t3n-bridge/scripts/derive_issuer.mjs`) and run a fresh live proof.
+**Live proof**: `proof/live_run_v3.8.1_final_88b7b88.txt` (v3.8.1 structural — current). v3.9.2 is built + unit-tested (Rust 22/22, Python 34/34) but **not yet deployed**; the last *deployed/invoked* contract is the v3.8.1 structural build in that proof. Operator must build v3.9.2 with `ADN_TRUSTED_ISSUER` (see `t3n-bridge/scripts/derive_issuer.mjs`) and run a fresh live proof.
 
 ---
 
@@ -31,7 +31,7 @@ Authorization root (v3.9.1): a tenant-controlled issuer Ethereum address is pinn
 | Capability | Evidence |
 |---|---|
 | T3N handshake + authenticate | Phase 1 — real DID from testnet every run |
-| Rust/WASM TEE contract | **Deployed + invoked: v3.8.1 structural** (`z:ad146e6861…:adn-processor`, committed live proof). **v3.9.1 cryptographic: built + 19/19 tests, not yet deployed** (unpinned WASM SHA-256 `ccc4a0be5b…11abf1`; operator builds pinned). |
+| Rust/WASM TEE contract | **Deployed + invoked: v3.8.1 structural** (`z:ad146e6861…:adn-processor`, committed live proof). **v3.9.2 cryptographic: built + Rust 22/22 tests, not yet deployed** (unpinned WASM SHA-256 `c7dfcac7ae…0369a9`; operator builds pinned). |
 | Runtime enclave computation | 30 CSV records → TEE computes total/avg/min/max/trend |
 | All 20 WIT exports invoked | Phase 3: 2 core functions; Phase 4: remaining 18/18 `[+]` in clean run |
 | Agent Auth SDK — credential lifecycle | buildDelegationCredential → sign → validate → revoke SUCCESS |
@@ -40,7 +40,7 @@ Authorization root (v3.9.1): a tenant-controlled issuer Ethereum address is pinn
 | Negative live TEE test | Empty records → `process-data: records cannot be empty` rejection |
 | Multi-agent Ed25519 delegation | 4 distinct identities, signed payloads, tamper detection |
 | Python signing + policy tests | 34/34 pass — Python adapter and policy logic |
-| Worker-result verification (v3.9.2, H-05) | Coordinator verifies each worker result before consuming it: Ed25519 signature (`verify_action_request`, `TASK_RESULT`), signer == expected worker, `result_data` bound to signed `data_hash`, originating `delegation_id`, audience == coordinator, status `COMPLETED`, and per-process result-nonce single-use. `src/result_verifier.py`. |
+| Worker-result verification (v3.9.2; H-05/06/07) | Coordinator verifies each worker result before consuming it: Ed25519 signature (`verify_action_request`, `TASK_RESULT`); signer pinned by **exact worker public key** (H-06), with `agent_id` as auxiliary check; `result_data` bound to signed `data_hash`; outer envelope nonce == body nonce (H-07); originating `delegation_id`; audience == coordinator; status `COMPLETED`; single-use result nonce. `src/result_verifier.py`. **Scope (H-09):** the single-use check is per-process (in-memory); durable duplicate-result rejection across restarts requires a persistent coordinator-side ledger. |
 
 ---
 
@@ -119,9 +119,9 @@ await revokeDelegation({ credentialJcsB64u, client: t3n, baseUrl: getNodeUrl() }
 // → SUCCESS: credential marked revoked in T3N delegation registry
 ```
 
-### Cryptographic verification + issuer authorization (v3.9.1)
+### Cryptographic verification + issuer authorization (v3.9.2)
 
-`adn-processor v3.9.1` performs **issuer-authenticated cryptographic** contract-layer verification on `delegate-task`, in pure Rust (`k256` secp256k1 + `sha3` Keccak-256) compiled to `wasm32-wasip2`. No host primitive is used. Verification logic is a pure, host-testable function (`verify_delegate_task`).
+`adn-processor v3.9.2` performs **issuer-authenticated cryptographic** contract-layer verification on `delegate-task`, in pure Rust (`k256` secp256k1 + `sha3` Keccak-256) compiled to `wasm32-wasip2`. No host primitive is used. Verification logic is a pure, host-testable function (`verify_delegate_task`).
 
 | Property | Enforced | Mechanism |
 |---|---|---|
@@ -137,7 +137,7 @@ await revokeDelegation({ credentialJcsB64u, client: t3n, baseUrl: getNodeUrl() }
 | Credential window / scope / domain | ✅ | `not_before/after` vs WASI clock, `delegate-task` in `functions`, domain `ot3.delegation/1` |
 | Credential fingerprint | ✅ | SHA-256 of verified credential bytes emitted in response |
 
-Verified by **19 Rust tests** — 7 crypto-vector tests (`contract/src/crypto.rs`, vs SDK ground truth from `t3n-bridge/scripts/gen_vectors.mjs`/`gen_jcs.mjs`) plus 12 contract-level `verify_delegate_task` tests (`delegate_tests`): valid-trusted-issuer accepted; and rejected — missing `user_sig`, untrusted issuer, issuer-not-pinned, wrong contract, wrong tenant DID, wrong signed target, wrong signed action, modified request field, TTL over max, forged `agent_sig`, missing envelope.
+Verified by **22 Rust tests** — 7 crypto-vector tests (vs SDK ground truth from `gen_vectors.mjs`/`gen_jcs.mjs`); 14 contract-level `verify_delegate_task` tests (valid-trusted-issuer accepted; rejected — missing/empty `user_sig`, untrusted issuer, issuer-not-pinned, wrong contract, wrong tenant DID, wrong signed target, wrong signed action, modified request field, TTL over max, zero policy TTL, forged `agent_sig`, missing envelope); and 1 end-to-end test that runs a **real @terminal3/t3n-sdk-generated** credential (policy in JCS metadata + pinned-issuer `user_sig`, `gen_policy_fixture.mjs`) through `verify_delegate_task`, proving the bridge-to-contract wire format round-trips.
 
 **Resolved in v3.9.1:** the trusted-issuer anchor (previously mislabelled "runtime-blocked") is implemented by pinning the tenant issuer address at build time — no host caller-identity import is required. A self-issued credential is now rejected.
 

@@ -141,7 +141,7 @@ did1 = coordinator.delegate_task(w1_id, 'PROCESS_DATA', 'process sales data', {'
 req1 = coordinator._delegations[did1]
 sig1 = req1.to_action_request(coordinator.identity)
 res1 = worker1.process_delegation_request(sig1)
-rd1 = verify_worker_result(res1, w1_id, did1, coord_id)
+rd1 = verify_worker_result(res1, w1_id, worker1.identity.public_key_hex, did1, coord_id)
 pd = (rd1.get('result') or {}).get('processed_data', {})
 if not pd: raise RuntimeError('worker1 returned no processed_data — status: ' + str(res1['result_data'].get('status')) + ' error: ' + str(res1['result_data'].get('error')))
 
@@ -149,7 +149,7 @@ did2 = coordinator.delegate_task(val_id, 'VALIDATE_QUALITY', 'validate data qual
 req2 = coordinator._delegations[did2]
 sig2 = req2.to_action_request(coordinator.identity)
 res2 = validator.process_delegation_request(sig2)
-rd2 = verify_worker_result(res2, val_id, did2, coord_id)
+rd2 = verify_worker_result(res2, val_id, validator.identity.public_key_hex, did2, coord_id)
 vd = (rd2.get('result') or {})
 
 print(json.dumps({

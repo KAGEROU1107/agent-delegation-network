@@ -1,0 +1,6 @@
+{
+  "trusted_issuer_hex": "1563915e194d8cfba1943570603f7606a3115508",
+  "tenant_did": "did:t3n:fixture",
+  "now_secs": 1700000100,
+  "input_json": "{\"to_agent_id\":\"did:key:ed25519:worker-fixture\",\"action\":\"PROCESS_DATA\",\"__delegation_envelope\":{\"credential_jcs\":\"eyJhZ2VudF9wdWJrZXkiOiJBMDgxVzl5M3pBcjNLTzg4enJsaFhaQm9TN1d5eWwtRm1yRHd0d1FIV0hHcSIsImNvbnRyYWN0IjoiYWRuLXByb2Nlc3NvciIsImZ1bmN0aW9ucyI6WyJkZWxlZ2F0ZS10YXNrIiwicHJvY2Vzcy1kYXRhIl0sIm1ldGFkYXRhIjp7ImFkbl9hdXRob3JpemF0aW9uX3YxIjoie1widG9fYWdlbnRfaWRcIjpcImRpZDprZXk6ZWQyNTUxOTp3b3JrZXItZml4dHVyZVwiLFwiYWN0aW9uc1wiOltcIlBST0NFU1NfREFUQVwiXSxcIm1heF90dGxfc2Vjc1wiOjMwMH0iLCJyb2xlIjoiYWRuLXdvcmtlciJ9LCJub3RfYWZ0ZXJfc2VjcyI6IjE3MDAwMDAyMDAiLCJub3RfYmVmb3JlX3NlY3MiOiIxNzAwMDAwMDAwIiwib3JnX2RpZCI6ImRpZDp0M246Zml4dHVyZSIsInNjb3BlcyI6W10sInVzZXJfZGlkIjoiZGlkOnQzbjpmaXh0dXJlIiwidiI6Im90My5kZWxlZ2F0aW9uLzEiLCJ2Y19pZCI6IkFRSURCQVVHQndnSkNnc01EUTRQRUEifQ\",\"user_sig\":\"6RG-kXqv6XFvgCoU1xR8yXDJPdRNCUBQT_NME-upg-03w7keVnb_wrgET9fCpmL3_V5SsqC1iIK4xaIHY157qxs\",\"agent_sig\":\"8ABu5aVhINkIe6nTCpolOlVknR6lvo0-L-Nc-qlxtVNx-w7Ksx5Fh8nI7XcIbiZTdqo1J4SJ8bXD9CxVAB2BEg\",\"nonce\":\"qrvM3e7_ABEiM0RVZneImQ\",\"request_hash\":\"przvzLYTDmN8KyhOTCFmUpxuTAKy-WqQ1VqB1Q8jSxw\"}}"
+}

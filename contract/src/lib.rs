@@ -1259,4 +1259,25 @@ mod delegate_tests {
         let p = Parts { policy_ttl: 400, ..Default::default() };
         assert!(verify_delegate_task(assemble(&p).as_bytes(), &cfg()).is_err());
     }
+
+    #[test]
+    fn sdk_generated_policy_credential_accepts() {
+        // End-to-end: full credential built by the real @terminal3/t3n-sdk
+        // (scripts/gen_policy_fixture.mjs) with adn_authorization_v1 in metadata,
+        // pinned-issuer user_sig, and agent_sig — proves the JCS wire format
+        // round-trips through verify_delegate_task.
+        let fx = include_str!("../tests/policy_fixture.json");
+        let v: serde_json::Value = serde_json::from_str(fx).unwrap();
+        let input = v["input_json"].as_str().unwrap();
+        let issuer = parse_addr_hex(v["trusted_issuer_hex"].as_str().unwrap()).unwrap();
+        let cfg = DelegationConfig {
+            trusted_issuer: Some(issuer),
+            tenant_did: Some(v["tenant_did"].as_str().unwrap().to_string()),
+            now_secs: v["now_secs"].as_u64().unwrap(),
+            max_ttl_secs: 300,
+            clock_skew_secs: 120,
+        };
+        let out = verify_delegate_task(input.as_bytes(), &cfg);
+        assert!(out.is_ok(), "SDK fixture rejected: {:?}", out.err());
+    }
 }

@@ -1,0 +1,83 @@
+(node:72724) ExperimentalWarning: `--experimental-loader` may be removed in the future; instead use `register()`:
+--import 'data:text/javascript,import { register } from "node:module"; import { pathToFileURL } from "node:url"; register("ts-node/esm", pathToFileURL("./"));'
+(Use `node --trace-warnings ...` to show where the warning was created)
+=== Terminal 3 Agent Delegation Network — Full ADK Demo ===
+
+[Phase 1] Authenticating with Terminal 3 testnet...
+(node:72724) [DEP0180] DeprecationWarning: fs.Stats constructor is deprecated.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  [+] handshake() complete
+  [+] authenticate() complete
+  [+] Authenticated DID (from session): did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
+  [+] Ethereum address: 0xb5a5808b97bdef6b053bb110be63af0deec60ed9
+  [+] TenantClient initialized
+
+[Phase 0] Agent Auth SDK — delegation credential + enforcement cycle...
+  [+] credential built: vc_id=9edfaafd47cd959b44c8705494fe1405
+  [+] granted functions: delegate-task, process-data
+  [+] signed with EIP-191: user_sig=HNrMpRgjVkGUMdgx...
+  [+] envelope: agent_sig=skrmePhzlEJRzN3w... nonce=SrGaND1D...
+  [+] pre-revocation call:  ACCEPTED: {"delegation_id":"tee-del-did:key:","status":"ROUTED","routed_to":"did:key:ed255
+  [+] revocation: SUCCESS (tee:delegation/contracts::revoke)
+  [+] post-revocation call: REJECTED: HTTP 400: Invalid params ({"code":"bad_request","detail":"delegate-task: credential expired (expired epoch 1781916293, n
+  [+] Negative envelope tests - proving v3.8.0 contract-layer hardening...
+  [+] missing agent_sig: REJECTED: HTTP 400: Invalid params ({"code":"bad_request","detail":"delegate-task: agent_sig missing from enve
+  [+] short nonce (4 bytes): REJECTED: HTTP 400: Invalid params ({"code":"bad_request","detail":"delegate-task: nonce too short (< 8 bytes)
+
+[Phase 2] Running Python ADN with authenticated DID...
+  DID injected into coordinator: did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
+  [+] Unique cryptographic identities: 4/4
+  [+] Records processed: 30
+  [+] Total revenue: $13253
+  [+] Quality score: 1 | passed: true
+  [+] Coordinator DID matches session: true
+
+[Phase 3] TEE Contract...
+  [+] Registered: tail=adn-processor version=3.8.0
+  [+] contractId: 49 (BUG-001 workaround - using known ID from initial registration)
+  [+] Script: z:ad146e6861ac408900af7ece1f6e90976dad3a02:adn-processor
+  [+] Setting up ADN tenant maps...
+  [+] map ACL: using contractId: 49 (contract-only ACL)
+  [+] Maps: 0 created, 8 already existed
+  [+] Invoking process-data in TEE...
+  [+] Sending 30 sale records into TEE enclave for computation
+  [+] TEE result: 30 records | total=$13253 | avg=$441.77 | min=$198.25 | max=$687.75 | trend=increasing
+  [+] processed_in_tee: true
+  [+] Invoking validate-quality in TEE...
+  [+] TEE quality: score=1 | validated_in_tee: true
+  [+] Negative test - empty records array (TEE must reject)...
+  [+] TEE correctly rejected empty records: HTTP 400: Invalid params ({"code":"bad_request","detail":"process-data: records
+
+[Phase 4] Full Feature Contract Coverage - invoking all 20 WIT exports...
+  (waiting 65s for fuel window reset, then 7s/call - ~3 min total)
+  [+] delegate-task: {"delegation_id":"tee-del-did:key:","status":"ROUTED","routed_to":"did:key:ed25519:worker-demo-1781916365"}
+  [+] submit-bid: {"bid_hash":"5277bbcb472cfb8c","item_id":"item-001","sealed_in_tee":true,"receipt":"bid-receipt-5277bbcb472c"}
+  [+] resolve-auction: {"winner_did":"did:key:ed25519:worker2-demo-1781916365","winning_amount":185,"item_id":"item-001","total_bids":2,"resolv
+  [+] record-completion: {"agent_did":"did:key:ed25519:worker-demo-1781916365","task_id":"task-001","reputation_delta":0.94,"recorded_in_tee":tru
+  [+] get-reputation: {"agent_did":"did:key:ed25519:worker-demo-1781916365","reputation_score":0.84,"tier":"SILVER","tasks_evaluated":3,"compu
+  [+] send-personalized-outreach: {"customer_id":"cust-001","message_variant":"tmpl-premium:standard_offer","personalization_score":0.7,"raw_data_exposed"
+  [+] issue-time-grant: {"grant_token":"tgrant-bdfe1f6e3032a61c","grantee_did":"did:key:ed25519:worker-demo-1781916365","action":"VALIDATE_DATA"
+  [+] check-grant: {"valid":true,"reason":"VALID until epoch 1781919965","checked_in_tee":true}
+  [+] kyc-submit-step: {"applicant_id":"applicant-001","step":"identity_check","step_receipt":"kyc-identity_check-cafebabe","progress_pct":25,"
+  [+] kyc-get-status: {"applicant_id":"applicant-001","status":"PENDING","steps_completed":1,"steps_required":4,"missing_steps":["identity","a
+  [+] store-secret: {"vault_id":"vault-3efe7edb3b326f54","owner_did":"did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02","label":"api-key","s
+  [+] invoke-with-secret: {"vault_id":"vault-demo","action_executed":"decrypt","tee_attested":true,"raw_secret_exposed":false}
+  [+] cast-vote: {"voter_did":"did:key:ed25519:worker-demo-1781916365","proposal_id":"prop-001","vote_receipt":"vote-1e01c835d5c2a14c","r
+  [+] tally-votes: {"proposal_id":"prop-001","result":"PASSED","votes_for":2,"votes_against":1,"quorum_met":true,"tallied_in_tee":true}
+  [+] log-decision: {"decision_id":"dec-001","agent_did":"did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02","entry_hash":"45003997662c893d",
+  [+] audit-decisions: {"total_decisions":2,"anomalies_detected":1,"risk_score":0.5,"attestation":"audit-9d16d11daa5c6c11","audited_in_tee":tru
+  [+] lock-bond: {"bond_id":"bond-60ac59ec018c85e5","agent_did":"did:key:ed25519:worker-demo-1781916365","task_id":"task-001","bond_amoun
+  [+] verify-and-settle: {"bond_id":"bond-demo","settlement":"FULL","payout_pct":1,"payout_amount":500,"reason":"EXCELLENT_DELIVERY","settled_in_
+  [+] All 20 WIT exports invoked via live T3N TEE bridge.
+
+=======================================================
+DEMO SUMMARY
+=======================================================
+Real T3N auth:             YES
+DID from session:          did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
+Agent Auth credential:     BUILT + SIGNED (EIP-191, SDK-native)
+Distinct agent identities: 4/4
+Multi-agent delegation:    PASSED
+Tamper detection:          ACTIVE (data_hash in signed payload)
+WASM contract:             REGISTERED + INVOKED (20/20 WIT functions)
+=======================================================

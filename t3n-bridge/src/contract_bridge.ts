@@ -6,6 +6,7 @@
  * script_name format: z:<40-hex-tid>:<tail>  (strip "did:t3n:" prefix)
  */
 
+import { createHash } from "crypto";
 import { readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -22,6 +23,8 @@ export interface ContractInfo {
   tenantDid: string;
   /** Numeric contract ID if the SDK returns it; undefined if BUG-001 still present. */
   contractId?: number;
+  /** SHA-256 of the local WASM artifact sent to register(). */
+  localWasmSha256: string;
 }
 
 /**
@@ -49,6 +52,8 @@ export async function registerAdnContract(
   }
 
   const wasm = readFileSync(WASM_PATH);
+  const localWasmSha256 = createHash("sha256").update(wasm).digest("hex");
+  console.log(`  [+] Local WASM SHA-256: ${localWasmSha256}`);
   let contractId: number | undefined;
   try {
     const raw = await tenant.contracts.register({ tail: CONTRACT_TAIL, version: CONTRACT_VERSION, wasm });
@@ -60,10 +65,17 @@ export async function registerAdnContract(
     }
   } catch (err) {
     const msg = (err as Error).message ?? "";
-    if (!msg.includes("not higher") && !msg.includes("already enabled")) throw err;
+    if (msg.includes("not higher") || msg.includes("already enabled")) {
+      throw new Error(
+        `Contract ${CONTRACT_TAIL}@${CONTRACT_VERSION} already exists remotely; ` +
+        `refusing to continue without remote artifact identity verification. ` +
+        `Local WASM SHA-256: ${localWasmSha256}. Bump CONTRACT_VERSION for a fresh immutable deployment.`
+      );
+    }
+    throw err;
   }
 
-  return { tail: CONTRACT_TAIL, version: CONTRACT_VERSION, tenantDid, contractId };
+  return { tail: CONTRACT_TAIL, version: CONTRACT_VERSION, tenantDid, contractId, localWasmSha256 };
 }
 
 export function invokeProcessData(
@@ -128,6 +140,8 @@ export interface DelegateTaskResult {
   routed_to: string;
   credential_enforced?: boolean;
   credential_fingerprint?: string;
+  build_id?: string;
+  wasm_sha256?: string;
 }
 
 export interface DelegateTaskEnvelope {
@@ -412,5 +426,4 @@ export function invokeVerifyAndSettle(
 ): Promise<VerifyAndSettleResult> {
   return invoke(t3n, tenantDid, "verify-and-settle", params);
 }
-
 

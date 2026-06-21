@@ -52,6 +52,7 @@ class DelegationRequest:
     deadline: Optional[float] = None  # Unix timestamp
     issued_at: float = 0.0  # Unix timestamp
     expires_at: float = 0.0  # Unix timestamp
+    tee_authorization: Optional[Dict[str, Any]] = None
     
     # Optional: delegator can specify required capabilities
     required_capabilities: List[str] = None
@@ -91,6 +92,8 @@ class DelegationRequest:
             # Note: We don't include the signature here - that's added by sign_action_request
             # The action type for the gate will be "DELEGATE_TASK"
         }
+        if self.tee_authorization is not None:
+            payload["tee_authorization"] = self.tee_authorization
         
         # Sign with the delegating agent's own key, binding the delegation payload hash.
         # data_hash is included INSIDE the signed fields so any post-signing tampering
@@ -129,7 +132,8 @@ class DelegationRequest:
             required_capabilities=delegation_data.get("required_capabilities", []),
             nonce=delegation_data.get("nonce", signed_request.get("nonce", "")),
             issued_at=delegation_data.get("issued_at", 0.0),
-            expires_at=delegation_data.get("expires_at", 0.0)
+            expires_at=delegation_data.get("expires_at", 0.0),
+            tee_authorization=delegation_data.get("tee_authorization")
         )
     
     def is_expired(self) -> bool:
@@ -157,6 +161,7 @@ class DelegationResult:
     error: str = None
     nonce: str = None
     issued_at: float = None
+    tee_authorization: Optional[Dict[str, Any]] = None
     
     def __post_init__(self):
         if self.issued_at is None:
@@ -184,6 +189,8 @@ class DelegationResult:
             "nonce": self.nonce,
             "issued_at": self.issued_at,
         }
+        if self.tee_authorization is not None:
+            payload["tee_authorization"] = self.tee_authorization
         # Sign with the performing agent's own key; bind result_data hash so
         # the result payload cannot be tampered with after signing.
         signed = agent_identity.sign_action("TASK_RESULT", self.nonce, data=payload)
@@ -207,7 +214,8 @@ class DelegationResult:
             result=result_data.get("result"),
             error=result_data.get("error"),
             nonce=result_data.get("nonce"),
-            issued_at=result_data.get("issued_at", 0.0)
+            issued_at=result_data.get("issued_at", 0.0),
+            tee_authorization=result_data.get("tee_authorization")
         )
 
 
@@ -224,7 +232,8 @@ class DelegationProtocol:
         task_description: str,
         parameters: Dict = None,
         deadline: float = None,
-        required_capabilities: List[str] = None
+        required_capabilities: List[str] = None,
+        tee_authorization: Optional[Dict[str, Any]] = None
     ) -> DelegationRequest:
         """
         Create a new delegation request.
@@ -244,7 +253,11 @@ class DelegationProtocol:
         if parameters is None:
             parameters = {}
         
-        delegation_id = str(uuid.uuid4())
+        delegation_id = (
+            str(tee_authorization.get("delegation_id"))
+            if tee_authorization and tee_authorization.get("delegation_id")
+            else str(uuid.uuid4())
+        )
         nonce = str(uuid.uuid4())
         now = time.time()
         expires_at = now + 3600  # Default 1 hour expiration
@@ -260,7 +273,8 @@ class DelegationProtocol:
             required_capabilities=required_capabilities or [],
             nonce=nonce,
             issued_at=now,
-            expires_at=expires_at
+            expires_at=expires_at,
+            tee_authorization=tee_authorization
         )
     
     @staticmethod
@@ -279,6 +293,7 @@ class DelegationProtocol:
             Tuple of (is_valid, error_message)
         """
         from src.terminal3_agent_auth_adapter import verify_action_request, _sha256, _canonical
+        from src.tee_authorization import verify_tee_authorization_receipt
 
         # Step 1: Ed25519 signature + payload-hash integrity
         is_valid, err = verify_action_request(signed_request, "DELEGATE_TASK")
@@ -303,6 +318,20 @@ class DelegationProtocol:
                 f"Delegation not addressed to this agent "
                 f"(expected {receiver_agent_id}, got {request.to_agent_id})"
             )
+
+        if not request.tee_authorization:
+            return False, "TEE authorization receipt required before worker execution"
+        try:
+            verify_tee_authorization_receipt(
+                request.tee_authorization,
+                expected_gateway_pubkey_hex=signed_request.get("public_key_hex", ""),
+                expected_delegation_id=request.delegation_id,
+                expected_to_agent_id=receiver_agent_id,
+                expected_action=request.action,
+                expected_parameters=request.parameters,
+            )
+        except RuntimeError as exc:
+            return False, f"TEE authorization invalid: {exc}"
 
         return True, "Delegation request is valid"
     
@@ -333,7 +362,8 @@ class DelegationProtocol:
             to_agent_id=delegation_request.from_agent_id,
             status=status,
             result=result,
-            error=error
+            error=error,
+            tee_authorization=delegation_request.tee_authorization
         )
 
 
@@ -343,7 +373,8 @@ def delegate_task(
     action: str,
     task_description: str,
     parameters: Dict = None,
-    deadline: float = None
+    deadline: float = None,
+    tee_authorization: Optional[Dict[str, Any]] = None
 ) -> DelegationRequest:
     """
     Convenience function to create a delegation request.
@@ -365,7 +396,8 @@ def delegate_task(
         action=action,
         task_description=task_description,
         parameters=parameters,
-        deadline=deadline
+        deadline=deadline,
+        tee_authorization=tee_authorization
     )
 
 

@@ -59,7 +59,7 @@ function normalizeAddress(value: string): string {
   return value.trim().replace(/^0x/i, "").toLowerCase();
 }
 
-function requirePinnedIssuerRuntimeConfig(authenticatedAddress: string): void {
+function requirePinnedRuntimeConfig(authenticatedAddress: string, authenticatedTenantDid: string): void {
   const pinnedIssuer = process.env.ADN_TRUSTED_ISSUER;
   if (!pinnedIssuer) {
     throw new Error(
@@ -80,7 +80,18 @@ function requirePinnedIssuerRuntimeConfig(authenticatedAddress: string): void {
     );
   }
 
+  const pinnedTenantDid = process.env.ADN_TENANT_DID;
+  if (!pinnedTenantDid) {
+    throw new Error("ADN_TENANT_DID is required before registering the v3.9.2 WASM contract.");
+  }
+  if (pinnedTenantDid.trim() !== authenticatedTenantDid) {
+    throw new Error(
+      `ADN_TENANT_DID does not match authenticated T3N tenant DID: expected ${authenticatedTenantDid}, got ${pinnedTenantDid.trim()}.`
+    );
+  }
+
   console.log(`  [+] Pinned issuer matches authenticated T3N issuer: 0x${normalizedPinned}`);
+  console.log(`  [+] Pinned tenant DID matches authenticated T3N tenant: ${authenticatedTenantDid}`);
 }
 
 function parseSaleAmounts(): number[] {
@@ -124,10 +135,8 @@ async function main() {
   // If Phase 3 re-registers the same version, the SDK may suppress the response.
   let preRegisteredContract: ContractInfo | null = null;
   if (existsSync(WASM_PATH)) {
-    requirePinnedIssuerRuntimeConfig(session.address);
-    try {
-      preRegisteredContract = await registerAdnContract(tenant, tenantDid);
-    } catch { /* ignore — Phase 3 logs detailed status */ }
+    requirePinnedRuntimeConfig(session.address, session.tenantDid);
+    preRegisteredContract = await registerAdnContract(tenant, tenantDid);
   }
 
   // ── Phase 0: Agent Auth SDK — User-to-Agent Delegation + Enforcement ─────────
@@ -361,4 +370,3 @@ main().catch((err) => {
   console.error("Fatal:", err);
   process.exit(1);
 });
-

@@ -138,7 +138,8 @@ class AgentDelegationNetwork:
         task_description: str,
         parameters: Dict = None,
         deadline: float = None,
-        required_capabilities: List[str] = None
+        required_capabilities: List[str] = None,
+        tee_authorization: Optional[Dict[str, Any]] = None
     ) -> str:
         """
         Delegate a task to another agent in the network.
@@ -169,7 +170,8 @@ class AgentDelegationNetwork:
             task_description=task_description,
             parameters=parameters,
             deadline=deadline,
-            required_capabilities=required_capabilities
+            required_capabilities=required_capabilities,
+            tee_authorization=tee_authorization
         )
         
         # Check if delegation is allowed by policy

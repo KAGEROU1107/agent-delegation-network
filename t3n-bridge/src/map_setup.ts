@@ -1,8 +1,8 @@
 /**
  * TEE map setup — creates tenant KV maps with contract ACLs.
  *
- * Each feature phase uses a dedicated map so data is isolated per-phase.
- * Maps are private to the ADN contract — other contracts can't read them.
+ * Maps are optionally provisioned for a future state-capable contract; the
+ * current WASM does not read or write them.
  *
  * Maps are created via TenantClient.maps.create().
  * contractId (number) is set as the sole writer and reader.
@@ -16,14 +16,14 @@ export interface MapConfig {
 }
 
 export const ADN_MAPS: MapConfig[] = [
-  { tail: "auction-bids",    description: "Phase 2 — blind auction bid storage" },
-  { tail: "reputation-ledger", description: "Phase 3 — agent reputation history" },
-  { tail: "time-grants",     description: "Phase 5 — temporal delegation grants" },
-  { tail: "kyc-pipeline",    description: "Phase 7 — KYC step completion records" },
-  { tail: "agent-vault",     description: "Phase 8 — TEE secret vault storage" },
-  { tail: "dao-votes",       description: "Phase 9 — DAO vote records" },
-  { tail: "decision-audit",  description: "Phase 10 — AI decision audit trail" },
-  { tail: "perf-bonds",      description: "Phase 11 — performance bond escrow" },
+  { tail: "auction-bids",    description: "Future state-capable blind auction bid storage" },
+  { tail: "reputation-ledger", description: "Future state-capable agent reputation history" },
+  { tail: "time-grants",     description: "Future state-capable temporal delegation grants" },
+  { tail: "kyc-pipeline",    description: "Future state-capable KYC step completion records" },
+  { tail: "agent-vault",     description: "Future state-capable secret vault storage" },
+  { tail: "dao-votes",       description: "Future state-capable DAO vote records" },
+  { tail: "decision-audit",  description: "Future state-capable AI decision audit trail" },
+  { tail: "perf-bonds",      description: "Future state-capable performance bond escrow" },
 ];
 
 export interface MapSetupResult {

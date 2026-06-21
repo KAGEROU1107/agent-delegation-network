@@ -3,7 +3,7 @@
 
 [![Tests](https://github.com/KAGEROU1107/agent-delegation-network/actions/workflows/ci.yml/badge.svg)](https://github.com/KAGEROU1107/agent-delegation-network/actions/workflows/ci.yml)
 
-A multi-agent delegation system built on the Terminal 3 ADK. A coordinator authenticates with T3N, delegates tasks to ephemeral Ed25519 sub-agents, and executes/verifies workloads through a Rust/WASM TEE contract on the T3N testnet.
+A multi-agent delegation system built on the Terminal 3 ADK. A T3N-authenticated bridge passes session context to an ephemeral Ed25519 Python coordinator, which delegates tasks to ephemeral Ed25519 sub-agents and verifies signed worker results.
 
 ---
 
@@ -24,7 +24,7 @@ Full output: [`proof/live_run_v3.8.1_final_88b7b88.txt`](proof/live_run_v3.8.1_f
   [35s sleep — credential window expires]
   [+] post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer v3.8.1)
   [+] missing agent_sig:    REJECTED: delegate-task: agent_sig missing from envelope
-  [+] short nonce (4 bytes): REJECTED: delegate-task: nonce too short (< 8 bytes)
+  [+] short nonce (4 bytes): REJECTED: delegate-task: nonce must be exactly 16 bytes
 
 [Phase 1] T3N Auth
   [+] handshake() complete
@@ -96,7 +96,7 @@ Run:    T3N_API_KEY=0x<key> node --loader ts-node/esm src/index.ts  (from t3n-br
 │  Protocol:    signed delegation requests + data_hash    │
 │  Policy:      role-based authorization engine           │
 └────────────────────┬────────────────────────────────────┘
-                     │ outputs flow into TEE contract
+                     │ separate TEE authorization/computation calls
 ┌────────────────────▼────────────────────────────────────┐
 │  contract/  Rust WASM — runs inside T3N TEE             │
 │                                                         │
@@ -117,15 +117,15 @@ Run:    T3N_API_KEY=0x<key> node --loader ts-node/esm src/index.ts  (from t3n-br
 | Tenant | `TenantClient` | contract registration and map setup |
 | TEE Contract | Rust + `wasm32-wasip2` | registered and invoked on T3N testnet |
 | WIT Interface | `z:adn-processor@0.1.0` | `contracts` interface, `generic-input` record |
-| Delegation | Python Ed25519 | Coordinator: T3N DID; workers: ephemeral keys |
+| Delegation | Python Ed25519 | Coordinator and workers: ephemeral keys within T3N session context |
 
 ---
 
 ## Agent Identity Model
 
-The **coordinator** is authenticated through the T3N ADK. Its DID comes directly from `t3n.authenticate()` against the testnet.
+The Python coordinator is an ephemeral Ed25519 agent operating within a T3N-authenticated session context.
 
-**Workers and validators** use ephemeral Ed25519 keys generated per session. This is intentional: sub-agents in the delegation network are short-lived. Their outputs flow into the TEE contract, which is bound to the coordinator's authenticated T3N identity.
+**Workers and validators** also use ephemeral Ed25519 keys generated per session. This is intentional: sub-agents in the delegation network are short-lived. Their outputs are checked by the coordinator-side verifier; the T3N DID remains session context, not the coordinator's signing identity.
 
 Each agent has a **distinct cryptographic identity**. Every delegation request is signed and carries a `data_hash` over the payload, making post-signing mutation detectable.
 
@@ -255,7 +255,7 @@ The demo:
 | Phase | Feature Label | WIT Functions | Behavior |
 |---|---|---|---|
 | 0 | Agent Auth SDK | (SDK calls) | Live credential lifecycle on T3N; envelope mandatory on delegate-task |
-| 1 | Core ADN + T3N Auth | process-data, validate-quality, delegate-task | Real T3N session; authenticated DID; TEE computation + structural delegation enforcement |
+| 1 | Core ADN + T3N Auth | process-data, validate-quality, delegate-task | Real T3N session context; ephemeral Ed25519 coordinator/workers; TEE authorization decision for delegated calls |
 | 2 | TEE Auction-Resolution Pattern | submit-bid, resolve-auction | TEE computes winner from caller-supplied bids; no sealed bid store or commit/reveal |
 | 3 | TEE Reputation-Score Pattern | record-completion, get-reputation | TEE computes score from caller-supplied history; no persistent ledger |
 | 4 | TEE Personalization Pattern | send-personalized-outreach | Customer segmentation computed in enclave over caller-supplied records |
@@ -275,9 +275,9 @@ Run the local feature-pattern demo: `T3N_API_KEY=0x<key> python demo/features_de
 
 **What is enforced in the current live v3.8.1 proof:** T3N authentication, SDK-native credential construction, Rust/WASM TEE structural validation of envelope presence, credential domain, TTL, delegated function scope, nonce format (≥8 bytes), and `agent_sig` presence. Delegation envelope is **mandatory** on `delegate-task` in v3.8.1 source. Trust policy requires both action rule AND explicit trust relationship (dual default-deny).
 
-**Explicit live-proof boundaries:** v3.9.2 source adds issuer-pinned cryptographic verification and request binding, but it is not yet backed by a pinned live deployment proof. Durable nonce replay registry, persistent workflow state, and immediate revocation-registry lookup remain unproven in the current `generic-input` contract world.
+**Explicit live-proof boundaries:** v3.9.2 source adds issuer-pinned cryptographic verification, request binding, digest-derived delegation IDs, and a signed gateway receipt requirement in the Python worker path, but it is not yet backed by a pinned live deployment proof. The receipt is gateway-linked local evidence, not a T3N-attested worker-dispatch primitive. Durable nonce replay registry, persistent workflow state, and immediate revocation-registry lookup remain unproven in the current `generic-input` contract world.
 
-50 Python security tests across 11 categories: structural tamper, replay attack,
+54 Python security tests across 11 categories: structural tamper, replay attack,
 expired proof, wrong audience, forged key, missing required fields, agent identity
 distinctness, delegation policy enforcement, credential TTL window validation,
 worker-result verification, result nonce retention/concurrency, and audit guardrails.
@@ -285,7 +285,7 @@ Tests cover Python signing adapter, policy logic, coordinator-side result verifi
 
 ```
 python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py -v --tb=short
-# 50 passed
+# 54 passed
 ```
 
 ---
@@ -381,7 +381,7 @@ See `docs/bugs/` and `docs/doc-gaps/` for full details.
 
 ## Known Boundaries
 
-- Workers are ephemeral Ed25519 sub-agents, not independent T3N tenants.
+- The Python coordinator and workers are ephemeral Ed25519 agents within a T3N-authenticated session context, not independent T3N tenants.
 - The Agent Auth revocation proof uses short-lived credential expiry for contract-layer rejection. Immediate revocation-registry lookup from inside `generic-input` WASM is documented as a current ADK gap.
 - TEE Secret Vault is implemented as a secure-pattern demo, not a production persistent vault.
 - Tenant map setup is skipped unless the current contract registration returns a numeric `contractId`; no historical ID or open ACL fallback is used.

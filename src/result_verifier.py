@@ -3,6 +3,7 @@ import time
 from collections import deque
 
 from src.terminal3_agent_auth_adapter import verify_action_request, _canonical, _sha256
+from src.tee_authorization import receipt_fingerprint, verify_tee_authorization_receipt
 
 MAX_SEEN_NONCES = 4096
 SEEN_NONCE_TTL_SECONDS = 15 * 60
@@ -31,7 +32,14 @@ def _consume_result_nonce(nonce):
         _seen_order.append((nonce, now))
         _prune_seen_nonces_locked(now)
 
-def verify_worker_result(proof, expected_worker_id, expected_worker_pubkey_hex, expected_delegation_id, coordinator_id):
+def verify_worker_result(
+    proof,
+    expected_worker_id,
+    expected_worker_pubkey_hex,
+    expected_delegation_id,
+    coordinator_id,
+    expected_tee_authorization=None,
+):
     ok, err = verify_action_request(proof, 'TASK_RESULT')
     if not ok:
         raise RuntimeError('worker result signature invalid: ' + str(err))
@@ -52,5 +60,21 @@ def verify_worker_result(proof, expected_worker_id, expected_worker_pubkey_hex, 
         raise RuntimeError('result delegation_id mismatch')
     if rd.get('status') != 'COMPLETED':
         raise RuntimeError('result status not COMPLETED')
+    receipt = rd.get('tee_authorization')
+    if not receipt:
+        raise RuntimeError('result missing TEE authorization receipt')
+    if expected_tee_authorization is not None:
+        if receipt_fingerprint(receipt) != receipt_fingerprint(expected_tee_authorization):
+            raise RuntimeError('result TEE authorization receipt mismatch')
+        expected_gateway_pubkey = expected_tee_authorization.get('gateway_public_key_hex', '')
+    else:
+        expected_gateway_pubkey = receipt.get('gateway_public_key_hex', '')
+    verify_tee_authorization_receipt(
+        receipt,
+        expected_gateway_pubkey_hex=expected_gateway_pubkey,
+        expected_delegation_id=expected_delegation_id,
+        expected_to_agent_id=expected_worker_id,
+        expected_action=receipt.get('action', ''),
+    )
     _consume_result_nonce(rd.get('nonce'))
     return rd

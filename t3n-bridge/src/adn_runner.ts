@@ -2,12 +2,12 @@
  * Python ADN subprocess runner.
  *
  * The TypeScript bridge handles Terminal 3 ADK auth (T3nClient, TenantClient).
- * Once a real authenticated DID is obtained, it is injected into the Python
- * Agent Delegation Network as the coordinator's identity.
+ * Once a real authenticated DID is obtained, it is passed to the Python
+ * Agent Delegation Network as session context.
  *
  * Architecture:
  *   TypeScript  ──[auth]──>  T3N testnet
- *   TypeScript  ──[spawn]──>  Python ADN (DID injected from authenticated session)
+ *   TypeScript  ──[spawn]──>  Python ADN (session DID passed from authenticated session)
  *   Python ADN  ──[sign]──>   Ed25519 signed delegation requests
  *   TypeScript  ──[invoke]──>  T3N TEE contract for data processing
  *
@@ -43,7 +43,7 @@ export interface AdnDelegationResult {
  *
  * Values passed via environment only — no interpolation into script strings.
  *   ADN_ROOT   — project root (no secret material, path only)
- *   DID        — coordinator DID from authenticated T3N session
+ *   DID        — authenticated T3N session DID
  *   T3N_API_KEY — passed from parent env (never interpolated)
  *   T3_MOCK    — "false" for live run
  */
@@ -89,6 +89,7 @@ if csv_path:
 
 from src.delegation_protocol import DelegationProtocol, DelegationStatus
 from src.result_verifier import verify_worker_result
+from src.tee_authorization import build_tee_authorization_receipt
 
 coord_id = coordinator.identity.agent_id
 w1_id    = worker1.identity.agent_id
@@ -137,19 +138,43 @@ def validate_handler(p):
 worker1.register_task_handler('PROCESS_DATA',    process_handler)
 validator.register_task_handler('VALIDATE_QUALITY', validate_handler)
 
-did1 = coordinator.delegate_task(w1_id, 'PROCESS_DATA', 'process sales data', {'data_source': 'csv', 'time_period': 'Q1-2026', 'filters': []})
+params1 = {'data_source': 'csv', 'time_period': 'Q1-2026', 'filters': []}
+auth1 = build_tee_authorization_receipt(
+    gateway_identity=coordinator.identity,
+    tee_result={
+        'delegation_id': 'tee-del-python-process-data',
+        'status': 'ROUTED',
+        'routed_to': w1_id,
+        'credential_fingerprint': 'local-gateway-process-data',
+    },
+    action='PROCESS_DATA',
+    parameters=params1,
+)
+did1 = coordinator.delegate_task(w1_id, 'PROCESS_DATA', 'process sales data', params1, tee_authorization=auth1)
 req1 = coordinator._delegations[did1]
 sig1 = req1.to_action_request(coordinator.identity)
 res1 = worker1.process_delegation_request(sig1)
-rd1 = verify_worker_result(res1, w1_id, worker1.identity.public_key_hex, did1, coord_id)
+rd1 = verify_worker_result(res1, w1_id, worker1.identity.public_key_hex, did1, coord_id, expected_tee_authorization=auth1)
 pd = (rd1.get('result') or {}).get('processed_data', {})
 if not pd: raise RuntimeError('worker1 returned no processed_data — status: ' + str(res1['result_data'].get('status')) + ' error: ' + str(res1['result_data'].get('error')))
 
-did2 = coordinator.delegate_task(val_id, 'VALIDATE_QUALITY', 'validate data quality', {'data': pd})
+params2 = {'data': pd}
+auth2 = build_tee_authorization_receipt(
+    gateway_identity=coordinator.identity,
+    tee_result={
+        'delegation_id': 'tee-del-python-validate-quality',
+        'status': 'ROUTED',
+        'routed_to': val_id,
+        'credential_fingerprint': 'local-gateway-validate-quality',
+    },
+    action='VALIDATE_QUALITY',
+    parameters=params2,
+)
+did2 = coordinator.delegate_task(val_id, 'VALIDATE_QUALITY', 'validate data quality', params2, tee_authorization=auth2)
 req2 = coordinator._delegations[did2]
 sig2 = req2.to_action_request(coordinator.identity)
 res2 = validator.process_delegation_request(sig2)
-rd2 = verify_worker_result(res2, val_id, validator.identity.public_key_hex, did2, coord_id)
+rd2 = verify_worker_result(res2, val_id, validator.identity.public_key_hex, did2, coord_id, expected_tee_authorization=auth2)
 vd = (rd2.get('result') or {})
 
 print(json.dumps({
@@ -198,5 +223,4 @@ print(json.dumps({
     });
   });
 }
-
 

@@ -72,7 +72,7 @@ jobs:
           gh api repos/${{ github.repository }}/statuses/${{ github.sha }} \
             -f state="$STATE" \
             -f context="Tests" \
-            -f description="pytest 50 Python signing, policy, result-verifier, and audit-guard tests"
+            -f description="pytest 54 Python signing, policy, result-verifier, and audit-guard tests"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

@@ -25,6 +25,23 @@ fn encode<T: Serialize>(v: &T) -> Result<Vec<u8>, String> {
     serde_json::to_vec(v).map_err(|e| e.to_string())
 }
 
+fn contract_build_id() -> String {
+    let commit = option_env!("ADN_BUILD_COMMIT").unwrap_or("unknown-commit");
+    let issuer = option_env!("ADN_TRUSTED_ISSUER").unwrap_or("unpinned-issuer");
+    let tenant = option_env!("ADN_TENANT_DID").unwrap_or("unbound-tenant");
+    let wasm_sha = option_env!("ADN_WASM_SHA256").unwrap_or("unrecorded-wasm-sha256");
+    let material = format!(
+        "adn-processor:v{}:{commit}:{issuer}:{tenant}:{wasm_sha}",
+        env!("CARGO_PKG_VERSION")
+    );
+    let digest = Sha256::digest(material.as_bytes());
+    format!("adn-build-{}", crypto::hex_lower(&digest[..16]))
+}
+
+fn contract_wasm_sha256() -> Option<String> {
+    option_env!("ADN_WASM_SHA256").map(|s| s.to_string())
+}
+
 // ── Phase 1 types ─────────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -271,15 +288,21 @@ fn verify_delegate_task(bytes: &[u8], cfg: &DelegationConfig) -> Result<Delegate
         return Err("delegate-task: credential TTL exceeds policy maximum".to_string());
     }
 
-    let digest = Sha256::digest(&cred_bytes);
-    let id = r.to_agent_id[..8.min(r.to_agent_id.len())].to_string();
+    let credential_digest = Sha256::digest(&cred_bytes);
+    let mut id_material = Vec::with_capacity(vc_id_bytes.len() + nonce_bytes.len() + request_hash.len());
+    id_material.extend_from_slice(&vc_id_bytes);
+    id_material.extend_from_slice(&nonce_bytes);
+    id_material.extend_from_slice(&request_hash);
+    let id_digest = Sha256::digest(&id_material);
     Ok(DelegateTaskOutput {
-        delegation_id: format!("tee-del-{id}"),
+        delegation_id: format!("tee-del-{}", crypto::hex_lower(&id_digest[..16])),
         status: "ROUTED".to_string(),
         routed_to: r.to_agent_id,
         credential_enforced: Some(true),
-        credential_fingerprint: Some(format!("{digest:x}")),
+        credential_fingerprint: Some(format!("{credential_digest:x}")),
         user_signer: Some(format!("0x{}", crypto::hex_lower(&signer))),
+        build_id: Some(contract_build_id()),
+        wasm_sha256: contract_wasm_sha256(),
     })
 }
 
@@ -304,6 +327,10 @@ struct DelegateTaskOutput {
     credential_fingerprint: Option<String>, // SHA-256 hex of credential_jcs bytes
     #[serde(skip_serializing_if = "Option::is_none")]
     user_signer: Option<String>, // EIP-191 recovered signer address (0x...) when user_sig present
+    #[serde(skip_serializing_if = "Option::is_none")]
+    build_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    wasm_sha256: Option<String>,
 }
 
 // ── Phase 2 — Blind Multi-Agent Auction ───────────────────────────────────────
@@ -1178,6 +1205,14 @@ mod delegate_tests {
     fn valid_trusted_issuer_accepts() {
         let out = verify_delegate_task(assemble(&Parts::default()).as_bytes(), &cfg());
         assert!(out.is_ok(), "expected accept, got {:?}", out.err());
+    }
+
+    #[test]
+    fn delegation_id_uses_digest_not_target_prefix() {
+        let out = verify_delegate_task(assemble(&Parts::default()).as_bytes(), &cfg()).unwrap();
+        assert!(out.delegation_id.starts_with("tee-del-"));
+        assert_eq!(out.delegation_id.len(), "tee-del-".len() + 32);
+        assert_ne!(out.delegation_id, "tee-del-did:key:");
     }
 
     #[test]

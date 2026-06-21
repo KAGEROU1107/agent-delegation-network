@@ -21,7 +21,21 @@ def test_bridge_requires_pinned_issuer_before_contract_registration():
 
     assert "ADN_TRUSTED_ISSUER" in index
     assert "does not match authenticated T3N issuer" in index
-    assert "requirePinnedIssuerRuntimeConfig(session.address)" in index
+    assert "ADN_TENANT_DID" in index
+    assert "does not match authenticated T3N tenant DID" in index
+    assert "requirePinnedRuntimeConfig(session.address, session.tenantDid)" in index
+
+
+def test_contract_and_bridge_expose_build_identity_without_reusing_existing_version():
+    contract = read("contract/src/lib.rs")
+    bridge = read("t3n-bridge/src/contract_bridge.ts")
+
+    assert "build_id" in contract
+    assert "wasm_sha256" in contract
+    assert "localWasmSha256" in bridge
+    assert "already exists remotely" in bridge
+    assert "refusing to continue without remote artifact identity verification" in bridge
+    assert "Bump CONTRACT_VERSION for a fresh immutable deployment" in bridge
 
 
 def test_map_setup_and_docs_do_not_claim_broad_acl_fallback():
@@ -37,6 +51,24 @@ def test_map_setup_and_docs_do_not_claim_broad_acl_fallback():
         assert 'writers/readers: "all"' not in content
         assert "writers/readers=all" not in content
         assert "broad ACL" not in content
+        assert "Each feature phase uses a dedicated map" not in content
+
+
+def test_docs_do_not_reintroduce_identity_or_test_count_drift():
+    combined_docs = "\n".join([
+        read("README.md"),
+        read("SUBMISSION_REPORT.md"),
+        read("PROVENANCE_v3.9.2.md"),
+    ])
+
+    assert "Coordinator: T3N DID" not in combined_docs
+    assert "The **coordinator** is authenticated through the T3N ADK" not in combined_docs
+    assert "Coordinator DID from T3N session" not in combined_docs
+    assert "not_after_secs: now + 3600n" not in combined_docs
+    assert "22 Rust tests" not in combined_docs
+    assert "22/22" not in combined_docs
+    assert "issuer-authenticated delegated execution" not in combined_docs
+    assert "TEE authorization decision for delegated calls" in combined_docs
 
 
 def test_ci_runs_pinned_contract_configuration():

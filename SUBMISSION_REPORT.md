@@ -7,8 +7,8 @@
 **Repo**: https://github.com/KAGEROU1107/agent-delegation-network  
 **Demo Video**: https://youtu.be/ukZQ7F81aho  
 **SDK**: `@terminal3/t3n-sdk@3.5.2`  
-**Contract**: `adn-processor v3.9.2` — issuer-authenticated delegated execution + verified worker results + mandatory policy TTL  
-**Live proof**: `proof/live_run_v3.8.1_final_88b7b88.txt` (v3.8.1 structural — current). v3.9.2 is built + unit-tested (Rust 24/24, Python 50/50) but **not yet deployed**; the last *deployed/invoked* contract is the v3.8.1 structural build in that proof. Operator must build v3.9.2 with `ADN_TRUSTED_ISSUER` (see `t3n-bridge/scripts/derive_issuer.mjs`) and run a fresh live proof.
+**Contract**: `adn-processor v3.9.2` — issuer-authenticated TEE authorization decision for delegated calls + verified worker results + mandatory policy TTL
+**Live proof**: `proof/live_run_v3.8.1_final_88b7b88.txt` (v3.8.1 structural — current). v3.9.2 is built + unit-tested (Rust 25/25, Python 54/54) but **not yet deployed**; the last *deployed/invoked* contract is the v3.8.1 structural build in that proof. Operator must build v3.9.2 with `ADN_TRUSTED_ISSUER` (see `t3n-bridge/scripts/derive_issuer.mjs`) and run a fresh live proof.
 
 ---
 
@@ -22,25 +22,27 @@ Live run against T3N testnet — 20/20 WIT exports, real DID, unique per-run has
 
 ## What Was Built
 
-An integration prototype demonstrating real Terminal 3 authentication, SDK-native delegation credential construction, Rust/WASM TEE contract invocation, and — as of **v3.9.2** — **issuer-authenticated, cryptographically verified** delegated execution on `delegate-task`. The agent signature (secp256k1) is verified against the credential's agent public key over the invocation preimage; the request hash is recomputed in-contract and bound to the call's `to_agent_id`/`action`; the user signature (EIP-191) is recovered over the exact credential JCS bytes; the nonce is required at exactly 16 bytes; and issuer policy TTL is mandatory in `1..=300`. Verification is pure Rust (`k256`) compiled to `wasm32-wasip2` — **no host primitive** — refuting the earlier claim that ECDSA recovery required one.
+An integration prototype demonstrating real Terminal 3 authentication, SDK-native delegation credential construction, Rust/WASM TEE contract invocation, and — as of **v3.9.2** — an **issuer-authenticated, cryptographically verified TEE authorization decision** on `delegate-task`. The agent signature (secp256k1) is verified against the credential's agent public key over the invocation preimage; the request hash is recomputed in-contract and bound to the call's `to_agent_id`/`action`; the user signature (EIP-191) is recovered over the exact credential JCS bytes; the nonce is required at exactly 16 bytes; and issuer policy TTL is mandatory in `1..=300`. Verification is pure Rust (`k256`) compiled to `wasm32-wasip2` — **no host primitive** — refuting the earlier claim that ECDSA recovery required one.
 
 Authorization root (current v3.9.2 path, introduced in v3.9.1): a tenant-controlled issuer Ethereum address is pinned into the contract at build time (`ADN_TRUSTED_ISSUER`). `user_sig` is **mandatory**, recovered via EIP-191 over the credential JCS, and required to equal the pinned issuer — so a self-issued credential is rejected. The issuer-signed credential also carries an authorization policy (`adn_authorization_v1`) binding target, action, and max TTL. The pinned address is public (not secret); rotation is a new contract version. **One property remains runtime-blocked, not effort-blocked, and is NOT claimed: durable replay prevention** — this `generic-input` WIT world imports no KV/storage capability, so consumed nonces cannot be persisted *in this contract*. (This bounds the present world; it does not assert Terminal 3 offers no state-capable contract model.) An exact-invocation replay within the credential TTL is therefore not prevented at the contract layer; short (≤300s) TTLs bound the window. Persistent workflow state for the other 19 exports is unavailable for the same KV reason.
+
+Python worker execution now requires a signed gateway `TEE_AUTHORIZATION` receipt bound to the TEE-shaped authorization result, credential fingerprint, target, action, and request hash. This closes the local "worker executes with no authorization receipt" gap, but it is not claimed as a T3N-attested worker-dispatch primitive until a fresh live gateway proof or TEE-attested output path exists.
 
 ### Core capabilities demonstrated
 
 | Capability | Evidence |
 |---|---|
 | T3N handshake + authenticate | Phase 1 — real DID from testnet every run |
-| Rust/WASM TEE contract | **Deployed + invoked: v3.8.1 structural** (`z:ad146e6861…:adn-processor`, committed live proof). **v3.9.2 cryptographic: built + Rust 24/24 tests, not yet deployed** (unpinned WASM SHA-256 `c7dfcac7ae…0369a9`; operator builds pinned). |
+| Rust/WASM TEE contract | **Deployed + invoked: v3.8.1 structural** (`z:ad146e6861…:adn-processor`, committed live proof). **v3.9.2 cryptographic: built + Rust 25/25 tests, not yet deployed** (unpinned WASM SHA-256 `8a90dee4…afb147`; operator builds pinned). |
 | Runtime enclave computation | 30 CSV records → TEE computes total/avg/min/max/trend |
 | All 20 WIT exports invoked | Phase 3: 2 core functions; Phase 4: remaining 18/18 `[+]` in clean run |
 | Agent Auth SDK — credential lifecycle | buildDelegationCredential → sign → validate → revoke SUCCESS |
-| Agent Auth enforcement scope | **v3.9.2**: mandatory `user_sig` recovered to a **build-time-pinned trusted issuer**; secp256k1 `agent_sig` verified over preimage; issuer-signed `adn_authorization_v1` policy binds target/action/TTL; `request_hash` recomputed and bound to `to_agent_id`/`action`; nonce strict 16 bytes; TTL <= 300s; envelope mandatory (C-01). **24/24 Rust tests** (crypto vectors, contract-level accept/reject, SDK-generated policy fixture, and pinned/unpinned production-path checks). **Boundary:** durable replay (C-03) — no KV import in this world. |
+| Agent Auth enforcement scope | **v3.9.2**: mandatory `user_sig` recovered to a **build-time-pinned trusted issuer**; secp256k1 `agent_sig` verified over preimage; issuer-signed `adn_authorization_v1` policy binds target/action/TTL; `request_hash` recomputed and bound to `to_agent_id`/`action`; nonce strict 16 bytes; digest-derived `delegation_id`; build identity fields emitted; TTL <= 300s; envelope mandatory (C-01). **25/25 Rust tests** (crypto vectors, contract-level accept/reject, SDK-generated policy fixture, digest ID, and pinned/unpinned production-path checks). **Boundary:** durable replay (C-03) — no KV import in this world. |
 | Per-call DelegationEnvelope | buildInvocationPreimage + signAgentInvocation — full wire shape |
 | Negative live TEE test | Empty records → `process-data: records cannot be empty` rejection |
 | Multi-agent Ed25519 delegation | 4 distinct identities, signed payloads, tamper detection |
-| Python security tests | 50/50 pass — 34 adapter/policy tests, 11 worker-result verifier tests, and 5 audit-guard tests |
-| Worker-result verification (v3.9.2; H-05/06/07) | Coordinator verifies each worker result before consuming it: Ed25519 signature (`verify_action_request`, `TASK_RESULT`); signer pinned by **exact worker public key** (H-06), with `agent_id` as auxiliary check; `result_data` bound to signed `data_hash`; outer envelope nonce == body nonce (H-07); originating `delegation_id`; audience == coordinator; status `COMPLETED`; lock-guarded single-use result nonce with bounded in-memory retention. `src/result_verifier.py`. **Scope (H-09):** the single-use check is per-process (in-memory); durable duplicate-result rejection across restarts requires a persistent coordinator-side ledger. Direct matrix `tests/test_result_verifier.py` (H-08): accept + 8 fail-closed cases (other worker key, wrong delegation id, wrong audience, modified body, missing data_hash, inconsistent nonce, stale proof, second use) plus bounded retention and concurrent duplicate checks. |
+| Python security tests | 54/54 pass — 34 adapter/policy tests, 13 worker-result/TEE-receipt verifier tests, and 7 audit-guard tests |
+| Worker-result verification (v3.9.2; H-05/06/07) | Coordinator verifies each worker result before consuming it: Ed25519 signature (`verify_action_request`, `TASK_RESULT`); signer pinned by **exact worker public key** (H-06), with `agent_id` as auxiliary check; `result_data` bound to signed `data_hash`; outer envelope nonce == body nonce (H-07); originating `delegation_id`; audience == coordinator; status `COMPLETED`; signed gateway `TEE_AUTHORIZATION` receipt bound to target/action/request hash; lock-guarded single-use result nonce with bounded in-memory retention. `src/result_verifier.py`. **Scope (H-09):** the single-use check is per-process (in-memory); durable duplicate-result rejection across restarts requires a persistent coordinator-side ledger. Direct matrix `tests/test_result_verifier.py` (H-08): accept + fail-closed cases for missing/wrong TEE receipt, other worker key, wrong delegation id, wrong audience, modified body, missing data_hash, inconsistent nonce, stale proof, second use, plus bounded retention and concurrent duplicate checks. |
 
 ---
 
@@ -65,7 +67,7 @@ Full output: [`proof/live_run_v3.8.1_c01_proof.txt`](proof/live_run_v3.8.1_c01_p
   [+] revocation: SUCCESS (tee:delegation/contracts::revoke)
   [+] post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer — v3.8.1 TTL expiry; live registry lookup requires undocumented host primitive)
   [+] missing agent_sig:    REJECTED: delegate-task: agent_sig missing from envelope
-  [+] short nonce (4 bytes): REJECTED: delegate-task: nonce too short (< 8 bytes)
+  [+] short nonce (4 bytes): REJECTED: delegate-task: nonce must be exactly 16 bytes
 
 [Phase 2] Python ADN — Multi-Agent Delegation...
   [+] Unique cryptographic identities: 4/4
@@ -99,7 +101,7 @@ const credential = buildDelegationCredential({
   contract: "adn-processor",
   functions: ["delegate-task", "process-data"],  // sorted ascending
   not_before_secs: now,
-  not_after_secs: now + 3600n,
+  not_after_secs: now + 300n,
   vc_id: vcId,                      // 16-byte random
 });
 
@@ -137,12 +139,13 @@ await revokeDelegation({ credentialJcsB64u, client: t3n, baseUrl: getNodeUrl() }
 | Credential window / scope / domain | ✅ | `not_before/after` vs WASI clock, `delegate-task` in `functions`, domain `ot3.delegation/1` |
 | Credential fingerprint | ✅ | SHA-256 of verified credential bytes emitted in response |
 
-Verified by **22 Rust tests** — 7 crypto-vector tests (vs SDK ground truth from `gen_vectors.mjs`/`gen_jcs.mjs`); 14 contract-level `verify_delegate_task` tests (valid-trusted-issuer accepted; rejected — missing/empty `user_sig`, untrusted issuer, issuer-not-pinned, wrong contract, wrong tenant DID, wrong signed target, wrong signed action, modified request field, TTL over max, zero policy TTL, forged `agent_sig`, missing envelope); and 1 end-to-end test that runs a **real @terminal3/t3n-sdk-generated** credential (policy in JCS metadata + pinned-issuer `user_sig`, `gen_policy_fixture.mjs`) through `verify_delegate_task`, proving the bridge-to-contract wire format round-trips.
+Verified by **25 Rust tests** — crypto-vector tests (vs SDK ground truth from `gen_vectors.mjs`/`gen_jcs.mjs`); contract-level `verify_delegate_task` accept/reject tests; a digest-derived delegation ID regression test; SDK-generated policy fixture coverage; and pinned/unpinned production-path `Guest::delegate_task` coverage.
 
 **Resolved in the v3.9.x path:** the trusted-issuer anchor (previously mislabelled "runtime-blocked") is implemented by pinning the tenant issuer address at build time — no host caller-identity import is required. A self-issued credential is now rejected.
 
 **Boundary that remains (genuinely runtime-blocked):**
 - **Durable replay prevention (C-03):** the `generic-input` WIT world (`contract/wit/world.wit`) imports no KV/storage interface, so consumed `(vc_id, nonce, request_hash)` cannot be persisted *in this contract*. This bounds the present world; it is not a claim that Terminal 3 offers no state-capable contract model. An exact-invocation replay within the (≤300s) TTL is therefore not prevented at the contract layer. A durable fix needs either a state-capable contract world or a gateway that is the sole path to the TEE.
+- **T3N-attested TEE-to-worker dispatch:** Python workers now require a signed gateway receipt before execution, but the committed live proof does not yet show a T3N-attested receipt being consumed by a worker.
 - **Live revocation registry:** `is-live` lookup is not exposed to `generic-input` WASM; post-revocation enforcement is via TTL + wait (BUG-005).
 
 ---
@@ -242,7 +245,7 @@ Residual gap: an `is-live` host primitive for real-time revocation registry look
 
 ## Security
 
-50 Python security tests across 11 categories:
+54 Python security tests across 11 categories:
 
 | Category | Tests | Result |
 |---|---|---|
@@ -255,9 +258,9 @@ Residual gap: an `is-live` host primitive for real-time revocation registry look
 | Identity distinctness | 2 | |
 | Delegation policy enforcement | 9 | |
 | Credential TTL window | 5 | |
-| Worker-result verifier matrix | 9 | |
+| Worker-result verifier and TEE receipt matrix | 13 | |
 | Result nonce retention and concurrency | 2 | |
-| Audit guardrails | 5 | |
+| Audit guardrails | 7 | |
 
 Run: `python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py -v --tb=short`
 
@@ -268,7 +271,7 @@ Run: `python -m pytest tests/negative_security.py tests/test_result_verifier.py 
 | Phase | Feature | Core Concept |
 |---|---|---|
 | 0 | Agent Auth SDK | User delegates scoped authority to worker agent via EIP-191-signed credential |
-| 1 | Core ADN + T3N Auth | Coordinator DID from T3N session; 4-agent Ed25519 delegation network |
+| 1 | Core ADN + T3N Auth | Ephemeral Ed25519 coordinator/workers operating within T3N session context |
 | 2 | TEE Auction-Resolution Pattern | TEE auction-resolution computation pattern; inputs caller-supplied |
 | 3 | Agent Reputation Ledger | TEE reputation-score computation pattern; history caller-supplied (SILVER/GOLD/PLATINUM) |
 | 4 | Privacy-Preserving Personalization | TEE personalization pattern; caller-supplied segment data computed in enclave |

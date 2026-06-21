@@ -56,6 +56,13 @@ async function pubkeyFromSecret(secret: Uint8Array): Promise<Uint8Array> {
   return secp256k1.getPublicKey(secret, true);
 }
 
+function canonicalDelegateTaskRequestBytes(callParams: unknown): Buffer {
+  const params = (callParams ?? {}) as Record<string, unknown>;
+  const toAgentId = typeof params.to_agent_id === "string" ? params.to_agent_id : "";
+  const action = typeof params.action === "string" ? params.action : "";
+  return Buffer.from(JSON.stringify({ to_agent_id: toAgentId, action }));
+}
+
 /**
  * Build a DelegationEnvelope for one contract call.
  * Combines the credential JCS + user sig with a per-call agent sig.
@@ -72,7 +79,7 @@ function buildEnvelope(
   agentSecret: Uint8Array,
   callParams: unknown
 ): DelegationEnvelope {
-  const callBytes = Buffer.from(JSON.stringify(callParams));
+  const callBytes = canonicalDelegateTaskRequestBytes(callParams);
   const reqHash = new Uint8Array(createHash("sha256").update(callBytes).digest());
   const nonce = new Uint8Array(randomBytes(16));
   const preimage = buildInvocationPreimage(vcId, nonce, reqHash);
@@ -312,11 +319,11 @@ export async function demonstrateNegativeEnvelopeTests(
     missingSig = `REJECTED: ${(err as Error).message.slice(0, 100)}`;
   }
 
-  // ── Test 2: nonce too short (4 bytes < 8 minimum) ────────────────────────────
+  // ── Test 2: nonce too short (4 bytes; contract requires exactly 16) ──────────
   let shortNonce: string;
   try {
     const nonce = new Uint8Array(randomBytes(16));
-    const reqHash = new Uint8Array(createHash("sha256").update(Buffer.from(JSON.stringify(callParams))).digest());
+    const reqHash = new Uint8Array(createHash("sha256").update(canonicalDelegateTaskRequestBytes(callParams)).digest());
     const preimage = buildInvocationPreimage(vcId, nonce, reqHash);
     const agentSig = signAgentInvocation(preimage, agentSecret);
     const result = await t3n.executeAndDecode({
@@ -355,7 +362,5 @@ export async function demonstrateNegativeEnvelopeTests(
 
   return { missingSig, shortNonce, noEnvelope };
 }
-
-
 
 

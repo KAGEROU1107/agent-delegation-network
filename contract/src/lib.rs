@@ -25,21 +25,19 @@ fn encode<T: Serialize>(v: &T) -> Result<Vec<u8>, String> {
     serde_json::to_vec(v).map_err(|e| e.to_string())
 }
 
-fn contract_build_id() -> String {
+fn contract_build_config_id() -> String {
     let commit = option_env!("ADN_BUILD_COMMIT").unwrap_or("unknown-commit");
-    let issuer = option_env!("ADN_TRUSTED_ISSUER").unwrap_or("unpinned-issuer");
+    let rustc = option_env!("ADN_RUSTC_VERSION").unwrap_or("unknown-rustc");
+    let issuer = option_env!("ADN_TRUSTED_ISSUER")
+        .map(|s| s.strip_prefix("0x").unwrap_or(s).to_ascii_lowercase())
+        .unwrap_or_else(|| "unpinned-issuer".to_string());
     let tenant = option_env!("ADN_TENANT_DID").unwrap_or("unbound-tenant");
-    let wasm_sha = option_env!("ADN_WASM_SHA256").unwrap_or("unrecorded-wasm-sha256");
     let material = format!(
-        "adn-processor:v{}:{commit}:{issuer}:{tenant}:{wasm_sha}",
+        "adn-processor:v{}:{commit}:{rustc}:{issuer}:{tenant}",
         env!("CARGO_PKG_VERSION")
     );
     let digest = Sha256::digest(material.as_bytes());
     format!("adn-build-{}", crypto::hex_lower(&digest[..16]))
-}
-
-fn contract_wasm_sha256() -> Option<String> {
-    option_env!("ADN_WASM_SHA256").map(|s| s.to_string())
 }
 
 // ── Phase 1 types ─────────────────────────────────────────────────────────────
@@ -301,8 +299,7 @@ fn verify_delegate_task(bytes: &[u8], cfg: &DelegationConfig) -> Result<Delegate
         credential_enforced: Some(true),
         credential_fingerprint: Some(format!("{credential_digest:x}")),
         user_signer: Some(format!("0x{}", crypto::hex_lower(&signer))),
-        build_id: Some(contract_build_id()),
-        wasm_sha256: contract_wasm_sha256(),
+        build_config_id: Some(contract_build_config_id()),
     })
 }
 
@@ -328,9 +325,7 @@ struct DelegateTaskOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     user_signer: Option<String>, // EIP-191 recovered signer address (0x...) when user_sig present
     #[serde(skip_serializing_if = "Option::is_none")]
-    build_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    wasm_sha256: Option<String>,
+    build_config_id: Option<String>,
 }
 
 // ── Phase 2 — Blind Multi-Agent Auction ───────────────────────────────────────

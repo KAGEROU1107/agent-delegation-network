@@ -293,11 +293,13 @@ cd t3n-bridge
 T3N_API_KEY=0x<your_key> node scripts/derive_issuer.mjs
 
 cd ../contract
-ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo test --locked
-ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo build --locked --target wasm32-wasip2 --release
+BUILD_COMMIT=$(git rev-parse HEAD)
+RUSTC_VERSION="$(rustc --version)"
+ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo test --locked
+ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo build --locked --target wasm32-wasip2 --release
 
 cd ../t3n-bridge
-T3N_API_KEY=0x<your_key> ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> node --loader ts-node/esm src/index.ts 2>&1 | tee ../proof/live_run_v3.9.2.txt
+T3N_API_KEY=0x<your_key> ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> node --loader ts-node/esm src/index.ts 2>&1 | tee ../proof/live_run_v3.9.2.txt
 
 # 10-phase Python interaction patterns demo (local TEE simulation)
 T3N_API_KEY=0x<your_key> python demo/features_demo.py
@@ -309,6 +311,8 @@ python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/
 cd contract
 cargo build --locked --target wasm32-wasip2 --release
 ```
+
+The bridge writes `proof/deployment_manifest_v3.9.2.local.json` during registration. That external manifest binds the source/config `build_config_id` to the actual post-build `localWasmSha256` and `manifestDigest`; the WASM does not embed its own final hash.
 
 ---
 

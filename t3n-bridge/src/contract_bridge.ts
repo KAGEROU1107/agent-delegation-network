@@ -7,15 +7,30 @@
  */
 
 import { createHash } from "crypto";
-import { readFileSync, existsSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import type { TenantClient, T3nClient } from "@terminal3/t3n-sdk";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WASM_PATH = join(__dirname, "../../contract/target/wasm32-wasip2/release/adn_processor.wasm");
+const PROOF_DIR = join(__dirname, "../../proof");
+const DEPLOYMENT_MANIFEST_PATH = join(PROOF_DIR, "deployment_manifest_v3.9.2.local.json");
 const CONTRACT_TAIL = "adn-processor";
 const CONTRACT_VERSION = "3.9.2"; // mandatory-envelope enforcement (C-01 fix, rebuilt 2026-06-20)
+
+export interface DeploymentManifest {
+  v: "adn.deployment_manifest/1";
+  contractTail: string;
+  contractVersion: string;
+  buildCommit: string;
+  rustcVersion: string;
+  trustedIssuer: string;
+  tenantDid: string;
+  buildConfigId: string;
+  localWasmSha256: string;
+  manifestDigest: string;
+}
 
 export interface ContractInfo {
   tail: string;
@@ -25,6 +40,8 @@ export interface ContractInfo {
   contractId?: number;
   /** SHA-256 of the local WASM artifact sent to register(). */
   localWasmSha256: string;
+  /** External manifest binding build config to the actual post-build artifact hash. */
+  deploymentManifest: DeploymentManifest;
 }
 
 /**
@@ -43,6 +60,49 @@ function extractContractId(raw: unknown): number | undefined {
   return undefined;
 }
 
+function sha256Hex(data: string | Buffer): string {
+  return createHash("sha256").update(data).digest("hex");
+}
+
+function buildConfigId(buildCommit: string, rustcVersion: string, trustedIssuer: string, tenantDid: string): string {
+  const material = `adn-processor:v${CONTRACT_VERSION}:${buildCommit}:${rustcVersion}:${trustedIssuer}:${tenantDid}`;
+  return `adn-build-${sha256Hex(material).slice(0, 32)}`;
+}
+
+function requireManifestEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`${name} is required to write a deployment manifest for ${CONTRACT_TAIL} v${CONTRACT_VERSION}`);
+  }
+  return value;
+}
+
+function writeDeploymentManifest(localWasmSha256: string): DeploymentManifest {
+  const buildCommit = requireManifestEnv("ADN_BUILD_COMMIT");
+  const rustcVersion = requireManifestEnv("ADN_RUSTC_VERSION");
+  const trustedIssuer = requireManifestEnv("ADN_TRUSTED_ISSUER").replace(/^0x/i, "").toLowerCase();
+  const tenantDid = requireManifestEnv("ADN_TENANT_DID");
+  const buildConfig = buildConfigId(buildCommit, rustcVersion, trustedIssuer, tenantDid);
+
+  const unsignedManifest = {
+    v: "adn.deployment_manifest/1" as const,
+    contractTail: CONTRACT_TAIL,
+    contractVersion: CONTRACT_VERSION,
+    buildCommit,
+    rustcVersion,
+    trustedIssuer,
+    tenantDid,
+    buildConfigId: buildConfig,
+    localWasmSha256,
+  };
+  const manifestDigest = sha256Hex(JSON.stringify(unsignedManifest));
+  const deploymentManifest: DeploymentManifest = { ...unsignedManifest, manifestDigest };
+
+  mkdirSync(PROOF_DIR, { recursive: true });
+  writeFileSync(DEPLOYMENT_MANIFEST_PATH, JSON.stringify(deploymentManifest, null, 2) + "\n", "utf-8");
+  return deploymentManifest;
+}
+
 export async function registerAdnContract(
   tenant: TenantClient,
   tenantDid: string
@@ -52,8 +112,11 @@ export async function registerAdnContract(
   }
 
   const wasm = readFileSync(WASM_PATH);
-  const localWasmSha256 = createHash("sha256").update(wasm).digest("hex");
+  const localWasmSha256 = sha256Hex(wasm);
+  const deploymentManifest = writeDeploymentManifest(localWasmSha256);
   console.log(`  [+] Local WASM SHA-256: ${localWasmSha256}`);
+  console.log(`  [+] Deployment manifest digest: ${deploymentManifest.manifestDigest}`);
+  console.log(`  [+] Deployment manifest: ${DEPLOYMENT_MANIFEST_PATH}`);
   let contractId: number | undefined;
   try {
     const raw = await tenant.contracts.register({ tail: CONTRACT_TAIL, version: CONTRACT_VERSION, wasm });
@@ -75,7 +138,7 @@ export async function registerAdnContract(
     throw err;
   }
 
-  return { tail: CONTRACT_TAIL, version: CONTRACT_VERSION, tenantDid, contractId, localWasmSha256 };
+  return { tail: CONTRACT_TAIL, version: CONTRACT_VERSION, tenantDid, contractId, localWasmSha256, deploymentManifest };
 }
 
 export function invokeProcessData(
@@ -140,8 +203,7 @@ export interface DelegateTaskResult {
   routed_to: string;
   credential_enforced?: boolean;
   credential_fingerprint?: string;
-  build_id?: string;
-  wasm_sha256?: string;
+  build_config_id?: string;
 }
 
 export interface DelegateTaskEnvelope {
@@ -426,4 +488,3 @@ export function invokeVerifyAndSettle(
 ): Promise<VerifyAndSettleResult> {
   return invoke(t3n, tenantDid, "verify-and-settle", params);
 }
-

@@ -44,7 +44,10 @@ jobs:
 
       - name: Build Rust/WASM contract
         working-directory: contract
-        run: cargo build --locked --target wasm32-wasip2 --release
+        run: |
+          ADN_BUILD_COMMIT="${GITHUB_SHA}" \
+          ADN_RUSTC_VERSION="$(rustc --version)" \
+          cargo build --locked --target wasm32-wasip2 --release
 
       - name: Run Rust contract unit tests
         working-directory: contract
@@ -62,7 +65,10 @@ jobs:
         env:
           ADN_TRUSTED_ISSUER: 58da990a8f4a3a6ca7cb6315d68a140105917352
           ADN_TENANT_DID: did:t3n:fixture
-        run: cargo build --locked --target wasm32-wasip2 --release
+        run: |
+          ADN_BUILD_COMMIT="${GITHUB_SHA}" \
+          ADN_RUSTC_VERSION="$(rustc --version)" \
+          cargo build --locked --target wasm32-wasip2 --release
 
       - name: Post commit status
         if: always()

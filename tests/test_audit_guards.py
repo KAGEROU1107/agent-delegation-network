@@ -26,13 +26,18 @@ def test_bridge_requires_pinned_issuer_before_contract_registration():
     assert "requirePinnedRuntimeConfig(session.address, session.tenantDid)" in index
 
 
-def test_contract_and_bridge_expose_build_identity_without_reusing_existing_version():
+def test_contract_and_bridge_expose_non_self_referential_build_identity():
     contract = read("contract/src/lib.rs")
     bridge = read("t3n-bridge/src/contract_bridge.ts")
 
-    assert "build_id" in contract
-    assert "wasm_sha256" in contract
+    assert "ADN_WASM_SHA256" not in contract
+    assert "wasm_sha256" not in contract
+    assert "build_config_id" in contract
     assert "localWasmSha256" in bridge
+    assert "deploymentManifest" in bridge
+    assert "manifestDigest" in bridge
+    assert "ADN_BUILD_COMMIT" in bridge
+    assert "ADN_RUSTC_VERSION" in bridge
     assert "already exists remotely" in bridge
     assert "refusing to continue without remote artifact identity verification" in bridge
     assert "Bump CONTRACT_VERSION for a fresh immutable deployment" in bridge
@@ -75,6 +80,8 @@ def test_ci_runs_pinned_contract_configuration():
     workflow = read(".github/workflows/ci.yml")
 
     assert "tests/test_audit_guards.py" in workflow
+    assert "ADN_BUILD_COMMIT" in workflow
+    assert "ADN_RUSTC_VERSION" in workflow
     assert "ADN_TRUSTED_ISSUER: 58da990a8f4a3a6ca7cb6315d68a140105917352" in workflow
     assert "ADN_TENANT_DID: did:t3n:fixture" in workflow
     assert "Run Rust contract tests with pinned issuer" in workflow
@@ -93,6 +100,10 @@ def test_live_demo_docs_require_pinned_deployment_sequence():
     assert "node scripts/derive_issuer.mjs" in readme
     assert "ADN_TRUSTED_ISSUER=<issuer-address-without-0x>" in readme
     assert "ADN_TENANT_DID=did:t3n:<tenant-hex>" in readme
+    assert "ADN_BUILD_COMMIT=$BUILD_COMMIT" in readme
+    assert "ADN_RUSTC_VERSION=\"$RUSTC_VERSION\"" in readme
+    assert "T3N_API_KEY=0x<your_key> ADN_BUILD_COMMIT=$BUILD_COMMIT" in readme
     assert "cargo test --locked" in readme
     assert "cargo build --locked --target wasm32-wasip2 --release" in readme
+    assert "deployment_manifest_v3.9.2.local.json" in readme
     assert "proof/live_run_v3.9.2.txt" in readme

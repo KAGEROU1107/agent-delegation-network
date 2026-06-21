@@ -9,7 +9,7 @@
  * 5. [Optional] Register and invoke TEE contract if WASM available
  *
  * Usage:
- *   T3N_API_KEY=0x<key> ADN_TRUSTED_ISSUER=<issuer> node --loader ts-node/esm src/index.ts
+ *   T3N_API_KEY=0x<key> ADN_BUILD_COMMIT=<commit> ADN_RUSTC_VERSION="<rustc --version>" ADN_TRUSTED_ISSUER=<issuer> ADN_TENANT_DID=<tenant-did> node --loader ts-node/esm src/index.ts
  */
 
 import { createT3nSession } from "./t3n_auth.js";
@@ -204,7 +204,9 @@ async function main() {
     console.log("  [~] WASM not yet compiled — skipping TEE invocation.");
     console.log("  Build the contract with a pinned issuer/tenant:");
     console.log("    cd contract");
-    console.log("    ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo build --locked --target wasm32-wasip2 --release");
+    console.log("    BUILD_COMMIT=$(git rev-parse HEAD)");
+    console.log("    RUSTC_VERSION=\"$(rustc --version)\"");
+    console.log("    ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION=\"$RUSTC_VERSION\" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo build --locked --target wasm32-wasip2 --release");
     console.log("  Then re-run this demo to enable Phase 3 (contract registration + invocation).");
   } else {
     try {

@@ -196,7 +196,7 @@ world adn-processor {
 }
 ```
 
-Default fail-closed build: `cd contract && cargo build --locked --target wasm32-wasip2 --release`. For a live v3.9.2 deployment, use the pinned issuer/tenant sequence below.
+Default fail-closed build: `cd contract && cargo build --locked --target wasm32-wasip2 --release`. For a live v3.9.2 deployment, use the pinned issuer/tenant sequence below so the contract emits a non-self-referential `build_config_id` and the bridge records the final WASM SHA-256 in an external deployment manifest.
 
 ---
 
@@ -213,15 +213,17 @@ T3N_API_KEY=0x<your_key> node scripts/derive_issuer.mjs
 
 # Build and test v3.9.2 pinned to that issuer and tenant DID
 cd ../contract
-ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo test --locked
-ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo build --locked --target wasm32-wasip2 --release
+BUILD_COMMIT=$(git rev-parse HEAD)
+RUSTC_VERSION="$(rustc --version)"
+ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo test --locked
+ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo build --locked --target wasm32-wasip2 --release
 
 # Deploy/invoke the pinned artifact and capture fresh proof
 cd ../t3n-bridge
-T3N_API_KEY=0x<your_key> ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> node --loader ts-node/esm src/index.ts 2>&1 | tee ../proof/live_run_v3.9.2.txt
+T3N_API_KEY=0x<your_key> ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> node --loader ts-node/esm src/index.ts 2>&1 | tee ../proof/live_run_v3.9.2.txt
 ```
 
-The committed live proof remains v3.8.1 until this pinned v3.9.2 sequence is run against T3N and the resulting `proof/live_run_v3.9.2.txt` is committed.
+The bridge writes `proof/deployment_manifest_v3.9.2.local.json` with the actual post-build `localWasmSha256` and `manifestDigest`. The committed live proof remains v3.8.1 until this pinned v3.9.2 sequence is run against T3N and the resulting proof plus deployment manifest are committed.
 
 ### Optional: LLM text generation
 

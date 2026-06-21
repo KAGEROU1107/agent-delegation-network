@@ -10,7 +10,7 @@ coordinator-side worker-result verification in the Python flow (H-05).
 | WASM size | 411,644 bytes |
 | Rust toolchain | rustc 1.96.0 (ac68faa20 2026-05-25) |
 | Target | wasm32-wasip2 |
-| Tests | Rust 22/22 (`cargo test --lib`); Python 45/45 (`pytest tests/negative_security.py tests/test_result_verifier.py`) |
+| Tests | Rust 24/24 (`cargo test --locked`, including pinned/unpinned production-path coverage); Python 50/50 (`pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py`) |
 
 ## The committed WASM SHA is the UNPINNED build (fails closed)
 
@@ -19,10 +19,12 @@ build pinned to your tenant issuer (different SHA, operator-recorded):
 
 ```bash
 cd t3n-bridge && T3N_API_KEY=0x<key> node scripts/derive_issuer.mjs
-cd ../contract && ADN_TRUSTED_ISSUER=<addr> cargo build --target wasm32-wasip2 --release
-cargo test --lib   # 22/22
-python -m pytest tests/negative_security.py tests/test_result_verifier.py -v --tb=short   # 45/45
-cd ../t3n-bridge && T3N_API_KEY=0x<key> node --loader ts-node/esm src/index.ts 2>&1 | tee ../proof/live_run_v3.9.2.txt
+cd ../contract
+ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo test --locked
+ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo build --locked --target wasm32-wasip2 --release
+ADN_TRUSTED_ISSUER=58da990a8f4a3a6ca7cb6315d68a140105917352 ADN_TENANT_DID=did:t3n:fixture cargo test --locked
+python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py -v --tb=short   # 50/50
+cd ../t3n-bridge && T3N_API_KEY=0x<key> ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> node --loader ts-node/esm src/index.ts 2>&1 | tee ../proof/live_run_v3.9.2.txt
 ```
 
 ## v3.9.2 enforcement summary

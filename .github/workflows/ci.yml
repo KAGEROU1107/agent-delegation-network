@@ -35,7 +35,7 @@ jobs:
         run: npm run build
 
       - name: Run Python security tests
-        run: python -m pytest tests/negative_security.py tests/test_result_verifier.py -v --tb=short
+        run: python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py -v --tb=short
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -50,6 +50,20 @@ jobs:
         working-directory: contract
         run: cargo test --locked
 
+      - name: Run Rust contract tests with pinned issuer
+        working-directory: contract
+        env:
+          ADN_TRUSTED_ISSUER: 58da990a8f4a3a6ca7cb6315d68a140105917352
+          ADN_TENANT_DID: did:t3n:fixture
+        run: cargo test --locked
+
+      - name: Build pinned Rust/WASM contract
+        working-directory: contract
+        env:
+          ADN_TRUSTED_ISSUER: 58da990a8f4a3a6ca7cb6315d68a140105917352
+          ADN_TENANT_DID: did:t3n:fixture
+        run: cargo build --locked --target wasm32-wasip2 --release
+
       - name: Post commit status
         if: always()
         continue-on-error: true
@@ -58,7 +72,7 @@ jobs:
           gh api repos/${{ github.repository }}/statuses/${{ github.sha }} \
             -f state="$STATE" \
             -f context="Tests" \
-            -f description="pytest 45 Python signing, policy, and result-verifier tests"
+            -f description="pytest 50 Python signing, policy, result-verifier, and audit-guard tests"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

@@ -91,7 +91,7 @@ Run:    T3N_API_KEY=0x<key> node --loader ts-node/esm src/index.ts  (from t3n-br
 ┌────────────────────▼────────────────────────────────────┐
 │  src/  Python — Agent Delegation Network                │
 │                                                         │
-│  Coordinator: T3N-authenticated DID from session        │
+│  Coordinator: ephemeral Ed25519 agent in T3N session    │
 │  Workers:     ephemeral Ed25519 keys per session        │
 │  Protocol:    signed delegation requests + data_hash    │
 │  Policy:      role-based authorization engine           │
@@ -196,7 +196,7 @@ world adn-processor {
 }
 ```
 
-Build: `cd contract && cargo build --target wasm32-wasip2 --release`
+Default fail-closed build: `cd contract && cargo build --locked --target wasm32-wasip2 --release`. For a live v3.9.2 deployment, use the pinned issuer/tenant sequence below.
 
 ---
 
@@ -208,9 +208,20 @@ Build: `cd contract && cargo build --target wasm32-wasip2 --release`
 # Install TypeScript dependencies
 cd t3n-bridge && npm install
 
-# Run full live demo
-T3N_API_KEY=0x<your_key> node --loader ts-node/esm src/index.ts
+# Derive the public issuer address from your Terminal 3 key
+T3N_API_KEY=0x<your_key> node scripts/derive_issuer.mjs
+
+# Build and test v3.9.2 pinned to that issuer and tenant DID
+cd ../contract
+ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo test --locked
+ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo build --locked --target wasm32-wasip2 --release
+
+# Deploy/invoke the pinned artifact and capture fresh proof
+cd ../t3n-bridge
+T3N_API_KEY=0x<your_key> ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> node --loader ts-node/esm src/index.ts 2>&1 | tee ../proof/live_run_v3.9.2.txt
 ```
+
+The committed live proof remains v3.8.1 until this pinned v3.9.2 sequence is run against T3N and the resulting `proof/live_run_v3.9.2.txt` is committed.
 
 ### Optional: LLM text generation
 
@@ -231,7 +242,7 @@ The demo:
 2. Builds and tests an Agent Auth delegation credential.
 3. Spawns Python ADN with the authenticated DID passed in as session context.
 4. Runs multi-agent delegation with 4 distinct identities.
-5. Registers the Rust/WASM contract.
+5. Registers the Rust/WASM contract after the pinned issuer preflight passes.
 6. Invokes all 20 WIT exports through the live T3N bridge.
 7. Runs a negative TEE validation test.
 
@@ -266,15 +277,15 @@ Run the local feature-pattern demo: `T3N_API_KEY=0x<key> python demo/features_de
 
 **Explicit live-proof boundaries:** v3.9.2 source adds issuer-pinned cryptographic verification and request binding, but it is not yet backed by a pinned live deployment proof. Durable nonce replay registry, persistent workflow state, and immediate revocation-registry lookup remain unproven in the current `generic-input` contract world.
 
-45 Python security tests across 10 categories: structural tamper, replay attack,
+50 Python security tests across 11 categories: structural tamper, replay attack,
 expired proof, wrong audience, forged key, missing required fields, agent identity
 distinctness, delegation policy enforcement, credential TTL window validation,
-worker-result verification, and result nonce retention/concurrency.
-Tests cover Python signing adapter, policy logic, and coordinator-side result verification — TypeScript bridge and WASM contract enforcement are proven via live T3N proof artifacts.
+worker-result verification, result nonce retention/concurrency, and audit guardrails.
+Tests cover Python signing adapter, policy logic, coordinator-side result verification, TypeScript bridge buildability, and Rust/WASM contract enforcement. The committed live T3N proof remains the v3.8.1 structural proof until a pinned v3.9.2 run is captured.
 
 ```
-python -m pytest tests/negative_security.py tests/test_result_verifier.py -v --tb=short
-# 45 passed
+python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py -v --tb=short
+# 50 passed
 ```
 
 ---
@@ -373,7 +384,7 @@ See `docs/bugs/` and `docs/doc-gaps/` for full details.
 - Workers are ephemeral Ed25519 sub-agents, not independent T3N tenants.
 - The Agent Auth revocation proof uses short-lived credential expiry for contract-layer rejection. Immediate revocation-registry lookup from inside `generic-input` WASM is documented as a current ADK gap.
 - TEE Secret Vault is implemented as a secure-pattern demo, not a production persistent vault.
-- When the SDK does not return a numeric `contractId`, tenant map ACL setup falls back to `writers/readers: "all"` as a documented BUG-001 workaround.
+- Tenant map setup is skipped unless the current contract registration returns a numeric `contractId`; no historical ID or open ACL fallback is used.
 
 
 

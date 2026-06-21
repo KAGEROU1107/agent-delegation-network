@@ -8,7 +8,7 @@
 **Demo Video**: https://youtu.be/ukZQ7F81aho  
 **SDK**: `@terminal3/t3n-sdk@3.5.2`  
 **Contract**: `adn-processor v3.9.2` — issuer-authenticated delegated execution + verified worker results + mandatory policy TTL  
-**Live proof**: `proof/live_run_v3.8.1_final_88b7b88.txt` (v3.8.1 structural — current). v3.9.2 is built + unit-tested (Rust 22/22, Python 45/45) but **not yet deployed**; the last *deployed/invoked* contract is the v3.8.1 structural build in that proof. Operator must build v3.9.2 with `ADN_TRUSTED_ISSUER` (see `t3n-bridge/scripts/derive_issuer.mjs`) and run a fresh live proof.
+**Live proof**: `proof/live_run_v3.8.1_final_88b7b88.txt` (v3.8.1 structural — current). v3.9.2 is built + unit-tested (Rust 24/24, Python 50/50) but **not yet deployed**; the last *deployed/invoked* contract is the v3.8.1 structural build in that proof. Operator must build v3.9.2 with `ADN_TRUSTED_ISSUER` (see `t3n-bridge/scripts/derive_issuer.mjs`) and run a fresh live proof.
 
 ---
 
@@ -31,15 +31,15 @@ Authorization root (current v3.9.2 path, introduced in v3.9.1): a tenant-control
 | Capability | Evidence |
 |---|---|
 | T3N handshake + authenticate | Phase 1 — real DID from testnet every run |
-| Rust/WASM TEE contract | **Deployed + invoked: v3.8.1 structural** (`z:ad146e6861…:adn-processor`, committed live proof). **v3.9.2 cryptographic: built + Rust 22/22 tests, not yet deployed** (unpinned WASM SHA-256 `c7dfcac7ae…0369a9`; operator builds pinned). |
+| Rust/WASM TEE contract | **Deployed + invoked: v3.8.1 structural** (`z:ad146e6861…:adn-processor`, committed live proof). **v3.9.2 cryptographic: built + Rust 24/24 tests, not yet deployed** (unpinned WASM SHA-256 `c7dfcac7ae…0369a9`; operator builds pinned). |
 | Runtime enclave computation | 30 CSV records → TEE computes total/avg/min/max/trend |
 | All 20 WIT exports invoked | Phase 3: 2 core functions; Phase 4: remaining 18/18 `[+]` in clean run |
 | Agent Auth SDK — credential lifecycle | buildDelegationCredential → sign → validate → revoke SUCCESS |
-| Agent Auth enforcement scope | **v3.9.2**: mandatory `user_sig` recovered to a **build-time-pinned trusted issuer**; secp256k1 `agent_sig` verified over preimage; issuer-signed `adn_authorization_v1` policy binds target/action/TTL; `request_hash` recomputed and bound to `to_agent_id`/`action`; nonce strict 16 bytes; TTL ≤ 300s; envelope mandatory (C-01). **22/22 Rust tests** (crypto vectors, contract-level accept/reject, and SDK-generated policy fixture). **Boundary:** durable replay (C-03) — no KV import in this world. |
+| Agent Auth enforcement scope | **v3.9.2**: mandatory `user_sig` recovered to a **build-time-pinned trusted issuer**; secp256k1 `agent_sig` verified over preimage; issuer-signed `adn_authorization_v1` policy binds target/action/TTL; `request_hash` recomputed and bound to `to_agent_id`/`action`; nonce strict 16 bytes; TTL <= 300s; envelope mandatory (C-01). **24/24 Rust tests** (crypto vectors, contract-level accept/reject, SDK-generated policy fixture, and pinned/unpinned production-path checks). **Boundary:** durable replay (C-03) — no KV import in this world. |
 | Per-call DelegationEnvelope | buildInvocationPreimage + signAgentInvocation — full wire shape |
 | Negative live TEE test | Empty records → `process-data: records cannot be empty` rejection |
 | Multi-agent Ed25519 delegation | 4 distinct identities, signed payloads, tamper detection |
-| Python security tests | 45/45 pass — 34 adapter/policy tests plus 11 worker-result verifier tests |
+| Python security tests | 50/50 pass — 34 adapter/policy tests, 11 worker-result verifier tests, and 5 audit-guard tests |
 | Worker-result verification (v3.9.2; H-05/06/07) | Coordinator verifies each worker result before consuming it: Ed25519 signature (`verify_action_request`, `TASK_RESULT`); signer pinned by **exact worker public key** (H-06), with `agent_id` as auxiliary check; `result_data` bound to signed `data_hash`; outer envelope nonce == body nonce (H-07); originating `delegation_id`; audience == coordinator; status `COMPLETED`; lock-guarded single-use result nonce with bounded in-memory retention. `src/result_verifier.py`. **Scope (H-09):** the single-use check is per-process (in-memory); durable duplicate-result rejection across restarts requires a persistent coordinator-side ledger. Direct matrix `tests/test_result_verifier.py` (H-08): accept + 8 fail-closed cases (other worker key, wrong delegation id, wrong audience, modified body, missing data_hash, inconsistent nonce, stale proof, second use) plus bounded retention and concurrent duplicate checks. |
 
 ---
@@ -198,7 +198,7 @@ Five issues discovered during integration, documented in [`bugs_found.md`](bugs_
 
 `TenantContractsNamespace.register()` returns `Promise<unknown>`. `tenant.maps.create()` requires a numeric `contractId` in its ACL fields. No documented API exists to retrieve the numeric ID after registration.
 
-**Workaround implemented**: `registerAdnContract()` now probes the raw SDK response for any numeric `id`/`contractId` field. `setupAdnMaps()` is wired into the bridge and creates all 8 ADN feature maps. When the SDK does not return a `contractId`, `setupAdnMaps()` **fails closed** (no map is created with an open ACL); a known contractId (49) is used for the contract-only ACL. There is no `writers/readers: "all"` fallback.
+**Workaround implemented**: `registerAdnContract()` now probes the raw SDK response for any numeric `id`/`contractId` field. `setupAdnMaps()` is wired into the bridge and creates ADN feature maps only when the current registration returns a numeric contract ID. When the SDK does not return a `contractId`, map setup is skipped; no historical ID or open ACL fallback is used.
 
 **Category**: SDK gap
 
@@ -242,7 +242,7 @@ Residual gap: an `is-live` host primitive for real-time revocation registry look
 
 ## Security
 
-45 Python security tests across 10 categories:
+50 Python security tests across 11 categories:
 
 | Category | Tests | Result |
 |---|---|---|
@@ -257,8 +257,9 @@ Residual gap: an `is-live` host primitive for real-time revocation registry look
 | Credential TTL window | 5 | |
 | Worker-result verifier matrix | 9 | |
 | Result nonce retention and concurrency | 2 | |
+| Audit guardrails | 5 | |
 
-Run: `python -m pytest tests/negative_security.py tests/test_result_verifier.py -v --tb=short`
+Run: `python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py -v --tb=short`
 
 ---
 
@@ -284,19 +285,26 @@ Run: `python -m pytest tests/negative_security.py tests/test_result_verifier.py 
 ## Run Commands
 
 ```bash
-# Full live demo (Phases 0–4, ~5 min due to fuel throttling)
+# Pinned v3.9.2 live deployment/invocation path (Phases 0–4, ~5 min due to fuel throttling)
 cd t3n-bridge
-T3N_API_KEY=0x<your_key> node --loader ts-node/esm src/index.ts
+T3N_API_KEY=0x<your_key> node scripts/derive_issuer.mjs
+
+cd ../contract
+ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo test --locked
+ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo build --locked --target wasm32-wasip2 --release
+
+cd ../t3n-bridge
+T3N_API_KEY=0x<your_key> ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> node --loader ts-node/esm src/index.ts 2>&1 | tee ../proof/live_run_v3.9.2.txt
 
 # 10-phase Python interaction patterns demo (local TEE simulation)
 T3N_API_KEY=0x<your_key> python demo/features_demo.py
 
 # Security tests
-python -m pytest tests/negative_security.py tests/test_result_verifier.py -v --tb=short
+python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py -v --tb=short
 
-# Build WASM contract
+# Default fail-closed WASM contract build
 cd contract
-cargo build --target wasm32-wasip2 --release
+cargo build --locked --target wasm32-wasip2 --release
 ```
 
 ---
@@ -305,12 +313,8 @@ cargo build --target wasm32-wasip2 --release
 
 | Area | Status |
 |---|---|
-| Tenant map ACL wiring | **Wired** — 8 maps created via `setupAdnMaps()`; contract-only ACL (contractId=49); `setupAdnMaps()` fails closed when contractId is undefined |
+| Tenant map ACL wiring | **Guarded** — `setupAdnMaps()` uses contract-only ACLs only when the current registration returns a numeric `contractId`; otherwise map setup is skipped |
 | Credential-gated execution (denial-after-revoke) | **IMPLEMENTED** — v3.8.1 contract enforces via time-bound expiry + WASI clock. See BUG-005. |
-| Secret Vault persistence | TEE pattern only — persistent map storage depends on contract-only ACLs, which require SDK resolving BUG-001 (contractId from register()) |
+| Secret Vault persistence | Not implemented — current contract has no storage import; durable storage requires a storage-capable contract world and a resolved current contract ID |
 | Python demo live TEE | Uses `_tee_stub` local simulation; authoritative proof is TypeScript bridge Phase 4 |
 | Post-revocation enforcement | Implemented via short-lived (30s) credential TTL + 35s sleep. The TEE enforces expiry at contract layer. Live revocation-registry lookup (without TTL wait) requires a host primitive not documented in the ADK. |
-
-
-
-

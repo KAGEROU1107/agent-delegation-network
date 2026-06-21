@@ -49,7 +49,8 @@ or `tenant.contracts.list()` method that returns a numeric ID.
 ## Error Summary
 
 No thrown error. Silent failure: maps are created but cannot be scoped to the
-specific contract (falls back to `writers/readers: "all"`).
+specific contract. Current bridge behavior skips map setup when no numeric
+contract ID is returned.
 
 ## Evidence
 
@@ -64,13 +65,13 @@ diagnostic when not found.
 1. Install `@terminal3/t3n-sdk@3.5.2` (`npm install` in `t3n-bridge/`)
 2. Run `T3N_API_KEY=REDACTED_API_KEY node --loader ts-node/esm src/index.ts`
 3. Observe Phase 3 output: `contractId probe: none found (raw keys: ...)`
-4. Observe map creation output: `ACL: writers/readers=all (BUG-001 fallback)`
+4. Observe map setup skipped because no numeric `contractId` was returned.
 
 ## Impact
 
 Tenant KV maps cannot be scoped to the registered WASM contract via ACL.
-All 8 ADN feature maps (`auction-bids`, `reputation-ledger`, etc.) fall back to
-`writers/readers: "all"`, weakening the intended contract-only ACL model.
+Current bridge behavior skips all 8 ADN feature maps (`auction-bids`,
+`reputation-ledger`, etc.) when the SDK does not return a numeric contract ID, preserving the intended contract-only ACL model.
 
 ## Severity
 
@@ -80,7 +81,7 @@ functional output is not blocked.
 ## Workaround
 
 `registerAdnContract()` probes all numeric fields in the raw SDK response. Map ACLs
-use `writers/readers: "all"` when no `contractId` is found. Contract-only ACLs will
+are skipped when no `contractId` is found. Contract-only ACLs will
 auto-activate once the SDK returns the numeric ID.
 
 ## Status

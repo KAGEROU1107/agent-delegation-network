@@ -4,12 +4,12 @@
  * Full integration demo:
  * 1. Authenticate with Terminal 3 testnet (real T3nClient.handshake + authenticate)
  * 2. Obtain real DID from authenticated session (NOT hardcoded)
- * 3. Spawn Python ADN with real DID injected as coordinator identity
+ * 3. Spawn Python ADN with real DID passed as session context
  * 4. Run multi-agent delegation workflow (4 distinct Ed25519 identities)
  * 5. [Optional] Register and invoke TEE contract if WASM available
  *
  * Usage:
- *   T3N_API_KEY=0x<key> node --loader ts-node/esm src/index.ts
+ *   T3N_API_KEY=0x<key> ADN_TRUSTED_ISSUER=<issuer> node --loader ts-node/esm src/index.ts
  */
 
 import { createT3nSession } from "./t3n_auth.js";
@@ -55,6 +55,34 @@ if (existsSync(_envPath)) {
 }
 const CSV_PATH = join(__dirname, "../../data/sales_Q1-2026_US_premium.csv");
 
+function normalizeAddress(value: string): string {
+  return value.trim().replace(/^0x/i, "").toLowerCase();
+}
+
+function requirePinnedIssuerRuntimeConfig(authenticatedAddress: string): void {
+  const pinnedIssuer = process.env.ADN_TRUSTED_ISSUER;
+  if (!pinnedIssuer) {
+    throw new Error(
+      "ADN_TRUSTED_ISSUER is required before registering the v3.9.2 WASM contract. " +
+      "Run `T3N_API_KEY=0x<key> node scripts/derive_issuer.mjs`, then rebuild the contract pinned to that issuer."
+    );
+  }
+
+  const normalizedPinned = normalizeAddress(pinnedIssuer);
+  const normalizedAuthenticated = normalizeAddress(authenticatedAddress);
+
+  if (!/^[0-9a-f]{40}$/.test(normalizedPinned)) {
+    throw new Error("ADN_TRUSTED_ISSUER must be a 40-hex Ethereum address, with or without 0x.");
+  }
+  if (normalizedPinned !== normalizedAuthenticated) {
+    throw new Error(
+      `ADN_TRUSTED_ISSUER does not match authenticated T3N issuer: expected 0x${normalizedAuthenticated}, got 0x${normalizedPinned}.`
+    );
+  }
+
+  console.log(`  [+] Pinned issuer matches authenticated T3N issuer: 0x${normalizedPinned}`);
+}
+
 function parseSaleAmounts(): number[] {
   const lines = readFileSync(CSV_PATH, "utf-8").trim().split("\n");
   // Header: id,region,product_type,sale_amount,sale_date,sales_rep
@@ -96,6 +124,7 @@ async function main() {
   // If Phase 3 re-registers the same version, the SDK may suppress the response.
   let preRegisteredContract: ContractInfo | null = null;
   if (existsSync(WASM_PATH)) {
+    requirePinnedIssuerRuntimeConfig(session.address);
     try {
       preRegisteredContract = await registerAdnContract(tenant, tenantDid);
     } catch { /* ignore — Phase 3 logs detailed status */ }
@@ -164,9 +193,9 @@ async function main() {
   let allWitSucceeded = false;
   if (!existsSync(WASM_PATH)) {
     console.log("  [~] WASM not yet compiled — skipping TEE invocation.");
-    console.log("  Build the contract with:");
+    console.log("  Build the contract with a pinned issuer/tenant:");
     console.log("    cd contract");
-    console.log("    cargo build --target wasm32-wasip2 --release");
+    console.log("    ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo build --locked --target wasm32-wasip2 --release");
     console.log("  Then re-run this demo to enable Phase 3 (contract registration + invocation).");
   } else {
     try {
@@ -174,16 +203,9 @@ async function main() {
       let contractInfo = preRegisteredContract ?? await registerAdnContract(tenant, tenantDid);
       console.log(`  [+] Registered: tail=${contractInfo.tail} version=${contractInfo.version}`);
 
-      // BUG-001 fallback: SDK only returns contractId on the very first registration of
-      // a version. Re-registering the same version returns no ID. 49 is the stable
-      // contractId for adn-processor on this tenant (confirmed on first v3.8.0 deploy).
-      if (contractInfo.contractId === undefined) {
-        contractInfo = { ...contractInfo, contractId: 49 };
-        console.log(`  [+] contractId: 49 (BUG-001 workaround — using known ID from initial registration)`);
-      }
       console.log(`  [+] Script: z:${tenantDid.slice("did:t3n:".length)}:${contractInfo.tail}`);
 
-      // ── BUG-001 workaround: wire tenant KV maps (falls back to writers:"all") ──
+      // ── Optional tenant KV maps: require a fresh contract ID for contract-only ACLs ──
       console.log("  [+] Setting up ADN tenant maps...");
       try {
         const mapResults = await setupAdnMaps(tenant, contractInfo.contractId);
@@ -339,6 +361,4 @@ main().catch((err) => {
   console.error("Fatal:", err);
   process.exit(1);
 });
-
-
 

@@ -1280,4 +1280,48 @@ mod delegate_tests {
         let out = verify_delegate_task(input.as_bytes(), &cfg);
         assert!(out.is_ok(), "SDK fixture rejected: {:?}", out.err());
     }
+
+    fn current_guest_input(tenant: &str) -> GenericInput {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let p = Parts {
+            nb: now.saturating_sub(10),
+            na: now + 120,
+            tenant: tenant.to_string(),
+            ..Default::default()
+        };
+        GenericInput {
+            input: Some(assemble(&p).into_bytes()),
+            user_profile: None,
+            context: None,
+        }
+    }
+
+    #[test]
+    fn guest_delegate_task_fails_closed_without_pinned_issuer() {
+        if trusted_issuer().is_some() {
+            return;
+        }
+        let out = <Component as Guest>::delegate_task(current_guest_input("did:t3n:test"));
+        assert!(
+            out.unwrap_err().contains("trusted issuer not pinned"),
+            "expected production path to fail closed without ADN_TRUSTED_ISSUER"
+        );
+    }
+
+    #[test]
+    fn guest_delegate_task_accepts_when_build_pinned_to_test_issuer() {
+        let test_issuer = parse_addr_hex("58da990a8f4a3a6ca7cb6315d68a140105917352").unwrap();
+        let pinned_fixture =
+            trusted_issuer() == Some(test_issuer)
+                && configured_tenant_did().as_deref() == Some("did:t3n:fixture");
+        if !pinned_fixture {
+            return;
+        }
+
+        let out = <Component as Guest>::delegate_task(current_guest_input("did:t3n:fixture"));
+        assert!(out.is_ok(), "pinned production path rejected: {:?}", out.err());
+    }
 }

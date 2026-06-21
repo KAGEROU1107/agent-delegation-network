@@ -36,8 +36,8 @@ export interface MapSetupResult {
  * Create all ADN feature maps with contract-only ACLs when possible.
  *
  * contractId — numeric ID from register(). If undefined (BUG-001: SDK returns
- * no ID), maps are created with writers:"all" as a documented workaround so the
- * map layer is exercised even without per-contract ACL gating. See bugs_found.md.
+ * no ID), map setup is skipped so ACLs are never weakened by a guessed or
+ * historical contract ID.
  *
  * Safe to call repeatedly — skips maps that already exist.
  */
@@ -47,12 +47,12 @@ export async function setupAdnMaps(
 ): Promise<MapSetupResult[]> {
   const results: MapSetupResult[] = [];
 
-  // Fail closed: contract-only ACL is required. Caller must resolve BUG-001 (hardcode known contractId)
-  // before calling setupAdnMaps. Broad "all" ACL is not acceptable for sensitive maps.
+  // Fail closed: contract-only ACL is required. Callers must pass the ID returned
+  // by the current contract registration rather than a guessed historical value.
   if (contractId === undefined) {
     throw new Error(
       "setupAdnMaps: contractId required for contract-only ACL — " +
-      "refusing to create maps with writers/readers:'all'. Resolve BUG-001 first."
+      "refusing to create maps without the current deployed contract ID."
     );
   }
   const writers = { only: [contractId] };

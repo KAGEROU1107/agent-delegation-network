@@ -34,8 +34,8 @@ jobs:
         working-directory: t3n-bridge
         run: npm run build
 
-      - name: Run negative security tests
-        run: python -m pytest tests/negative_security.py -v --tb=short
+      - name: Run Python security tests
+        run: python -m pytest tests/negative_security.py tests/test_result_verifier.py -v --tb=short
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -58,7 +58,7 @@ jobs:
           gh api repos/${{ github.repository }}/statuses/${{ github.sha }} \
             -f state="$STATE" \
             -f context="Tests" \
-            -f description="pytest 34 Python signing and policy tests"
+            -f description="pytest 45 Python signing, policy, and result-verifier tests"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

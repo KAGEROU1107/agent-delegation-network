@@ -9,9 +9,9 @@ A multi-agent delegation system built on the Terminal 3 ADK. A coordinator authe
 
 ## Live Proof
 
-All phases run against the real T3N testnet using `adn-processor` contract v3.8.0 with hardened contract-layer delegation enforcement.
+All phases in the current committed live proof run against the real T3N testnet using `adn-processor` contract v3.8.1 with hardened structural delegation enforcement. The v3.9.2 cryptographic path is built and unit-tested, but still needs a pinned live deployment proof.
 
-Full output: [`proof/live_run_v3.8.0_session7_final.txt`](proof/live_run_v3.8.0_session7_final.txt) · [`proof/live_run_v3.8.0_session6_final.txt`](proof/live_run_v3.8.0_session6_final.txt)
+Full output: [`proof/live_run_v3.8.1_final_88b7b88.txt`](proof/live_run_v3.8.1_final_88b7b88.txt) · [`proof/live_run_v3.8.1_c01_proof.txt`](proof/live_run_v3.8.1_c01_proof.txt)
 
 ```
 [Phase 0] Agent Auth SDK — delegation credential + enforcement cycle...
@@ -22,7 +22,7 @@ Full output: [`proof/live_run_v3.8.0_session7_final.txt`](proof/live_run_v3.8.0_
   [+] pre-revocation call:  ACCEPTED: {"delegation_id":...,"status":"ROUTED",...}
   [+] revocation: SUCCESS (tee:delegation/contracts::revoke)
   [35s sleep — credential window expires]
-  [+] post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer v3.8.0)
+  [+] post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer v3.8.1)
   [+] missing agent_sig:    REJECTED: delegate-task: agent_sig missing from envelope
   [+] short nonce (4 bytes): REJECTED: delegate-task: nonce too short (< 8 bytes)
 
@@ -36,10 +36,10 @@ Full output: [`proof/live_run_v3.8.0_session7_final.txt`](proof/live_run_v3.8.0_
   [+] Unique cryptographic identities: 4/4
   [+] Records processed: 30
   [+] Quality score: 1 | passed: true
-  [+] Coordinator DID matches session: true
+  [+] T3N DID injected as session context: true
 
-[Phase 3] TEE Contract (v3.8.0 — real computation + hardened delegation enforcement)
-  [+] Registered: tail=adn-processor version=3.8.0
+[Phase 3] TEE Contract (v3.8.1 — real computation + hardened delegation enforcement)
+  [+] Registered: tail=adn-processor version=3.8.1
   [+] Sending 30 sale records into TEE enclave for computation
   [+] TEE result: 30 records | total=$13253 | avg=$441.77 | min=$198.25 | max=$687.75 | trend=increasing
   [+] processed_in_tee: true
@@ -53,7 +53,7 @@ Full output: [`proof/live_run_v3.8.0_session7_final.txt`](proof/live_run_v3.8.0_
   [+] cast-vote, tally-votes, log-decision, audit-decisions, lock-bond, verify-and-settle
   [+] All 20 WIT exports invoked via live T3N TEE bridge.
 
-WASM contract: REGISTERED + INVOKED (v3.8.0, 20/20 WIT functions)
+WASM contract: REGISTERED + INVOKED (v3.8.1, 20/20 WIT functions)
 ```
 
 **Real enclave computation**: 30 CSV sale records are sent into the TEE at runtime. The Rust contract computes `total`, `avg`, `min`, `max`, and `trend` inside the hardware-isolated enclave. No hardcoded result values are used for the core computation path.
@@ -68,8 +68,8 @@ WASM contract: REGISTERED + INVOKED (v3.8.0, 20/20 WIT functions)
 
 ```
 SDK:    @terminal3/t3n-sdk@3.5.2
-WASM:   adn_processor.wasm v3.8.0 — hardened envelope validation + SHA-256 credential fingerprint
-Proof:  proof/live_run_v3.8.0_session7_final.txt
+WASM:   adn_processor.wasm v3.8.1 — hardened envelope validation + SHA-256 credential fingerprint
+Proof:  proof/live_run_v3.8.1_final_88b7b88.txt
 Run:    T3N_API_KEY=0x<key> node --loader ts-node/esm src/index.ts  (from t3n-bridge/)
 ```
 
@@ -87,7 +87,7 @@ Run:    T3N_API_KEY=0x<key> node --loader ts-node/esm src/index.ts  (from t3n-br
 │  tenant.contracts.register() → TEE contract deployment  │
 │  t3n.executeAndDecode()      → live TEE invocation      │
 └────────────────────┬────────────────────────────────────┘
-                     │ injects real DID as coordinator identity
+                     │ passes real DID into Python flow as session context
 ┌────────────────────▼────────────────────────────────────┐
 │  src/  Python — Agent Delegation Network                │
 │                                                         │
@@ -144,7 +144,7 @@ The TypeScript bridge demonstrates the Agent Auth credential lifecycle:
 7. Wait for the short TTL window to expire.
 8. Confirm the TEE contract rejects the expired delegated call.
 
-The `adn-processor` v3.8.0 contract validates inside the TEE:
+The `adn-processor` v3.8.1 contract validates inside the TEE:
 - Credential time window and temporal consistency (`not_before < not_after`)
 - Function scope (`delegate-task` must be in `functions`)
 - Credential field completeness (`vc_id`, `agent_pubkey` presence)
@@ -229,7 +229,7 @@ cp .env.example .env
 The demo:
 1. Authenticates with T3N testnet via `handshake()` + `authenticate()`.
 2. Builds and tests an Agent Auth delegation credential.
-3. Spawns Python ADN with the authenticated DID as coordinator identity.
+3. Spawns Python ADN with the authenticated DID passed in as session context.
 4. Runs multi-agent delegation with 4 distinct identities.
 5. Registers the Rust/WASM contract.
 6. Invokes all 20 WIT exports through the live T3N bridge.
@@ -262,18 +262,19 @@ Run the local feature-pattern demo: `T3N_API_KEY=0x<key> python demo/features_de
 
 ## Security
 
-**What is enforced:** T3N authentication, SDK-native credential construction, Rust/WASM TEE structural validation of envelope presence, credential domain, TTL, delegated function scope, nonce format (≥8 bytes), and `agent_sig` presence. Delegation envelope is **mandatory** on `delegate-task` in v3.8.0 source (contract rebuild + redeploy + fresh proof pending). Trust policy requires both action rule AND explicit trust relationship (dual default-deny).
+**What is enforced in the current live v3.8.1 proof:** T3N authentication, SDK-native credential construction, Rust/WASM TEE structural validation of envelope presence, credential domain, TTL, delegated function scope, nonce format (≥8 bytes), and `agent_sig` presence. Delegation envelope is **mandatory** on `delegate-task` in v3.8.1 source. Trust policy requires both action rule AND explicit trust relationship (dual default-deny).
 
-**Explicit boundaries (not implemented):** Full cryptographic signature verification (in-guest Rust implementation is possible; current boundary is implementation scope, not categorical impossibility), request binding (`request_hash` not verified), nonce replay registry, persistent workflow state, immediate revocation-registry lookup.
+**Explicit live-proof boundaries:** v3.9.2 source adds issuer-pinned cryptographic verification and request binding, but it is not yet backed by a pinned live deployment proof. Durable nonce replay registry, persistent workflow state, and immediate revocation-registry lookup remain unproven in the current `generic-input` contract world.
 
-34 Python signing and policy tests across 8 categories: structural tamper, replay attack,
+45 Python security tests across 10 categories: structural tamper, replay attack,
 expired proof, wrong audience, forged key, missing required fields, agent identity
-distinctness, delegation policy enforcement, and credential TTL window validation.
-Tests cover Python signing adapter and policy logic only — TypeScript bridge and WASM contract enforcement are proven via live T3N proof artifacts.
+distinctness, delegation policy enforcement, credential TTL window validation,
+worker-result verification, and result nonce retention/concurrency.
+Tests cover Python signing adapter, policy logic, and coordinator-side result verification — TypeScript bridge and WASM contract enforcement are proven via live T3N proof artifacts.
 
 ```
-python -m pytest tests/negative_security.py -v
-# 34 passed
+python -m pytest tests/negative_security.py tests/test_result_verifier.py -v --tb=short
+# 45 passed
 ```
 
 ---
@@ -286,7 +287,7 @@ agent-delegation-network/
 │   ├── src/
 │   │   ├── t3n_auth.ts          # handshake() + authenticate() → DID
 │   │   ├── agent_auth.ts        # Agent Auth credential + envelope demo
-│   │   ├── contract_bridge.ts   # TEE contract registration + invocation v3.8.0
+│   │   ├── contract_bridge.ts   # TEE contract registration + invocation v3.8.1
 │   │   ├── map_setup.ts         # KV map creation with BUG-001 fallback
 │   │   ├── adn_runner.ts        # spawns Python ADN with real DID
 │   │   └── index.ts             # main entry point
@@ -315,7 +316,8 @@ agent-delegation-network/
 │   ├── adn_demo.py              # core multi-agent workflow
 │   └── features_demo.py         # local pattern demo for feature modules
 ├── tests/
-│   └── negative_security.py     # 34 Python signing and policy tests
+│   ├── negative_security.py     # 34 Python signing and policy tests
+│   └── test_result_verifier.py  # 11 worker-result verifier tests
 ├── proof/
 │   ├── live_run_v3.6.0.txt      # v3.6.0 baseline proof
 │   └── live_run_v3.5.0.txt      # v3.5.0 baseline proof
@@ -326,7 +328,7 @@ agent-delegation-network/
 ├── .env.example                 # environment variable template
 ├── PHASES.md
 ├── SUBMISSION_REPORT.md
-└── t3n_bridge_proof.txt         # live testnet output v3.8.0
+└── t3n_bridge_proof.txt         # live testnet output v3.8.1
 ```
 
 ---
@@ -353,7 +355,7 @@ See `docs/bugs/` and `docs/doc-gaps/` for full details.
 | BUG-002 | Agent Auth grant APIs not at top level | MEDIUM | UPSTREAM |
 | BUG-003 | `buildDelegationCredential` rejects long `z:{tenant}:{tail}` format | LOW | WORKAROUND_FOUND |
 | BUG-004 | Testnet `fuel_per_minute` quota limits Phase 4 in a single run | MEDIUM | WORKAROUND_FOUND |
-| BUG-005 | Delegation envelope not validated at T3N transport layer for generic-input | HIGH | FIXED (v3.8.0) |
+| BUG-005 | Delegation envelope not validated at T3N transport layer for generic-input | HIGH | FIXED (v3.8.1) |
 | BUG-006 | CI red X: `Post commit status` step failed the job | MEDIUM | FIXED (0c7b10b) |
 | BUG-007 | Testnet credits exhausted during development | HIGH | OPEN |
 

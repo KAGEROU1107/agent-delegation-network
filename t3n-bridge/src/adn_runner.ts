@@ -13,11 +13,17 @@
  */
 
 import { spawn } from "child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "fs";
-import { join, dirname, resolve, sep } from "path";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "fs";
+import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { tmpdir } from "os";
 import { randomBytes } from "crypto";
+import {
+  getRuntimeMode,
+  requireHexEnv,
+  requireReplayLedgerDir,
+  resolveReplayKeyProvider,
+} from "./runtime_config.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ADN_ROOT = join(__dirname, "../../");
@@ -76,8 +82,6 @@ export interface RunAdnDeps {
   spawnImpl?: typeof spawn;
   pythonExecutable?: string;
 }
-
-type AdnRuntimeMode = "live" | "test" | "demo";
 
 const RUNNER_SCRIPT = `
 import sys, os, json, secrets, logging, csv, statistics
@@ -396,6 +400,12 @@ function writeJsonTemp(tempDir: string, prefix: string, payload: unknown): strin
   return outputPath;
 }
 
+function writeSecretTemp(tempDir: string, prefix: string, secret: string): string {
+  const outputPath = tempPath(tempDir, prefix, "key");
+  writeFileSync(outputPath, secret, { encoding: "utf-8", mode: 0o600 });
+  return outputPath;
+}
+
 function readJsonFile<T>(path: string): T {
   return JSON.parse(readFileSync(path, "utf-8")) as T;
 }
@@ -415,63 +425,6 @@ function cleanupTempFiles(paths: string[], dirs: string[] = []): void {
       // Best-effort cleanup only.
     }
   }
-}
-
-function requireHexEnv(name: string): string {
-  const value = process.env[name]?.trim().replace(/^0x/i, "").toLowerCase();
-  if (!value) {
-    throw new Error(`${name} is required`);
-  }
-  if (!/^[0-9a-f]{64}$/.test(value)) {
-    throw new Error(`${name} must be 32 bytes of hex, with or without 0x.`);
-  }
-  return value;
-}
-
-function getRuntimeMode(): AdnRuntimeMode {
-  const mode = (process.env.ADN_RUNTIME_MODE ?? "live").trim().toLowerCase();
-  if (mode !== "live" && mode !== "test" && mode !== "demo") {
-    throw new Error("ADN_RUNTIME_MODE must be live, test, or demo");
-  }
-  return mode;
-}
-
-function pathIsInside(childPath: string, parentPath: string): boolean {
-  const child = resolve(childPath);
-  const parent = resolve(parentPath);
-  return child === parent || child.startsWith(parent.endsWith(sep) ? parent : `${parent}${sep}`);
-}
-
-function requireReplayLedgerDir(runtimeMode: AdnRuntimeMode, tempDir: string): string {
-  const configured = process.env.ADN_REPLAY_LEDGER_DIR?.trim();
-  if (runtimeMode === "live" && !configured) {
-    throw new Error("ADN_REPLAY_LEDGER_DIR is required for durable live replay protection");
-  }
-  const dir = configured || join(tempDir, "replay-ledger");
-  if (runtimeMode === "live" && pathIsInside(dir, tempDir)) {
-    throw new Error("ADN_REPLAY_LEDGER_DIR must not be inside the bridge transient workspace");
-  }
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  chmodSync(dir, 0o700);
-  return dir;
-}
-
-function resolveReplayLedgerIntegrityKey(runtimeMode: AdnRuntimeMode): string {
-  if (process.env.ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX?.trim()) {
-    return requireHexEnv("ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX");
-  }
-  if (runtimeMode === "live") {
-    throw new Error("ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX is required for durable live replay protection");
-  }
-  return randomBytes(32).toString("hex");
-}
-
-function requireReplayLedgerKeyRef(runtimeMode: AdnRuntimeMode): string {
-  const keyRef = process.env.ADN_REPLAY_LEDGER_KEY_REF?.trim();
-  if (runtimeMode === "live" && !keyRef) {
-    throw new Error("ADN_REPLAY_LEDGER_KEY_REF is required for durable live replay protection");
-  }
-  return keyRef || "transient-local-test-key";
 }
 
 export function requireConfiguredGatewayKeyBundleFromEnv(): GatewayKeyBundle {
@@ -498,6 +451,12 @@ function runPythonProcess(env: Record<string, string>, deps: RunAdnDeps = {}): P
     delete childEnv.T3N_API_KEY;
     delete childEnv.ADN_GATEWAY_PRIVATE_KEY_HEX;
     delete childEnv.ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX;
+    delete childEnv.ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX;
+    if (env.ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE) {
+      childEnv.ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE = env.ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE;
+    } else {
+      delete childEnv.ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE;
+    }
 
     const proc = spawnImpl(pythonExecutable, [scriptPath], {
       env: childEnv,
@@ -575,11 +534,11 @@ export async function runAdnWithRealDid(
   const tempDir = createSecureTempDir("adn_execute");
   const runtimeMode = getRuntimeMode();
   const replayLedgerDir = requireReplayLedgerDir(runtimeMode, tempDir);
-  const replayLedgerIntegrityKey = resolveReplayLedgerIntegrityKey(runtimeMode);
-  const replayLedgerKeyRef = requireReplayLedgerKeyRef(runtimeMode);
+  const replayKeyProvider = resolveReplayKeyProvider(runtimeMode);
   const identityBundlePath = writeJsonTemp(tempDir, "adn_identity_bundle", preparedExecution);
   const teeAuthorizationPath = writeJsonTemp(tempDir, "adn_tee_bundle", teeAuthorizationBundle);
   const gatewayKeyBundlePath = writeJsonTemp(tempDir, "adn_gateway_bundle", gatewayKeyBundle);
+  const replayIntegrityKeyPath = writeSecretTemp(tempDir, "adn_replay_integrity", replayKeyProvider.keyHex);
 
   try {
     const { stdout, stderr } = await runPythonProcess(
@@ -591,8 +550,8 @@ export async function runAdnWithRealDid(
         ADN_GATEWAY_KEY_BUNDLE_PATH: gatewayKeyBundlePath,
         ADN_RUNTIME_MODE: runtimeMode,
         ADN_REPLAY_LEDGER_DIR: replayLedgerDir,
-        ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX: replayLedgerIntegrityKey,
-        ADN_REPLAY_LEDGER_KEY_REF: replayLedgerKeyRef,
+        ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE: replayIntegrityKeyPath,
+        ADN_REPLAY_LEDGER_KEY_REF: replayKeyProvider.keyRef,
       },
       deps,
     );
@@ -602,6 +561,6 @@ export async function runAdnWithRealDid(
       throw new Error(`ADN output parse error:\n${stdout}\n${stderr}`);
     }
   } finally {
-    cleanupTempFiles([identityBundlePath, teeAuthorizationPath, gatewayKeyBundlePath], [tempDir]);
+    cleanupTempFiles([identityBundlePath, teeAuthorizationPath, gatewayKeyBundlePath, replayIntegrityKeyPath], [tempDir]);
   }
 }

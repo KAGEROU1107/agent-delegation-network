@@ -14,7 +14,7 @@ coordinator-side worker-result verification in the Python flow (H-05).
 
 ## The committed WASM SHA is the UNPINNED build (fails closed)
 
-Built without `ADN_TRUSTED_ISSUER`, every `delegate-task` is rejected. The contract emits a `build_config_id` derived from source/config metadata only: contract version, commit, Rust version, trusted issuer, and tenant DID. It does not embed the final WASM hash in itself; the bridge records the actual post-build artifact hash and manifest digest in `proof/deployment_manifest_v3.9.2.local.json`.
+Built without `ADN_TRUSTED_ISSUER`, every `delegate-task` is rejected. The contract emits a `build_config_id` derived from source/config metadata only: contract version, commit, Rust version, trusted issuer, and tenant DID. It does not embed the final WASM hash in itself; the bridge records the actual post-build artifact hash, pending/final manifest digest, registration response digest, and first invocation digest in `proof/deployment_manifest_v3.9.2.local.json`.
 
 To run the demo, build pinned to your tenant issuer (different SHA, operator-recorded):
 
@@ -27,7 +27,7 @@ ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_IS
 ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo build --locked --target wasm32-wasip2 --release
 ADN_TRUSTED_ISSUER=58da990a8f4a3a6ca7cb6315d68a140105917352 ADN_TENANT_DID=did:t3n:fixture cargo test --locked
 python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py -v --tb=short
-cd ../t3n-bridge && T3N_API_KEY=0x<key> ADN_RUNTIME_MODE=live ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> ADN_GATEWAY_PRIVATE_KEY_HEX=<32-byte-ed25519-seed-hex> ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX=<matching-ed25519-pubkey-hex> ADN_GATEWAY_KEY_ID=<gateway-key-id> ADN_REPLAY_LEDGER_DIR=../runtime/replay_ledger ADN_REPLAY_LEDGER_KEY_REF=<secret-manager-reference> ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX=<32-byte-replay-hmac-key-hex> node --loader ts-node/esm src/index.ts 2>&1 | tee ../proof/live_run_v3.9.2.txt
+cd ../t3n-bridge && T3N_API_KEY=0x<key> ADN_RUNTIME_MODE=live ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> ADN_GATEWAY_PRIVATE_KEY_HEX=<32-byte-ed25519-seed-hex> ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX=<matching-ed25519-pubkey-hex> ADN_GATEWAY_KEY_ID=<gateway-key-id> ADN_REPLAY_LEDGER_DIR=../runtime/replay_ledger ADN_REPLAY_LEDGER_KEY_REF=file:/var/lib/adn/replay-hmac.key node --loader ts-node/esm src/index.ts 2>&1 | tee ../proof/live_run_v3.9.2.txt
 ```
 
 ## v3.9.2 enforcement summary
@@ -57,8 +57,9 @@ Python multi-agent flow:
   worker key, coordinator, delegation ID, result nonce, and receipt fingerprint)
   before consuming it
 - live bridge execution requires `ADN_REPLAY_LEDGER_DIR` outside the temp tree
-  and `ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX`; request/result replay rows are MACed
-  with domain-separated HMAC keys
+  and `ADN_REPLAY_LEDGER_KEY_REF=file:<0600-hex-key-path>`; raw
+  `ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX` is test/demo only; request/result replay
+  rows are MACed with domain-separated HMAC keys
 
 ## Still NOT claimed (runtime-blocked)
 

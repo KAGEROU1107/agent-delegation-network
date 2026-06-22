@@ -29,6 +29,12 @@ export interface DeploymentManifest {
   tenantDid: string;
   buildConfigId: string;
   localWasmSha256: string;
+  registrationStatus: "pending" | "registered";
+  registeredAt?: string;
+  contractId?: number;
+  registrationResponseDigest?: string;
+  firstInvocationDigest?: string;
+  operatorSignature?: string;
   manifestDigest: string;
 }
 
@@ -64,6 +70,14 @@ function sha256Hex(data: string | Buffer): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
+function stableJson(value: unknown): string {
+  try {
+    return JSON.stringify(value ?? null);
+  } catch {
+    return JSON.stringify(String(value));
+  }
+}
+
 function buildConfigId(buildCommit: string, rustcVersion: string, trustedIssuer: string, tenantDid: string): string {
   const material = `adn-processor:v${CONTRACT_VERSION}:${buildCommit}:${rustcVersion}:${trustedIssuer}:${tenantDid}`;
   return `adn-build-${sha256Hex(material).slice(0, 32)}`;
@@ -77,7 +91,22 @@ function requireManifestEnv(name: string): string {
   return value;
 }
 
-function writeDeploymentManifest(localWasmSha256: string): DeploymentManifest {
+function digestManifest(manifest: Omit<DeploymentManifest, "manifestDigest">): DeploymentManifest {
+  return { ...manifest, manifestDigest: sha256Hex(JSON.stringify(manifest)) };
+}
+
+function manifestWithoutDigest(manifest: DeploymentManifest): Omit<DeploymentManifest, "manifestDigest"> {
+  const { manifestDigest: _manifestDigest, ...body } = manifest;
+  return body;
+}
+
+function writeDeploymentManifest(deploymentManifest: DeploymentManifest): DeploymentManifest {
+  mkdirSync(PROOF_DIR, { recursive: true });
+  writeFileSync(DEPLOYMENT_MANIFEST_PATH, JSON.stringify(deploymentManifest, null, 2) + "\n", "utf-8");
+  return deploymentManifest;
+}
+
+function writePendingDeploymentManifest(localWasmSha256: string): DeploymentManifest {
   const buildCommit = requireManifestEnv("ADN_BUILD_COMMIT");
   const rustcVersion = requireManifestEnv("ADN_RUSTC_VERSION");
   const trustedIssuer = requireManifestEnv("ADN_TRUSTED_ISSUER").replace(/^0x/i, "").toLowerCase();
@@ -94,13 +123,39 @@ function writeDeploymentManifest(localWasmSha256: string): DeploymentManifest {
     tenantDid,
     buildConfigId: buildConfig,
     localWasmSha256,
+    registrationStatus: "pending" as const,
+    operatorSignature: process.env.ADN_DEPLOYMENT_OPERATOR_SIGNATURE?.trim() || undefined,
   };
-  const manifestDigest = sha256Hex(JSON.stringify(unsignedManifest));
-  const deploymentManifest: DeploymentManifest = { ...unsignedManifest, manifestDigest };
+  return writeDeploymentManifest(digestManifest(unsignedManifest));
+}
 
-  mkdirSync(PROOF_DIR, { recursive: true });
-  writeFileSync(DEPLOYMENT_MANIFEST_PATH, JSON.stringify(deploymentManifest, null, 2) + "\n", "utf-8");
-  return deploymentManifest;
+export function finalizeDeploymentManifest(
+  pendingManifest: DeploymentManifest,
+  rawRegistrationResponse: unknown,
+  contractId?: number,
+): DeploymentManifest {
+  const finalized = digestManifest({
+    ...manifestWithoutDigest(pendingManifest),
+    registrationStatus: "registered",
+    registeredAt: new Date().toISOString(),
+    contractId,
+    registrationResponseDigest: sha256Hex(stableJson(rawRegistrationResponse)),
+  });
+  return writeDeploymentManifest(finalized);
+}
+
+export function recordFirstInvocationDigest(
+  contractInfo: ContractInfo,
+  invocationResult: unknown,
+): ContractInfo {
+  if (contractInfo.deploymentManifest.firstInvocationDigest) {
+    return contractInfo;
+  }
+  const deploymentManifest = writeDeploymentManifest(digestManifest({
+    ...manifestWithoutDigest(contractInfo.deploymentManifest),
+    firstInvocationDigest: sha256Hex(stableJson(invocationResult)),
+  }));
+  return { ...contractInfo, deploymentManifest };
 }
 
 export async function registerAdnContract(
@@ -113,7 +168,7 @@ export async function registerAdnContract(
 
   const wasm = readFileSync(WASM_PATH);
   const localWasmSha256 = sha256Hex(wasm);
-  const deploymentManifest = writeDeploymentManifest(localWasmSha256);
+  let deploymentManifest = writePendingDeploymentManifest(localWasmSha256);
   console.log(`  [+] Local WASM SHA-256: ${localWasmSha256}`);
   console.log(`  [+] Deployment manifest digest: ${deploymentManifest.manifestDigest}`);
   console.log(`  [+] Deployment manifest: ${DEPLOYMENT_MANIFEST_PATH}`);
@@ -121,6 +176,7 @@ export async function registerAdnContract(
   try {
     const raw = await tenant.contracts.register({ tail: CONTRACT_TAIL, version: CONTRACT_VERSION, wasm });
     contractId = extractContractId(raw);
+    deploymentManifest = finalizeDeploymentManifest(deploymentManifest, raw, contractId);
     if (contractId !== undefined) {
       console.log(`  [+] register() returned contractId: ${contractId} (BUG-001 resolved by SDK)`);
     } else {

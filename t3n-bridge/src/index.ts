@@ -21,6 +21,7 @@ import {
 } from "./adn_runner.js";
 import {
   registerAdnContract,
+  recordFirstInvocationDigest,
   type ContractInfo,
   invokeProcessData, invokeValidateQuality,
   invokeDelegateTask,
@@ -249,6 +250,9 @@ async function main() {
           `delegate-task for ${action} returned build_config_id ${result.build_config_id}, ` +
           `expected ${expectedBuildConfigId}`
         );
+      }
+      if (preRegisteredContract) {
+        preRegisteredContract = recordFirstInvocationDigest(preRegisteredContract, result);
       }
       console.log(`  [+] delegate-task ${action}: ${result.delegation_id} -> ${result.routed_to}`);
       return {

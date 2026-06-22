@@ -130,9 +130,20 @@ def derive_integrity_key(secret_hex: Optional[str], domain: str) -> Optional[str
     return hmac.new(secret, label, hashlib.sha256).hexdigest()
 
 
+def _configured_integrity_secret_hex() -> Optional[str]:
+    raw_env_secret = os.environ.get("ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX", "").strip()
+    key_file = os.environ.get("ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE", "").strip()
+    runtime_mode = os.environ.get("ADN_RUNTIME_MODE", "").strip().lower()
+    if runtime_mode == "live" and raw_env_secret:
+        raise RuntimeError("ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX is not accepted in live mode")
+    if key_file:
+        return Path(key_file).read_text(encoding="utf-8").strip().removeprefix("0x").lower()
+    return raw_env_secret.removeprefix("0x").lower() or None
+
+
 def configured_integrity_key(domain: str) -> Optional[str]:
     return derive_integrity_key(
-        os.environ.get("ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX", "").strip(),
+        _configured_integrity_secret_hex(),
         domain,
     )
 

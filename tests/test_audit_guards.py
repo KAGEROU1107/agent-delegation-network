@@ -41,6 +41,11 @@ def test_contract_and_bridge_expose_non_self_referential_build_identity():
     assert "already exists remotely" in bridge
     assert "refusing to continue without remote artifact identity verification" in bridge
     assert "Bump CONTRACT_VERSION for a fresh immutable deployment" in bridge
+    assert "finalizeDeploymentManifest" in bridge
+    assert "registrationResponseDigest" in bridge
+    assert "registeredAt" in bridge
+    assert "registrationStatus" in bridge
+    assert "firstInvocationDigest" in bridge
 
 
 def test_map_setup_and_docs_do_not_claim_broad_acl_fallback():
@@ -133,6 +138,9 @@ def test_contract_emits_authorization_expiry_and_bridge_uses_contract_value():
 
 def test_runner_uses_private_temp_dir_for_sensitive_files():
     runner = read("t3n-bridge/src/adn_runner.ts")
+    runtime_config = read("t3n-bridge/src/runtime_config.ts")
+    doctor = read("t3n-bridge/src/doctor.ts")
+    package_json = read("t3n-bridge/package.json")
     replay_ledger = read("src/replay_ledger.py")
 
     assert "mkdtempSync" in runner
@@ -143,11 +151,21 @@ def test_runner_uses_private_temp_dir_for_sensitive_files():
     assert "ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX" in runner
     assert "ADN_RUNTIME_MODE" in runner
     assert "non-durable-demo" in runner
-    assert "ADN_REPLAY_LEDGER_DIR is required for durable live replay protection" in runner
+    assert "resolveReplayKeyProvider" in runtime_config
+    assert "ADN_REPLAY_LEDGER_KEY_REF" in runtime_config
+    assert "ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX is not accepted in live mode" in runtime_config
+    assert "ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE" in runner
+    assert "delete childEnv.ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX" in runner
+    assert "runtime doctor" in doctor
+    assert "requireReplayLedgerDir" in doctor
+    assert "resolveReplayKeyProvider" in doctor
+    assert '"doctor"' in package_json
+    assert "ADN_REPLAY_LEDGER_DIR is required for durable live replay protection" in runtime_config
     assert "ADN_REPLAY_LEDGER_DIR: replayLedgerDir" in runner
     assert "sqlite3" in replay_ledger
     assert "BEGIN IMMEDIATE" in replay_ledger
     assert "execution_token" in replay_ledger
+    assert "ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE" in replay_ledger
 
 
 def test_security_invariants_document_runtime_boundaries():
@@ -185,8 +203,31 @@ def test_live_demo_docs_require_pinned_deployment_sequence():
     assert "ADN_BUILD_COMMIT=$BUILD_COMMIT" in readme
     assert "ADN_RUSTC_VERSION=\"$RUSTC_VERSION\"" in readme
     assert "T3N_API_KEY=0x<your_key> ADN_RUNTIME_MODE=live" in readme
-    assert "ADN_REPLAY_LEDGER_KEY_REF=<secret-manager-reference>" in readme
+    assert "ADN_REPLAY_LEDGER_KEY_REF=file:/var/lib/adn/replay-hmac.key" in readme
     assert "cargo test --locked" in readme
     assert "cargo build --locked --target wasm32-wasip2 --release" in readme
     assert "deployment_manifest_v3.9.2.local.json" in readme
     assert "proof/live_run_v3.9.2.txt" in readme
+
+
+def test_release_guardrails_and_claim_matrix_are_source_controlled():
+    criteria = read("docs/release/criteria.md")
+    claim_matrix = read("docs/security/claim-matrix.md")
+    release_gate = read("scripts/release_gate.py")
+    workflow = read(".github/workflows/ci.yml")
+
+    for content in (criteria, claim_matrix):
+        assert "source-hardened / live-proof pending" in content
+        assert "gateway-linked authorization" in content
+        assert "T3N-attested authorization" in content
+        assert "persistent ledger configuration" in content
+        assert "executor key separation" in content
+        assert "deployment manifest finalization" in content
+        assert "live proof artifact" in content
+        assert "visible CI success" in content
+        assert "contract-layer persistence" in content
+
+    assert "FORBIDDEN_CLAIMS" in release_gate
+    assert "docs/security/claim-matrix.md" in release_gate
+    assert "docs/release/criteria.md" in release_gate
+    assert "python scripts/release_gate.py" in workflow

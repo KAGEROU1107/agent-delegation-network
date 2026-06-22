@@ -28,7 +28,7 @@ Authorization root (current v3.9.2 path, introduced in v3.9.1): a tenant-control
 
 Python worker execution now requires a signed gateway `TEE_AUTHORIZATION` receipt bound to the TEE-shaped authorization result, credential fingerprint, target, action, request hash, `gateway_key_id`, `build_config_id`, and `authorization_expires_at`. This closes the local "worker executes with no authorization receipt" gap, but it is not claimed as a T3N-attested worker-dispatch primitive until a fresh live gateway proof or TEE-attested output path exists.
 
-Worker request replay is now recorded in a durable on-disk ledger keyed by `SHA-256(delegation_id || request_hash || receipt_fingerprint)`. Completed requests remain single-use across restarts; running work is fenced by an execution token; handler exceptions transition the ledger entry to `RETRYABLE_FAILURE`, allowing a bounded retry with the same authorization before expiry. Live bridge execution requires `ADN_RUNTIME_MODE=live`, persistent `ADN_REPLAY_LEDGER_DIR`, `ADN_REPLAY_LEDGER_KEY_REF`, and `ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX`; request/result replay rows are MACed with domain-separated HMAC keys.
+Worker request replay is now recorded in a durable on-disk ledger keyed by `SHA-256(delegation_id || request_hash || receipt_fingerprint)`. Completed requests remain single-use across restarts; running work is fenced by an execution token; handler exceptions transition the ledger entry to `RETRYABLE_FAILURE`, allowing a bounded retry with the same authorization before expiry. Live bridge execution requires `ADN_RUNTIME_MODE=live`, persistent `ADN_REPLAY_LEDGER_DIR`, and `ADN_REPLAY_LEDGER_KEY_REF=file:<0600-hex-key-path>`; raw `ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX` is test/demo only. Request/result replay rows are MACed with domain-separated HMAC keys.
 
 ### Core capabilities demonstrated
 
@@ -299,7 +299,7 @@ cd contract
 cargo build --locked --target wasm32-wasip2 --release
 ```
 
-The bridge writes `proof/deployment_manifest_v3.9.2.local.json` during registration. That external manifest binds the source/config `build_config_id` to the actual post-build `localWasmSha256` and `manifestDigest`; the WASM does not embed its own final hash.
+The bridge writes `proof/deployment_manifest_v3.9.2.local.json` during registration. That external manifest binds the source/config `build_config_id` to the actual post-build `localWasmSha256`, then finalizes with `registrationResponseDigest`, `registeredAt`, optional `contractId`, and first invocation digest. The WASM does not embed its own final hash, and the manifest remains operator evidence until paired with pinned live proof.
 
 ---
 

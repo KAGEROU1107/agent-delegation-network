@@ -38,6 +38,9 @@ jobs:
         working-directory: t3n-bridge
         run: npm test
 
+      - name: Run release claim gate
+        run: python scripts/release_gate.py
+
       - name: Run Python security tests
         run: python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py -v --tb=short
 

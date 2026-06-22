@@ -1,5 +1,5 @@
 import assert from "assert/strict";
-import { existsSync, mkdtempSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -17,10 +17,12 @@ const previousReplayIntegrityKey = process.env.ADN_REPLAY_LEDGER_INTEGRITY_KEY_H
 const previousRuntimeMode = process.env.ADN_RUNTIME_MODE;
 const previousReplayKeyRef = process.env.ADN_REPLAY_LEDGER_KEY_REF;
 const replayLedgerDir = mkdtempSync(join(tmpdir(), "adn-persistent-replay-"));
+const replayKeyFile = join(replayLedgerDir, "replay-hmac.key");
+writeFileSync(replayKeyFile, "33".repeat(32), { encoding: "utf-8", mode: 0o600 });
 process.env.ADN_RUNTIME_MODE = "live";
 process.env.ADN_REPLAY_LEDGER_DIR = replayLedgerDir;
-process.env.ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX = "33".repeat(32);
-process.env.ADN_REPLAY_LEDGER_KEY_REF = "local-test-replay-key";
+delete process.env.ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX;
+process.env.ADN_REPLAY_LEDGER_KEY_REF = `file:${replayKeyFile}`;
 assert.equal("gateway" in prepared, false);
 const teeBundle = {
   buildConfigId,
@@ -62,6 +64,13 @@ try {
   assert.ok(result.qualityScore >= 0.8);
   assert.equal(result.replayMode, "durable-live");
   assert.ok(existsSync(join(replayLedgerDir, "replay_ledger.sqlite3")));
+
+  process.env.ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX = "44".repeat(32);
+  await assert.rejects(
+    () => runAdnWithRealDid(tenantDid, prepared, teeBundle, gatewayKeyBundle, { pythonExecutable }),
+    /ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX is not accepted in live mode/
+  );
+  delete process.env.ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX;
 
   await assert.rejects(
     () =>

@@ -12,6 +12,7 @@ REQUIRED_FILES = [
     "docs/release/criteria.md",
     "docs/security/claim-matrix.md",
     "docs/architecture/security-invariants.md",
+    "scripts/verify_release.py",
 ]
 
 REQUIRED_TERMS = [

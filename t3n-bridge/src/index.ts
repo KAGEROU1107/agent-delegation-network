@@ -38,6 +38,7 @@ import {
 } from "./contract_bridge.js";
 import { demonstrateAgentAuth, demonstrateNegativeEnvelopeTests, buildWireDelegationEnvelope } from "./agent_auth.js";
 import { setupAdnMaps } from "./map_setup.js";
+import { getRuntimeMode } from "./runtime_config.js";
 import { b64uEncodeBytes } from "@terminal3/t3n-sdk";
 import { existsSync, readFileSync } from "fs";
 import { join, dirname } from "path";
@@ -48,7 +49,14 @@ const WASM_PATH = join(__dirname, "../../contract/target/wasm32-wasip2/release/a
 
 // Load .env from project root if env vars not already set
 const _envPath = join(__dirname, "../../.env");
-if (existsSync(_envPath)) {
+function loadDotEnvIfAllowed(): void {
+  if (!existsSync(_envPath)) {
+    return;
+  }
+  if (getRuntimeMode() === "live") {
+    console.log("  [~] Skipping .env load in live mode; provide production secrets through the service environment or key provider.");
+    return;
+  }
   for (const _line of readFileSync(_envPath, "utf-8").split("\n")) {
     const _t = _line.trim();
     if (_t && !_t.startsWith("#") && _t.includes("=")) {
@@ -59,6 +67,7 @@ if (existsSync(_envPath)) {
     }
   }
 }
+loadDotEnvIfAllowed();
 const CSV_PATH = join(__dirname, "../../data/sales_Q1-2026_US_premium.csv");
 
 function normalizeAddress(value: string): string {

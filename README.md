@@ -229,7 +229,7 @@ The bridge writes `proof/deployment_manifest_v3.9.2.local.json` first as a pendi
 
 The Python feature agents (`blind_auction.py`, `reputation_ledger.py`, etc.) use a generic LLM client for cognitive tasks (writing task specs, audit summaries, personalization messages). **The demo runs without it** — the client stubs out deterministic responses when no key is set.
 
-To enable live LLM calls, copy `.env.example` to `.env` and fill in your credentials:
+For local demo/test LLM calls, copy `.env.example` to `.env` and fill in your credentials. Live bridge mode intentionally skips repository `.env` loading; provide production secrets through the service environment or key-provider references instead.
 
 ```bash
 cp .env.example .env

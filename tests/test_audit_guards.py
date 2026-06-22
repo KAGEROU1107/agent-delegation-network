@@ -88,6 +88,7 @@ def test_ci_runs_pinned_contract_configuration():
     workflow = read(".github/workflows/ci.yml")
 
     assert "tests/test_audit_guards.py" in workflow
+    assert "tests/test_release_verifier.py" in workflow
     assert "npm test" in workflow
     assert "ADN_BUILD_COMMIT" in workflow
     assert "ADN_RUSTC_VERSION" in workflow
@@ -140,6 +141,7 @@ def test_runner_uses_private_temp_dir_for_sensitive_files():
     runner = read("t3n-bridge/src/adn_runner.ts")
     runtime_config = read("t3n-bridge/src/runtime_config.ts")
     doctor = read("t3n-bridge/src/doctor.ts")
+    index = read("t3n-bridge/src/index.ts")
     package_json = read("t3n-bridge/package.json")
     replay_ledger = read("src/replay_ledger.py")
 
@@ -154,12 +156,22 @@ def test_runner_uses_private_temp_dir_for_sensitive_files():
     assert "resolveReplayKeyProvider" in runtime_config
     assert "ADN_REPLAY_LEDGER_KEY_REF" in runtime_config
     assert "ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX is not accepted in live mode" in runtime_config
+    assert "lstatSync" in runtime_config
+    assert "isSymbolicLink" in runtime_config
+    assert "isFile" in runtime_config
+    assert "isAbsolute" in runtime_config
+    assert "0o600" in runtime_config
+    assert "0o700" in runtime_config
     assert "ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE" in runner
     assert "delete childEnv.ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX" in runner
     assert "runtime doctor" in doctor
     assert "requireReplayLedgerDir" in doctor
     assert "resolveReplayKeyProvider" in doctor
+    assert "loadDotEnvIfAllowed" in index
+    assert "getRuntimeMode" in index
+    assert "Skipping .env load in live mode" in index
     assert '"doctor"' in package_json
+    assert "replay_restart.integration.mjs" in package_json
     assert "ADN_REPLAY_LEDGER_DIR is required for durable live replay protection" in runtime_config
     assert "ADN_REPLAY_LEDGER_DIR: replayLedgerDir" in runner
     assert "sqlite3" in replay_ledger
@@ -214,6 +226,7 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     criteria = read("docs/release/criteria.md")
     claim_matrix = read("docs/security/claim-matrix.md")
     release_gate = read("scripts/release_gate.py")
+    release_verifier = read("scripts/verify_release.py")
     workflow = read(".github/workflows/ci.yml")
 
     for content in (criteria, claim_matrix):
@@ -230,4 +243,11 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "FORBIDDEN_CLAIMS" in release_gate
     assert "docs/security/claim-matrix.md" in release_gate
     assert "docs/release/criteria.md" in release_gate
+    assert "verify_release.py" in release_gate
+    assert "REQUIRED_PROOF_FILES" in release_verifier
+    assert "deployment_manifest.sig" in release_verifier
+    assert "registration_response.json" in release_verifier
+    assert "replay_restart_proof.json" in release_verifier
+    assert "canonical_json" in release_verifier
+    assert "Ed25519PublicKey" in release_verifier
     assert "python scripts/release_gate.py" in workflow

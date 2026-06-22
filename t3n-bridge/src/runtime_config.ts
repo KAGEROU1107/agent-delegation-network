@@ -1,6 +1,6 @@
 import { randomBytes } from "crypto";
-import { chmodSync, mkdirSync, readFileSync } from "fs";
-import { resolve, sep } from "path";
+import { chmodSync, lstatSync, mkdirSync, readFileSync, statSync } from "fs";
+import { dirname, isAbsolute, resolve, sep } from "path";
 
 export type AdnRuntimeMode = "live" | "test" | "demo";
 
@@ -53,10 +53,40 @@ export function requireReplayLedgerDir(runtimeMode: AdnRuntimeMode, tempDir: str
   return dir;
 }
 
-function readFileKey(ref: string): string {
+function verifyLiveFileMode(path: string): void {
+  if (process.platform === "win32") {
+    return;
+  }
+  const fileStat = statSync(path);
+  const parentStat = statSync(dirname(path));
+  if ((fileStat.mode & 0o777) !== 0o600) {
+    throw new Error("ADN_REPLAY_LEDGER_KEY_REF file provider requires key file mode 0600 in live mode");
+  }
+  if ((parentStat.mode & 0o777) !== 0o700) {
+    throw new Error("ADN_REPLAY_LEDGER_KEY_REF file provider requires parent directory mode 0700 in live mode");
+  }
+  if (typeof process.getuid === "function" && fileStat.uid !== process.getuid()) {
+    throw new Error("ADN_REPLAY_LEDGER_KEY_REF file provider key file must be owned by the service user");
+  }
+}
+
+function readFileKey(ref: string, runtimeMode: AdnRuntimeMode): string {
   const path = ref.slice("file:".length);
   if (!path) {
     throw new Error("ADN_REPLAY_LEDGER_KEY_REF file provider requires file:<path>");
+  }
+  if (runtimeMode === "live" && !isAbsolute(path)) {
+    throw new Error("ADN_REPLAY_LEDGER_KEY_REF file provider requires an absolute key file path in live mode");
+  }
+  const linkStat = lstatSync(path);
+  if (linkStat.isSymbolicLink()) {
+    throw new Error("ADN_REPLAY_LEDGER_KEY_REF file provider does not allow symlink key files");
+  }
+  if (!linkStat.isFile()) {
+    throw new Error("ADN_REPLAY_LEDGER_KEY_REF file provider requires a regular file");
+  }
+  if (runtimeMode === "live") {
+    verifyLiveFileMode(path);
   }
   return requireHexSecret(readFileSync(path, "utf-8"), `ADN_REPLAY_LEDGER_KEY_REF ${ref}`);
 }
@@ -83,7 +113,7 @@ export function resolveReplayKeyProvider(runtimeMode: AdnRuntimeMode): ReplayKey
     return {
       source: "file",
       keyRef,
-      keyHex: readFileKey(keyRef),
+      keyHex: readFileKey(keyRef, runtimeMode),
     };
   }
 
@@ -91,7 +121,7 @@ export function resolveReplayKeyProvider(runtimeMode: AdnRuntimeMode): ReplayKey
     return {
       source: "file",
       keyRef,
-      keyHex: readFileKey(keyRef),
+      keyHex: readFileKey(keyRef, runtimeMode),
     };
   }
 

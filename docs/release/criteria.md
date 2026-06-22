@@ -9,6 +9,7 @@ gate below has evidence in the repository.
 - executor key separation is mandatory before production-security claims.
 - deployment manifest finalization must record post-registration evidence.
 - live proof artifact must include the exact pinned deployment run.
+- `python scripts/verify_release.py <proof-dir>` must pass for the proof bundle.
 - visible CI success must be attached to the release commit.
 
 ## Claim Labels
@@ -25,8 +26,25 @@ evidence verification exists.
 ## Persistence Boundaries
 
 Host-side replay protection can be claimed only when live mode uses durable
-ledger configuration. contract-layer persistence cannot be claimed because the
+ledger configuration and the bridge restart replay proof rejects both the same
+signed request and the same signed result after a process restart.
+contract-layer persistence cannot be claimed because the
 current WIT world imports no storage capability.
+
+## Proof Bundle
+
+The release proof verifier expects:
+
+- `deployment_manifest.json`
+- `deployment_manifest.sig`
+- `registration_response.json`
+- `invocation_receipt.json`
+- `replay_restart_proof.json`
+- `ci_release_sha.json`
+
+The verifier checks manifest digest, operator signature, registration response
+digest, first invocation digest, release SHA, CI status, build configuration,
+and replay restart proof booleans.
 
 Persistent auction, vault, KYC, DAO, bond, and reputation systems cannot be
 claimed until state-capable contract or executor storage semantics are designed,

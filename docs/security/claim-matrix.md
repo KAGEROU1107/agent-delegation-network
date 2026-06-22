@@ -18,6 +18,7 @@ Current release label: `source-hardened / live-proof pending`.
 - executor key separation prevents the TypeScript bridge from owning worker and gateway private keys.
 - deployment manifest finalization records remote contract identity and registration evidence.
 - live proof artifact captures a pinned v3.9.x prepare -> authorize -> execute run.
+- `python scripts/verify_release.py <proof-dir>` passes against the retained proof bundle.
 - visible CI success exists for the release commit.
 
 ## Forbidden Overclaims

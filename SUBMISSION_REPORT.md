@@ -8,7 +8,7 @@
 **Demo Video**: https://youtu.be/ukZQ7F81aho  
 **SDK**: `@terminal3/t3n-sdk@3.5.2`  
 **Contract**: `adn-processor v3.9.2` — issuer-authenticated TEE authorization decision for delegated calls + verified worker results + mandatory policy TTL
-**Live proof**: `proof/live_run_v3.8.1_final_88b7b88.txt` (v3.8.1 structural — current). v3.9.2 is built + unit-tested (Rust 25/25, Python 72/72) but **not yet deployed**; the last *deployed/invoked* contract is the v3.8.1 structural build in that proof. Operator must build v3.9.2 with `ADN_TRUSTED_ISSUER` (see `t3n-bridge/scripts/derive_issuer.mjs`), provide a pinned gateway signer, configure persistent replay storage, and run a fresh live proof.
+**Live proof**: `proof/live_run_v3.8.1_final_88b7b88.txt` (v3.8.1 structural — current). v3.9.2 is built + unit-tested but **not yet deployed**; the last *deployed/invoked* contract is the v3.8.1 structural build in that proof. Operator must build v3.9.2 with `ADN_TRUSTED_ISSUER` (see `t3n-bridge/scripts/derive_issuer.mjs`), provide a pinned gateway signer, configure persistent replay storage, and run a fresh live proof.
 
 ---
 
@@ -28,22 +28,22 @@ Authorization root (current v3.9.2 path, introduced in v3.9.1): a tenant-control
 
 Python worker execution now requires a signed gateway `TEE_AUTHORIZATION` receipt bound to the TEE-shaped authorization result, credential fingerprint, target, action, request hash, `gateway_key_id`, `build_config_id`, and `authorization_expires_at`. This closes the local "worker executes with no authorization receipt" gap, but it is not claimed as a T3N-attested worker-dispatch primitive until a fresh live gateway proof or TEE-attested output path exists.
 
-Worker request replay is now recorded in a durable on-disk ledger keyed by `SHA-256(delegation_id || request_hash || receipt_fingerprint)`. Completed requests remain single-use across restarts; running work is fenced by an execution token; handler exceptions transition the ledger entry to `RETRYABLE_FAILURE`, allowing a bounded retry with the same authorization before expiry. Live bridge execution requires a persistent `ADN_REPLAY_LEDGER_DIR` and `ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX`, and request/result replay rows are MACed with domain-separated HMAC keys.
+Worker request replay is now recorded in a durable on-disk ledger keyed by `SHA-256(delegation_id || request_hash || receipt_fingerprint)`. Completed requests remain single-use across restarts; running work is fenced by an execution token; handler exceptions transition the ledger entry to `RETRYABLE_FAILURE`, allowing a bounded retry with the same authorization before expiry. Live bridge execution requires `ADN_RUNTIME_MODE=live`, persistent `ADN_REPLAY_LEDGER_DIR`, `ADN_REPLAY_LEDGER_KEY_REF`, and `ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX`; request/result replay rows are MACed with domain-separated HMAC keys.
 
 ### Core capabilities demonstrated
 
 | Capability | Evidence |
 |---|---|
 | T3N handshake + authenticate | Phase 1 — real DID from testnet every run |
-| Rust/WASM TEE contract | **Deployed + invoked: v3.8.1 structural** (`z:ad146e6861…:adn-processor`, committed live proof). **v3.9.2 cryptographic: built + Rust 25/25 tests, not yet deployed** (unpinned WASM SHA-256 `8a90dee4…afb147`; operator builds pinned). |
+| Rust/WASM TEE contract | **Deployed + invoked: v3.8.1 structural** (`z:ad146e6861…:adn-processor`, committed live proof). **v3.9.2 cryptographic: built + tested, not yet deployed** (unpinned WASM SHA-256 `8a90dee4…afb147`; operator builds pinned). |
 | Runtime enclave computation | 30 CSV records → TEE computes total/avg/min/max/trend |
 | All 20 WIT exports invoked | Phase 3: 2 core functions; Phase 4: remaining 18/18 `[+]` in clean run |
 | Agent Auth SDK — credential lifecycle | buildDelegationCredential → sign → validate → revoke SUCCESS |
-| Agent Auth enforcement scope | **v3.9.2**: mandatory `user_sig` recovered to a **build-time-pinned trusted issuer**; secp256k1 `agent_sig` verified over preimage; issuer-signed `adn_authorization_v1` policy binds target/action/TTL; `request_hash` recomputed and bound to `to_agent_id`/`action`; nonce strict 16 bytes; digest-derived `delegation_id`; build identity fields emitted; TTL <= 300s; envelope mandatory (C-01). **25/25 Rust tests** (crypto vectors, contract-level accept/reject, SDK-generated policy fixture, digest ID, and pinned/unpinned production-path checks). **Boundary:** durable replay (C-03) — no KV import in this world. |
+| Agent Auth enforcement scope | **v3.9.2**: mandatory `user_sig` recovered to a **build-time-pinned trusted issuer**; secp256k1 `agent_sig` verified over preimage; issuer-signed `adn_authorization_v1` policy binds target/action/TTL; `request_hash` recomputed and bound to `to_agent_id`/`action`; nonce strict 16 bytes; digest-derived `delegation_id`; build identity fields emitted; TTL <= 300s; envelope mandatory (C-01). Rust tests cover crypto vectors, contract-level accept/reject, SDK-generated policy fixture, digest ID, and pinned/unpinned production-path checks. **Boundary:** durable replay (C-03) — no KV import in this world. |
 | Per-call DelegationEnvelope | buildInvocationPreimage + signAgentInvocation — full wire shape |
 | Negative live TEE test | Empty records → `process-data: records cannot be empty` rejection |
 | Multi-agent Ed25519 delegation | 4 distinct identities, signed payloads, tamper detection |
-| Python security tests | 72/72 pass — 34 adapter/policy tests, 28 worker-result, gateway-receipt, request/result replay, and bridge-hardening verifier tests, and 10 audit-guard tests |
+| Python security tests | Pass locally via `python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py`; suite covers adapter/policy, worker-result, gateway-receipt, request/result replay, bridge-hardening, and audit guardrails. |
 | Worker-result verification (v3.9.2; H-05/06/07) | Coordinator verifies each worker result before consuming it: Ed25519 signature (`verify_action_request`, `TASK_RESULT`); signer pinned by **exact worker public key** (H-06), with `agent_id` as auxiliary check; `result_data` bound to signed `data_hash`; outer envelope nonce == body nonce (H-07); originating `delegation_id`; audience == coordinator; status `COMPLETED`; signed gateway `TEE_AUTHORIZATION` receipt bound to target/action/request hash; lock-guarded single-use result nonce with bounded in-memory retention; and a durable replay ledger keyed by worker key, coordinator, delegation ID, result nonce, and receipt fingerprint. `src/result_verifier.py`. **Scope:** durable result replay across restarts is now enforced locally; independently T3N-attested worker dispatch and contract-layer durable nonce storage remain out of scope for the current world. Direct matrix `tests/test_result_verifier.py`: accept + fail-closed cases for missing/wrong TEE receipt, other worker key, wrong delegation id, wrong audience, modified body, missing data_hash, inconsistent nonce, stale proof, second use, durable worker-request replay across restart, durable result replay across restart, atomic cross-process request reservation, execution-token fencing, result replay MAC enforcement, retry caps, bounded retention, and concurrent duplicate checks. |
 
 ---
@@ -247,13 +247,7 @@ Residual gap: an `is-live` host primitive for real-time revocation registry look
 
 ## Security
 
-65 Python security tests across 3 suites:
-
-| Suite | Tests | Result |
-|---|---|---|
-| Adapter/policy negative-security checks | 34 | PASS |
-| Worker-result, gateway-receipt, and worker replay verifier checks | 23 | PASS |
-| Audit guardrails | 8 | PASS |
+Python security tests run across adapter/policy negative-security checks, worker-result and gateway-receipt verification, request/result replay controls, bridge-hardening checks, and audit guardrails.
 
 Run: `python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py -v --tb=short`
 

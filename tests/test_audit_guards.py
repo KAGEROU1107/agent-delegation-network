@@ -72,6 +72,9 @@ def test_docs_do_not_reintroduce_identity_or_test_count_drift():
     assert "not_after_secs: now + 3600n" not in combined_docs
     assert "22 Rust tests" not in combined_docs
     assert "22/22" not in combined_docs
+    assert "65 Python security tests" not in combined_docs
+    assert "70/70" not in combined_docs
+    assert "72/72" not in combined_docs
     assert "issuer-authenticated delegated execution" not in combined_docs
     assert "TEE authorization decision for delegated calls" in combined_docs
 
@@ -138,11 +141,33 @@ def test_runner_uses_private_temp_dir_for_sensitive_files():
     assert "0o700" in runner
     assert "ADN_REPLAY_LEDGER_DIR" in runner
     assert "ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX" in runner
+    assert "ADN_RUNTIME_MODE" in runner
+    assert "non-durable-demo" in runner
     assert "ADN_REPLAY_LEDGER_DIR is required for durable live replay protection" in runner
     assert "ADN_REPLAY_LEDGER_DIR: replayLedgerDir" in runner
     assert "sqlite3" in replay_ledger
     assert "BEGIN IMMEDIATE" in replay_ledger
     assert "execution_token" in replay_ledger
+
+
+def test_security_invariants_document_runtime_boundaries():
+    invariants = read("docs/architecture/security-invariants.md")
+
+    assert "worker executes only when" in invariants
+    assert "target matches" in invariants
+    assert "action matches" in invariants
+    assert "credential is enforced" in invariants
+    assert "gateway key ID matches" in invariants
+    assert "build configuration matches" in invariants
+    assert "authorization has not expired" in invariants
+    assert "replay reservation succeeds" in invariants
+    assert "delegation_id || request_hash || receipt_fingerprint" in invariants
+    assert "worker_public_key || coordinator_id || delegation_id || result_nonce || receipt_fingerprint" in invariants
+    assert "TypeScript bridge restart" in invariants
+    assert "host process restart" in invariants
+    assert "concurrent worker processes" in invariants
+    assert "gateway-linked" in invariants
+    assert "T3N-attested worker dispatch cannot be claimed" in invariants
 
 
 def test_live_demo_docs_require_pinned_deployment_sequence():
@@ -159,7 +184,8 @@ def test_live_demo_docs_require_pinned_deployment_sequence():
     assert "ADN_TENANT_DID=did:t3n:<tenant-hex>" in readme
     assert "ADN_BUILD_COMMIT=$BUILD_COMMIT" in readme
     assert "ADN_RUSTC_VERSION=\"$RUSTC_VERSION\"" in readme
-    assert "T3N_API_KEY=0x<your_key> ADN_BUILD_COMMIT=$BUILD_COMMIT" in readme
+    assert "T3N_API_KEY=0x<your_key> ADN_RUNTIME_MODE=live" in readme
+    assert "ADN_REPLAY_LEDGER_KEY_REF=<secret-manager-reference>" in readme
     assert "cargo test --locked" in readme
     assert "cargo build --locked --target wasm32-wasip2 --release" in readme
     assert "deployment_manifest_v3.9.2.local.json" in readme

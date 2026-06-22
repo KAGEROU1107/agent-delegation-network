@@ -14,9 +14,13 @@ const prepared = await prepareAdnExecution(tenantDid, { pythonExecutable });
 const gatewayKeyBundle = await prepareGatewayKeyBundle({ pythonExecutable });
 const previousReplayLedgerDir = process.env.ADN_REPLAY_LEDGER_DIR;
 const previousReplayIntegrityKey = process.env.ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX;
+const previousRuntimeMode = process.env.ADN_RUNTIME_MODE;
+const previousReplayKeyRef = process.env.ADN_REPLAY_LEDGER_KEY_REF;
 const replayLedgerDir = mkdtempSync(join(tmpdir(), "adn-persistent-replay-"));
+process.env.ADN_RUNTIME_MODE = "live";
 process.env.ADN_REPLAY_LEDGER_DIR = replayLedgerDir;
 process.env.ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX = "33".repeat(32);
+process.env.ADN_REPLAY_LEDGER_KEY_REF = "local-test-replay-key";
 assert.equal("gateway" in prepared, false);
 const teeBundle = {
   buildConfigId,
@@ -56,6 +60,7 @@ try {
   assert.ok(result.totalRevenue > 0);
   assert.equal(result.qualityPassed, true);
   assert.ok(result.qualityScore >= 0.8);
+  assert.equal(result.replayMode, "durable-live");
   assert.ok(existsSync(join(replayLedgerDir, "replay_ledger.sqlite3")));
 
   await assert.rejects(
@@ -84,6 +89,20 @@ try {
     () => runAdnWithRealDid(tenantDid, prepared, teeBundle, wrongGatewayBundle, { pythonExecutable }),
     /Trusted gateway public key mismatch/
   );
+
+  delete process.env.ADN_REPLAY_LEDGER_DIR;
+  delete process.env.ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX;
+  delete process.env.ADN_REPLAY_LEDGER_KEY_REF;
+  process.env.ADN_RUNTIME_MODE = "demo";
+  const demoResult = await runAdnWithRealDid(
+    tenantDid,
+    prepared,
+    teeBundle,
+    gatewayKeyBundle,
+    { pythonExecutable }
+  );
+  assert.equal(demoResult.success, true);
+  assert.equal(demoResult.replayMode, "non-durable-demo");
 } finally {
   if (previousReplayLedgerDir === undefined) {
     delete process.env.ADN_REPLAY_LEDGER_DIR;
@@ -94,6 +113,16 @@ try {
     delete process.env.ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX;
   } else {
     process.env.ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX = previousReplayIntegrityKey;
+  }
+  if (previousRuntimeMode === undefined) {
+    delete process.env.ADN_RUNTIME_MODE;
+  } else {
+    process.env.ADN_RUNTIME_MODE = previousRuntimeMode;
+  }
+  if (previousReplayKeyRef === undefined) {
+    delete process.env.ADN_REPLAY_LEDGER_KEY_REF;
+  } else {
+    process.env.ADN_REPLAY_LEDGER_KEY_REF = previousReplayKeyRef;
   }
   rmSync(replayLedgerDir, { recursive: true, force: true });
 }

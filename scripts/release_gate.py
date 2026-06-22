@@ -14,6 +14,7 @@ REQUIRED_FILES = [
     "docs/architecture/security-invariants.md",
     "scripts/verify_release.py",
     "schemas/adn-release-proof-v1.schema.json",
+    ".github/workflows/release-proof.yml",
 ]
 
 REQUIRED_TERMS = [

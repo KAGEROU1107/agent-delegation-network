@@ -10,12 +10,16 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
+import re
 from pathlib import Path
 from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
+ROOT = Path(__file__).resolve().parents[1]
+SCHEMA_PATH = ROOT / "schemas" / "adn-release-proof-v1.schema.json"
 
 REQUIRED_PROOF_FILES = [
     "deployment_manifest.json",
@@ -28,8 +32,49 @@ REQUIRED_PROOF_FILES = [
 ]
 
 
+def quote_json_string(value: str) -> str:
+    replacements = {
+        "\\": "\\\\",
+        '"': '\\"',
+        "\b": "\\b",
+        "\t": "\\t",
+        "\n": "\\n",
+        "\f": "\\f",
+        "\r": "\\r",
+    }
+    chars = ['"']
+    for char in value:
+        if char in replacements:
+            chars.append(replacements[char])
+        elif ord(char) < 0x20:
+            chars.append(f"\\u{ord(char):04x}")
+        else:
+            chars.append(char)
+    chars.append('"')
+    return "".join(chars)
+
+
 def canonical_json(value: Any) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    if value is None or isinstance(value, bool) or isinstance(value, str):
+        if isinstance(value, str):
+            return quote_json_string(value)
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    if isinstance(value, int) and not isinstance(value, bool):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise RuntimeError("canonical JSON cannot encode non-finite numbers")
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    if isinstance(value, list):
+        return "[" + ",".join(canonical_json(entry) for entry in value) + "]"
+    if isinstance(value, dict):
+        parts = []
+        for key in sorted(value.keys(), key=lambda item: tuple(ord(char) for char in item)):
+            if not isinstance(key, str):
+                raise RuntimeError("canonical JSON object keys must be strings")
+            parts.append(quote_json_string(key) + ":" + canonical_json(value[key]))
+        return "{" + ",".join(parts) + "}"
+    raise RuntimeError(f"canonical JSON cannot encode {type(value).__name__}")
 
 
 def digest_hex(data: bytes) -> str:
@@ -42,6 +87,46 @@ def read_json(path: Path) -> Any:
 
 def manifest_body(manifest: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in manifest.items() if key != "manifest_digest"}
+
+
+def read_release_schema() -> dict[str, Any]:
+    return read_json(SCHEMA_PATH)
+
+
+def validate_manifest_schema(manifest: dict[str, Any]) -> None:
+    schema = read_release_schema()
+    properties = schema.get("properties", {})
+    required = schema.get("required", [])
+    allowed = set(properties.keys())
+
+    for field in required:
+        if manifest.get(field) in (None, ""):
+            raise RuntimeError(f"deployment manifest schema missing required field: {field}")
+
+    for field in manifest:
+        if field not in allowed:
+            raise RuntimeError(f"deployment manifest schema additional property not allowed: {field}")
+
+    for field, value in manifest.items():
+        rule = properties.get(field, {})
+        if "const" in rule and value != rule["const"]:
+            raise RuntimeError(f"deployment manifest schema {field} must equal {rule['const']}")
+        if "enum" in rule and value not in rule["enum"]:
+            raise RuntimeError(f"deployment manifest schema {field} must be one of {', '.join(rule['enum'])}")
+        if rule.get("type") == "string":
+            if not isinstance(value, str) or value == "":
+                raise RuntimeError(f"deployment manifest schema {field} must be a non-empty string")
+            if len(value) < int(rule.get("minLength", 0)):
+                raise RuntimeError(f"deployment manifest schema {field} is shorter than {rule['minLength']}")
+            pattern = rule.get("pattern")
+            if pattern and re.fullmatch(pattern, value) is None:
+                raise RuntimeError(f"deployment manifest schema {field} does not match {pattern}")
+        if rule.get("type") == "integer":
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise RuntimeError(f"deployment manifest schema {field} must be an integer")
+            minimum = rule.get("minimum")
+            if minimum is not None and value < minimum:
+                raise RuntimeError(f"deployment manifest schema {field} must be >= {minimum}")
 
 
 def require_fields(label: str, payload: dict[str, Any], fields: list[str]) -> None:
@@ -92,6 +177,7 @@ def verify_release_dir(proof_dir: Path | str) -> dict[str, Any]:
     replay_restart_proof = read_json(proof_path / "replay_restart_proof.json")
     ci_release = read_json(proof_path / "ci_release_sha.json")
 
+    validate_manifest_schema(manifest)
     require_fields(
         "deployment manifest",
         manifest,
@@ -132,8 +218,32 @@ def verify_release_dir(proof_dir: Path | str) -> dict[str, Any]:
     require_fields(
         "CI release evidence",
         ci_release,
-        ["repository", "sha", "workflow_run_id", "workflow_conclusion", "artifact_id", "retrieved_at"],
+        [
+            "evidence_source",
+            "generated_by",
+            "repository",
+            "sha",
+            "workflow_run_id",
+            "workflow_run_url",
+            "workflow_conclusion",
+            "artifact_id",
+            "artifact_name",
+            "artifact_digest",
+            "retrieved_at",
+        ],
     )
+    expected_repository = os.environ.get("ADN_RELEASE_REPOSITORY", "KAGEROU1107/agent-delegation-network").strip()
+    if ci_release.get("evidence_source") != "github_actions":
+        raise RuntimeError("CI release evidence must be generated by GitHub Actions")
+    if ci_release.get("generated_by") != ".github/workflows/release-proof.yml":
+        raise RuntimeError("CI release evidence generated_by must be .github/workflows/release-proof.yml")
+    if ci_release.get("repository") != expected_repository:
+        raise RuntimeError("CI release evidence repository does not match expected repository")
+    expected_run_url_prefix = f"https://github.com/{expected_repository}/actions/runs/"
+    if not str(ci_release.get("workflow_run_url", "")).startswith(expected_run_url_prefix):
+        raise RuntimeError("CI release evidence workflow_run_url does not match expected repository")
+    if re.fullmatch(r"[0-9a-f]{64}", str(ci_release.get("artifact_digest", ""))) is None:
+        raise RuntimeError("CI release evidence artifact_digest must be a SHA-256 hex digest")
     if ci_release.get("workflow_conclusion") != "success":
         raise RuntimeError("CI status is not successful for release SHA")
     if ci_release.get("sha") != manifest.get("build_commit"):

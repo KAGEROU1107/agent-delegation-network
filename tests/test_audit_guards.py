@@ -238,6 +238,7 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     release_verifier = read("scripts/verify_release.py")
     schema = read("schemas/adn-release-proof-v1.schema.json")
     workflow = read(".github/workflows/ci.yml")
+    release_workflow = read(".github/workflows/release-proof.yml")
 
     for content in (criteria, claim_matrix):
         assert "source-hardened / live-proof pending" in content
@@ -255,6 +256,7 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "docs/release/criteria.md" in release_gate
     assert "verify_release.py" in release_gate
     assert "schemas/adn-release-proof-v1.schema.json" in release_gate
+    assert ".github/workflows/release-proof.yml" in release_gate
     assert "REQUIRED_PROOF_FILES" in release_verifier
     assert "deployment_manifest.sig" in release_verifier
     assert "registration_response.json" in release_verifier
@@ -263,5 +265,13 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "canonical_json" in release_verifier
     assert "Ed25519PublicKey" in release_verifier
     assert "manifest_digest" in release_verifier
+    assert "validate_manifest_schema" in release_verifier
+    assert "github_actions" in release_verifier
+    assert "workflow_run_url" in release_verifier
+    assert "artifact_digest" in release_verifier
     assert "adn-release-proof-v1" in schema
+    assert "workflow_dispatch" in release_workflow
+    assert "ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX" in release_workflow
+    assert "python scripts/verify_release.py proof/release" in release_workflow
+    assert "actions/upload-artifact" in release_workflow
     assert "python scripts/release_gate.py" in workflow

@@ -15,14 +15,6 @@
     "build_config_id",
     "local_wasm_sha256",
     "registration_status",
-    "remote_contract_id",
-    "raw_registration_response_digest",
-    "raw_registration_response_path",
-    "first_invocation_digest",
-    "first_invocation_path",
-    "t3n_evidence_digest",
-    "t3n_evidence_path",
-    "operator_public_key",
     "manifest_digest"
   ],
   "properties": {

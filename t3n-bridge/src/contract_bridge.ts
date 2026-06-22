@@ -6,16 +6,18 @@
  * script_name format: z:<40-hex-tid>:<tail>  (strip "did:t3n:" prefix)
  */
 
-import {
-  createHash,
-  createPrivateKey,
-  createPublicKey,
-  sign as signBytes,
-} from "crypto";
+import { createHash } from "crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import type { TenantClient, T3nClient } from "@terminal3/t3n-sdk";
+import {
+  canonicalJson,
+  deriveEd25519PublicKeyHexFromSeed,
+  digestCanonicalJson,
+  signReleaseManifestWithSeed,
+  validateReleaseManifestAgainstSchema,
+} from "./release_proof.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WASM_PATH = join(__dirname, "../../contract/target/wasm32-wasip2/release/adn_processor.wasm");
@@ -29,7 +31,6 @@ const T3N_EVIDENCE_PATH = join(RELEASE_PROOF_DIR, "t3n_evidence.json");
 const LEGACY_DEPLOYMENT_MANIFEST_PATH = join(PROOF_DIR, "deployment_manifest_v3.9.2.local.json");
 const CONTRACT_TAIL = "adn-processor";
 const CONTRACT_VERSION = "3.9.2"; // mandatory-envelope enforcement (C-01 fix, rebuilt 2026-06-20)
-const ED25519_PKCS8_SEED_PREFIX = Buffer.from("302e020100300506032b657004220420", "hex");
 
 export interface DeploymentManifest {
   schema_version: "adn-release-proof-v1";
@@ -91,19 +92,6 @@ function normalizeHex(value: string | undefined): string | undefined {
   return normalized || undefined;
 }
 
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value ?? null);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map((entry) => canonicalJson(entry)).join(",")}]`;
-  }
-  const entries = Object.entries(value as Record<string, unknown>)
-    .filter(([, entry]) => entry !== undefined)
-    .sort(([left], [right]) => left.localeCompare(right));
-  return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`).join(",")}}`;
-}
-
 function buildConfigId(buildCommit: string, rustcVersion: string, trustedIssuer: string, tenantDid: string): string {
   const material = `adn-processor:v${CONTRACT_VERSION}:${buildCommit}:${rustcVersion}:${trustedIssuer}:${tenantDid}`;
   return `adn-build-${sha256Hex(material).slice(0, 32)}`;
@@ -117,23 +105,6 @@ function requireManifestEnv(name: string): string {
   return value;
 }
 
-function privateKeyFromSeedHex(seedHex: string) {
-  if (!/^[0-9a-f]{64}$/.test(seedHex)) {
-    throw new Error("ADN_RELEASE_OPERATOR_PRIVATE_KEY_HEX must be a 32-byte Ed25519 seed hex string");
-  }
-  return createPrivateKey({
-    key: Buffer.concat([ED25519_PKCS8_SEED_PREFIX, Buffer.from(seedHex, "hex")]),
-    format: "der",
-    type: "pkcs8",
-  });
-}
-
-function derivePublicKeyHexFromSeed(seedHex: string): string {
-  const privateKey = privateKeyFromSeedHex(seedHex);
-  const spki = createPublicKey(privateKey).export({ format: "der", type: "spki" }) as Buffer;
-  return spki.subarray(spki.length - 32).toString("hex");
-}
-
 function releaseOperatorPublicKeyHex(): string | undefined {
   const configuredPublicKey = normalizeHex(process.env.ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX);
   if (configuredPublicKey) {
@@ -143,11 +114,11 @@ function releaseOperatorPublicKeyHex(): string | undefined {
     return configuredPublicKey;
   }
   const seedHex = normalizeHex(process.env.ADN_RELEASE_OPERATOR_PRIVATE_KEY_HEX);
-  return seedHex ? derivePublicKeyHexFromSeed(seedHex) : undefined;
+  return seedHex ? deriveEd25519PublicKeyHexFromSeed(seedHex) : undefined;
 }
 
 function digestManifest(manifest: Omit<DeploymentManifest, "manifest_digest">): DeploymentManifest {
-  return { ...manifest, manifest_digest: sha256Hex(canonicalJson(manifest)) };
+  return { ...manifest, manifest_digest: digestCanonicalJson(manifest) };
 }
 
 function manifestWithoutDigest(manifest: DeploymentManifest): Omit<DeploymentManifest, "manifest_digest"> {
@@ -167,8 +138,7 @@ function writeManifestSignatureIfConfigured(deploymentManifest: DeploymentManife
     return;
   }
 
-  const privateKey = privateKeyFromSeedHex(seedHex);
-  const derivedPublicKeyHex = derivePublicKeyHexFromSeed(seedHex);
+  const derivedPublicKeyHex = deriveEd25519PublicKeyHexFromSeed(seedHex);
   const configuredPublicKeyHex = normalizeHex(process.env.ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX);
   const manifestPublicKeyHex = normalizeHex(deploymentManifest.operator_public_key);
 
@@ -179,16 +149,15 @@ function writeManifestSignatureIfConfigured(deploymentManifest: DeploymentManife
     throw new Error("deployment manifest operator_public_key does not match ADN_RELEASE_OPERATOR_PRIVATE_KEY_HEX");
   }
 
-  const signedBody = Buffer.from(canonicalJson(manifestWithoutDigest(deploymentManifest)), "utf-8");
-  const signatureDoc = {
-    algorithm: "ed25519",
-    public_key_hex: derivedPublicKeyHex,
-    signature_hex: signBytes(null, signedBody, privateKey).toString("hex"),
-  };
+  const signatureDoc = signReleaseManifestWithSeed(
+    manifestWithoutDigest(deploymentManifest) as unknown as Record<string, unknown>,
+    seedHex,
+  );
   writeJsonArtifact(DEPLOYMENT_MANIFEST_SIGNATURE_PATH, signatureDoc);
 }
 
 function writeDeploymentManifest(deploymentManifest: DeploymentManifest): DeploymentManifest {
+  validateReleaseManifestAgainstSchema(deploymentManifest as unknown as Record<string, unknown>);
   mkdirSync(RELEASE_PROOF_DIR, { recursive: true });
   writeJsonArtifact(DEPLOYMENT_MANIFEST_PATH, deploymentManifest);
   writeJsonArtifact(LEGACY_DEPLOYMENT_MANIFEST_PATH, deploymentManifest);
@@ -230,7 +199,7 @@ export function finalizeDeploymentManifest(
     registration_status: "registered",
     registered_at: new Date().toISOString(),
     remote_contract_id: contractId,
-    raw_registration_response_digest: sha256Hex(canonicalJson(rawRegistrationResponse)),
+    raw_registration_response_digest: digestCanonicalJson(rawRegistrationResponse),
     raw_registration_response_path: "registration_response.json",
   });
   return writeDeploymentManifest(finalized);
@@ -247,9 +216,9 @@ export function recordFirstInvocationDigest(
   writeJsonArtifact(T3N_EVIDENCE_PATH, invocationResult);
   const deploymentManifest = writeDeploymentManifest(digestManifest({
     ...manifestWithoutDigest(contractInfo.deploymentManifest),
-    first_invocation_digest: sha256Hex(canonicalJson(invocationResult)),
+    first_invocation_digest: digestCanonicalJson(invocationResult),
     first_invocation_path: "invocation_receipt.json",
-    t3n_evidence_digest: sha256Hex(canonicalJson(invocationResult)),
+    t3n_evidence_digest: digestCanonicalJson(invocationResult),
     t3n_evidence_path: "t3n_evidence.json",
   }));
   return { ...contractInfo, deploymentManifest };

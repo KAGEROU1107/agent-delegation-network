@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 wit_bindgen::generate!({
     world: "adn-processor",
@@ -38,6 +39,13 @@ fn contract_build_config_id() -> String {
     );
     let digest = Sha256::digest(material.as_bytes());
     format!("adn-build-{}", crypto::hex_lower(&digest[..16]))
+}
+
+fn epoch_to_rfc3339(epoch_secs: u64) -> Result<String, String> {
+    let dt = OffsetDateTime::from_unix_timestamp(epoch_secs as i64)
+        .map_err(|_| "delegate-task: invalid authorization expiry epoch".to_string())?;
+    dt.format(&Rfc3339)
+        .map_err(|_| "delegate-task: failed to format authorization expiry".to_string())
 }
 
 // ── Phase 1 types ─────────────────────────────────────────────────────────────
@@ -300,6 +308,7 @@ fn verify_delegate_task(bytes: &[u8], cfg: &DelegationConfig) -> Result<Delegate
         credential_fingerprint: Some(format!("{credential_digest:x}")),
         user_signer: Some(format!("0x{}", crypto::hex_lower(&signer))),
         build_config_id: Some(contract_build_config_id()),
+        authorization_expires_at: Some(epoch_to_rfc3339(not_after)?),
     })
 }
 
@@ -326,6 +335,8 @@ struct DelegateTaskOutput {
     user_signer: Option<String>, // EIP-191 recovered signer address (0x...) when user_sig present
     #[serde(skip_serializing_if = "Option::is_none")]
     build_config_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    authorization_expires_at: Option<String>,
 }
 
 // ── Phase 2 — Blind Multi-Agent Auction ───────────────────────────────────────

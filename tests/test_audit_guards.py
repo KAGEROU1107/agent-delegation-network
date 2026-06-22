@@ -119,6 +119,28 @@ def test_python_adn_runner_requires_real_t3n_bundle_and_pinned_gateway():
     assert "authorization_expires_at" in receipt
 
 
+def test_contract_emits_authorization_expiry_and_bridge_uses_contract_value():
+    contract = read("contract/src/lib.rs")
+    index = read("t3n-bridge/src/index.ts")
+
+    assert "authorization_expires_at" in contract
+    assert "authorization_expires_at: result.authorization_expires_at" in index
+    assert "authorization_expires_at: delegationEnvelope.authorization_expires_at" not in index
+
+
+def test_runner_uses_private_temp_dir_for_sensitive_files():
+    runner = read("t3n-bridge/src/adn_runner.ts")
+    replay_ledger = read("src/replay_ledger.py")
+
+    assert "mkdtempSync" in runner
+    assert "chmodSync" in runner
+    assert "mode: 0o600" in runner
+    assert "0o700" in runner
+    assert "ADN_REPLAY_LEDGER_DIR" in runner
+    assert "sqlite3" in replay_ledger
+    assert "BEGIN IMMEDIATE" in replay_ledger
+
+
 def test_live_demo_docs_require_pinned_deployment_sequence():
     readme = read("README.md")
     report = read("SUBMISSION_REPORT.md")

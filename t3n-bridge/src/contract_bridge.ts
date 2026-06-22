@@ -204,6 +204,7 @@ export interface DelegateTaskResult {
   credential_enforced?: boolean;
   credential_fingerprint?: string;
   build_config_id?: string;
+  authorization_expires_at?: string;
 }
 
 export interface DelegateTaskEnvelope {

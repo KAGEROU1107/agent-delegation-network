@@ -9,7 +9,7 @@ import secrets
 from typing import Dict, Optional, Tuple
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, PublicFormat
 
 from src.terminal3_agent_auth_adapter import (
     sign_action_request,
@@ -99,6 +99,19 @@ class AgentIdentity:
     @property
     def public_key_hex(self) -> str:
         return self._public_key_hex
+
+    @property
+    def private_key_hex(self) -> Optional[str]:
+        if self._private_key_hex:
+            return self._private_key_hex
+        if self._private_key_obj is None:
+            return None
+        raw = self._private_key_obj.private_bytes(
+            Encoding.Raw,
+            PrivateFormat.Raw,
+            NoEncryption(),
+        )
+        return raw.hex()
 
     def sign_action(self, action: str, nonce: str, data: dict = None) -> Dict:
         """Sign an action request with this agent's key, binding optional data hash."""

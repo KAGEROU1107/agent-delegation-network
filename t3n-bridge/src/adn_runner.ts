@@ -13,7 +13,7 @@
  */
 
 import { spawn } from "child_process";
-import { readFileSync, unlinkSync, writeFileSync } from "fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { tmpdir } from "os";
@@ -97,6 +97,10 @@ def write_output(payload):
     if not output_path:
         raise RuntimeError('ADN_OUTPUT_PATH is required')
     Path(output_path).write_text(json.dumps(payload), encoding='utf-8')
+    try:
+        os.chmod(output_path, 0o600)
+    except OSError:
+        pass
 
 
 def load_json_file(env_name):
@@ -371,13 +375,19 @@ print(json.dumps({
 }))
 `;
 
-function tempPath(prefix: string, suffix: string): string {
-  return join(tmpdir(), `${prefix}_${randomBytes(8).toString("hex")}.${suffix}`);
+function createSecureTempDir(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), `${prefix}_`));
+  chmodSync(dir, 0o700);
+  return dir;
 }
 
-function writeJsonTemp(prefix: string, payload: unknown): string {
-  const outputPath = tempPath(prefix, "json");
-  writeFileSync(outputPath, JSON.stringify(payload), "utf-8");
+function tempPath(tempDir: string, prefix: string, suffix: string): string {
+  return join(tempDir, `${prefix}_${randomBytes(8).toString("hex")}.${suffix}`);
+}
+
+function writeJsonTemp(tempDir: string, prefix: string, payload: unknown): string {
+  const outputPath = tempPath(tempDir, prefix, "json");
+  writeFileSync(outputPath, JSON.stringify(payload), { encoding: "utf-8", mode: 0o600 });
   return outputPath;
 }
 
@@ -385,10 +395,17 @@ function readJsonFile<T>(path: string): T {
   return JSON.parse(readFileSync(path, "utf-8")) as T;
 }
 
-function cleanupTempFiles(paths: string[]): void {
+function cleanupTempFiles(paths: string[], dirs: string[] = []): void {
   for (const path of paths) {
     try {
       unlinkSync(path);
+    } catch {
+      // Best-effort cleanup only.
+    }
+  }
+  for (const dir of dirs) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
     } catch {
       // Best-effort cleanup only.
     }
@@ -418,13 +435,15 @@ export function requireConfiguredGatewayKeyBundleFromEnv(): GatewayKeyBundle {
 }
 
 function runPythonProcess(env: Record<string, string>, deps: RunAdnDeps = {}): Promise<{ stdout: string; stderr: string }> {
-  const scriptPath = tempPath("adn_run", "py");
+  const tempDir = createSecureTempDir("adn_run");
+  const scriptPath = tempPath(tempDir, "adn_run", "py");
   const spawnImpl = deps.spawnImpl ?? spawn;
   const pythonExecutable = deps.pythonExecutable ?? "python3";
 
   return new Promise((resolve, reject) => {
-    writeFileSync(scriptPath, RUNNER_SCRIPT, "utf-8");
+    writeFileSync(scriptPath, RUNNER_SCRIPT, { encoding: "utf-8", mode: 0o600 });
     const childEnv: Record<string, string> = { ...process.env, ADN_ROOT, T3_MOCK: "false", ...env } as Record<string, string>;
+    childEnv.ADN_REPLAY_LEDGER_DIR = env.ADN_REPLAY_LEDGER_DIR ?? join(tempDir, "replay-ledger");
     delete childEnv.T3N_API_KEY;
     delete childEnv.ADN_GATEWAY_PRIVATE_KEY_HEX;
     delete childEnv.ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX;
@@ -442,7 +461,7 @@ function runPythonProcess(env: Record<string, string>, deps: RunAdnDeps = {}): P
       stderr += chunk.toString();
     });
     proc.on("close", (code) => {
-      cleanupTempFiles([scriptPath]);
+      cleanupTempFiles([scriptPath], [tempDir]);
       if (code !== 0) {
         reject(new Error(`ADN process failed (exit ${code}):\n${stderr}`));
         return;
@@ -456,38 +475,42 @@ export async function prepareAdnExecution(
   tenantDid: string,
   deps: RunAdnDeps = {}
 ): Promise<PreparedAdnExecution> {
-  const outputPath = tempPath("adn_prepare", "json");
+  const tempDir = createSecureTempDir("adn_prepare");
+  const outputPath = tempPath(tempDir, "adn_prepare", "json");
   try {
     await runPythonProcess(
       {
         DID: tenantDid,
         ADN_RUN_MODE: "prepare",
         ADN_OUTPUT_PATH: outputPath,
+        ADN_REPLAY_LEDGER_DIR: join(tempDir, "replay-ledger"),
       },
       deps,
     );
     return readJsonFile<PreparedAdnExecution>(outputPath);
   } finally {
-    cleanupTempFiles([outputPath]);
+    cleanupTempFiles([outputPath], [tempDir]);
   }
 }
 
 export async function prepareGatewayKeyBundle(
   deps: RunAdnDeps = {}
 ): Promise<GatewayKeyBundle> {
-  const outputPath = tempPath("adn_gateway", "json");
+  const tempDir = createSecureTempDir("adn_gateway");
+  const outputPath = tempPath(tempDir, "adn_gateway", "json");
   try {
     await runPythonProcess(
       {
         DID: "did:t3n:gateway-local",
         ADN_RUN_MODE: "prepare_gateway",
         ADN_OUTPUT_PATH: outputPath,
+        ADN_REPLAY_LEDGER_DIR: join(tempDir, "replay-ledger"),
       },
       deps,
     );
     return readJsonFile<GatewayKeyBundle>(outputPath);
   } finally {
-    cleanupTempFiles([outputPath]);
+    cleanupTempFiles([outputPath], [tempDir]);
   }
 }
 
@@ -498,9 +521,10 @@ export async function runAdnWithRealDid(
   gatewayKeyBundle: GatewayKeyBundle,
   deps: RunAdnDeps = {},
 ): Promise<AdnDelegationResult> {
-  const identityBundlePath = writeJsonTemp("adn_identity_bundle", preparedExecution);
-  const teeAuthorizationPath = writeJsonTemp("adn_tee_bundle", teeAuthorizationBundle);
-  const gatewayKeyBundlePath = writeJsonTemp("adn_gateway_bundle", gatewayKeyBundle);
+  const tempDir = createSecureTempDir("adn_execute");
+  const identityBundlePath = writeJsonTemp(tempDir, "adn_identity_bundle", preparedExecution);
+  const teeAuthorizationPath = writeJsonTemp(tempDir, "adn_tee_bundle", teeAuthorizationBundle);
+  const gatewayKeyBundlePath = writeJsonTemp(tempDir, "adn_gateway_bundle", gatewayKeyBundle);
 
   try {
     const { stdout, stderr } = await runPythonProcess(
@@ -510,6 +534,7 @@ export async function runAdnWithRealDid(
         ADN_IDENTITY_BUNDLE_PATH: identityBundlePath,
         TEE_AUTHORIZATION_BUNDLE_PATH: teeAuthorizationPath,
         ADN_GATEWAY_KEY_BUNDLE_PATH: gatewayKeyBundlePath,
+        ADN_REPLAY_LEDGER_DIR: join(tempDir, "replay-ledger"),
       },
       deps,
     );
@@ -519,6 +544,6 @@ export async function runAdnWithRealDid(
       throw new Error(`ADN output parse error:\n${stdout}\n${stderr}`);
     }
   } finally {
-    cleanupTempFiles([identityBundlePath, teeAuthorizationPath, gatewayKeyBundlePath]);
+    cleanupTempFiles([identityBundlePath, teeAuthorizationPath, gatewayKeyBundlePath], [tempDir]);
   }
 }

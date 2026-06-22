@@ -241,6 +241,9 @@ async function main() {
       if (!result.build_config_id) {
         throw new Error(`delegate-task for ${action} did not return build_config_id`);
       }
+      if (!result.authorization_expires_at) {
+        throw new Error(`delegate-task for ${action} did not return authorization_expires_at`);
+      }
       if (result.build_config_id !== expectedBuildConfigId) {
         throw new Error(
           `delegate-task for ${action} returned build_config_id ${result.build_config_id}, ` +
@@ -255,7 +258,7 @@ async function main() {
         credential_fingerprint: result.credential_fingerprint,
         credential_enforced: result.credential_enforced,
         build_config_id: result.build_config_id,
-        authorization_expires_at: delegationEnvelope.authorization_expires_at,
+        authorization_expires_at: result.authorization_expires_at,
       };
     };
 

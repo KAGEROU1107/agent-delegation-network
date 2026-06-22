@@ -2,6 +2,7 @@ import threading
 import time
 from collections import deque
 
+from src.replay_ledger import consume_result_replay
 from src.terminal3_agent_auth_adapter import verify_action_request, _canonical, _sha256
 from src.tee_authorization import receipt_fingerprint, verify_tee_authorization_receipt
 
@@ -31,6 +32,26 @@ def _consume_result_nonce(nonce):
         _seen.add(nonce)
         _seen_order.append((nonce, now))
         _prune_seen_nonces_locked(now)
+
+
+def _consume_result_replay(proof, rd, receipt, expected_worker_pubkey_hex, coordinator_id):
+    replay_key = _sha256(_canonical({
+        "worker_public_key_hex": expected_worker_pubkey_hex,
+        "coordinator_id": coordinator_id,
+        "delegation_id": rd.get("delegation_id"),
+        "result_nonce": rd.get("nonce"),
+        "receipt_fingerprint": receipt_fingerprint(receipt),
+    }))
+    ok, reason = consume_result_replay(
+        replay_key=replay_key,
+        owner_agent_id=coordinator_id,
+        delegation_id=rd.get("delegation_id") or "",
+        payload_fingerprint=proof.get("data_hash") or "",
+        expires_at=None,
+        integrity_secret_hex=None,
+    )
+    if not ok:
+        raise RuntimeError(reason)
 
 def verify_worker_result(
     proof,
@@ -94,4 +115,11 @@ def verify_worker_result(
         expected_build_config_id=expected_build_config_id,
     )
     _consume_result_nonce(rd.get('nonce'))
+    _consume_result_replay(
+        proof,
+        rd,
+        receipt,
+        expected_worker_pubkey_hex,
+        coordinator_id,
+    )
     return rd

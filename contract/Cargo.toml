@@ -15,6 +15,7 @@ base64 = "0.22"
 sha2 = { version = "0.10", default-features = false }
 sha3 = { version = "0.10", default-features = false }
 k256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic", "std"] }
+time = { version = "0.3", features = ["formatting"] }
 
 [profile.release]
 # Minimize WASM artifact size

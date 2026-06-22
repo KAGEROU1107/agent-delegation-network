@@ -10,7 +10,7 @@ coordinator-side worker-result verification in the Python flow (H-05).
 | WASM size | 411,778 bytes |
 | Rust toolchain | rustc 1.96.0 (ac68faa20 2026-05-25) |
 | Target | wasm32-wasip2 |
-| Tests | Rust 25/25 (`cargo test --locked`, including digest delegation ID and pinned/unpinned production-path coverage); Python 54/54 (`pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py`) |
+| Tests | Rust 25/25 (`cargo test --locked`, including digest delegation ID and pinned/unpinned production-path coverage); Python 61/61 (`pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py`) |
 
 ## The committed WASM SHA is the UNPINNED build (fails closed)
 
@@ -26,7 +26,7 @@ RUSTC_VERSION="$(rustc --version)"
 ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo test --locked
 ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo build --locked --target wasm32-wasip2 --release
 ADN_TRUSTED_ISSUER=58da990a8f4a3a6ca7cb6315d68a140105917352 ADN_TENANT_DID=did:t3n:fixture cargo test --locked
-python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py -v --tb=short   # 54/54
+python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py -v --tb=short   # 61/61
 cd ../t3n-bridge && T3N_API_KEY=0x<key> ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> node --loader ts-node/esm src/index.ts 2>&1 | tee ../proof/live_run_v3.9.2.txt
 ```
 
@@ -40,6 +40,10 @@ delegate-task (Rust/WASM):
 - digest-derived `delegation_id`; `build_config_id` emitted in delegate-task output; final WASM SHA recorded externally in the deployment manifest
 
 Python multi-agent flow:
+- bridge prepares exact Python worker identities, obtains real `delegate-task`
+  authorization for those targets, and passes the typed T3N results into Python
+- dedicated pinned gateway signer issues the worker receipt; workers and the
+  coordinator both require the pinned gateway public key plus exact build_config_id
 - coordinator verifies each worker result (Ed25519 sig, signer, data_hash binding,
   delegation_id, audience, COMPLETED status, signed gateway TEE authorization
   receipt, lock-guarded single-use result nonce with bounded in-memory retention)

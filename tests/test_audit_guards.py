@@ -80,12 +80,28 @@ def test_ci_runs_pinned_contract_configuration():
     workflow = read(".github/workflows/ci.yml")
 
     assert "tests/test_audit_guards.py" in workflow
+    assert "npm test" in workflow
     assert "ADN_BUILD_COMMIT" in workflow
     assert "ADN_RUSTC_VERSION" in workflow
     assert "ADN_TRUSTED_ISSUER: 58da990a8f4a3a6ca7cb6315d68a140105917352" in workflow
     assert "ADN_TENANT_DID: did:t3n:fixture" in workflow
     assert "Run Rust contract tests with pinned issuer" in workflow
     assert "Build pinned Rust/WASM contract" in workflow
+
+
+def test_python_adn_runner_requires_real_t3n_bundle_and_pinned_gateway():
+    runner = read("t3n-bridge/src/adn_runner.ts")
+    protocol = read("src/delegation_protocol.py")
+    receipt = read("src/tee_authorization.py")
+
+    assert "prepareAdnExecution" in runner
+    assert "TEE authorization bundle is required" in runner
+    assert "require_authorization_result('processData'" in runner
+    assert "require_authorization_result('validateQuality'" in runner
+    assert "expected_gateway_public_key_hex=trusted_gateway_public_key_hex" in runner
+    assert "expected_gateway_pubkey_hex=signed_request.get(\"public_key_hex\", \"\")" not in protocol
+    assert "credential_enforced" in receipt
+    assert "build_config_id" in receipt
 
 
 def test_live_demo_docs_require_pinned_deployment_sequence():

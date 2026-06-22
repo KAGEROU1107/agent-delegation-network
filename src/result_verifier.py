@@ -48,6 +48,8 @@ def verify_worker_result(
         raise RuntimeError('expected TEE authorization is required')
     if not expected_gateway_public_key_hex:
         raise RuntimeError('expected gateway public key is required')
+    if not expected_build_config_id:
+        raise RuntimeError('expected build_config_id is required')
     if not expected_action:
         raise RuntimeError('expected action is required')
     if expected_parameters is None:

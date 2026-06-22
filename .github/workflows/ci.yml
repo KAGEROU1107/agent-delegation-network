@@ -34,6 +34,10 @@ jobs:
         working-directory: t3n-bridge
         run: npm run build
 
+      - name: Run TypeScript bridge integration test
+        working-directory: t3n-bridge
+        run: npm test
+
       - name: Run Python security tests
         run: python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py -v --tb=short
 
@@ -78,7 +82,7 @@ jobs:
           gh api repos/${{ github.repository }}/statuses/${{ github.sha }} \
             -f state="$STATE" \
             -f context="Tests" \
-            -f description="pytest 54 Python signing, policy, result-verifier, and audit-guard tests"
+            -f description="Python security, verifier, and audit-guard tests"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

@@ -39,6 +39,7 @@ def _receipt_body(receipt: Dict[str, Any]) -> Dict[str, Any]:
         "credential_fingerprint",
         "credential_enforced",
         "build_config_id",
+        "tee_result_digest",
     ]
     return {key: receipt.get(key) for key in keys}
 
@@ -71,6 +72,7 @@ def build_tee_authorization_receipt(
         "credential_fingerprint": tee_result.get("credential_fingerprint"),
         "credential_enforced": tee_result.get("credential_enforced"),
         "build_config_id": tee_result.get("build_config_id"),
+        "tee_result_digest": _sha256(_canonical(tee_result)),
     }
     proof = gateway_identity.sign_action(RECEIPT_ACTION, delegation_id, data=body)
     return {
@@ -108,7 +110,15 @@ def verify_tee_authorization_receipt(
         raise RuntimeError("TEE authorization action mismatch")
     if not body["credential_fingerprint"]:
         raise RuntimeError("TEE authorization credential fingerprint missing")
-    if expected_build_config_id is not None and body["build_config_id"] != expected_build_config_id:
+    if body["credential_enforced"] is not True:
+        raise RuntimeError("TEE authorization credential enforcement missing")
+    if not body["build_config_id"]:
+        raise RuntimeError("TEE authorization build_config_id missing")
+    if not body["tee_result_digest"]:
+        raise RuntimeError("TEE authorization T3N result digest missing")
+    if not expected_build_config_id:
+        raise RuntimeError("TEE authorization expected build_config_id required")
+    if body["build_config_id"] != expected_build_config_id:
         raise RuntimeError("TEE authorization build_config_id mismatch")
 
     if expected_parameters is not None:

@@ -277,12 +277,10 @@ Run the local feature-pattern demo: `T3N_API_KEY=0x<key> python demo/features_de
 
 **What is enforced in the current live v3.8.1 proof:** T3N authentication, SDK-native credential construction, Rust/WASM TEE structural validation of envelope presence, credential domain, TTL, delegated function scope, nonce format (≥8 bytes), and `agent_sig` presence. Delegation envelope is **mandatory** on `delegate-task` in v3.8.1 source. Trust policy requires both action rule AND explicit trust relationship (dual default-deny).
 
-**Explicit live-proof boundaries:** v3.9.2 source adds issuer-pinned cryptographic verification, request binding, digest-derived delegation IDs, and a signed gateway receipt requirement in the Python worker path, but it is not yet backed by a pinned live deployment proof. The receipt is gateway-linked local evidence, not a T3N-attested worker-dispatch primitive. Durable nonce replay registry, persistent workflow state, and immediate revocation-registry lookup remain unproven in the current `generic-input` contract world.
+**Explicit live-proof boundaries:** v3.9.2 source adds issuer-pinned cryptographic verification, request binding, digest-derived delegation IDs, and a prepare -> authorize -> execute Python bridge that requires real `delegate-task` outputs for exact prepared worker IDs plus a dedicated pinned gateway signer. It is still not backed by a pinned live deployment proof, and the receipt remains gateway-linked local evidence rather than a T3N-attested worker-dispatch primitive. Durable nonce replay registry, persistent workflow state, and immediate revocation-registry lookup remain unproven in the current `generic-input` contract world.
 
-54 Python security tests across 11 categories: structural tamper, replay attack,
-expired proof, wrong audience, forged key, missing required fields, agent identity
-distinctness, delegation policy enforcement, credential TTL window validation,
-worker-result verification, result nonce retention/concurrency, and audit guardrails.
+61 Python security tests across 3 suites: adapter/policy negative-security checks,
+worker-result and gateway-receipt verification, and audit guardrails.
 Tests cover Python signing adapter, policy logic, coordinator-side result verification, TypeScript bridge buildability, and Rust/WASM contract enforcement. The committed live T3N proof remains the v3.8.1 structural proof until a pinned v3.9.2 run is captured.
 
 ```

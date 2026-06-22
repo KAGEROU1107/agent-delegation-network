@@ -210,7 +210,9 @@ class AgentDelegationNetwork:
     
     def process_delegation_request(
         self,
-        signed_request: Dict
+        signed_request: Dict,
+        expected_gateway_public_key_hex: Optional[str] = None,
+        expected_build_config_id: Optional[str] = None,
     ) -> Dict:
         """
         Process an incoming delegation request from another agent.
@@ -240,8 +242,11 @@ class AgentDelegationNetwork:
                 raise ValueError(f"Delegation request not for this agent")
             
             # Verify Ed25519 signature, expiry, audience, and payload hash integrity
-            is_valid, error_msg = DelegationProtocol.validate_delegation_request(
-                signed_request, self.identity.agent_id
+            is_valid, error_msg, replay_key = DelegationProtocol.validate_delegation_request(
+                signed_request,
+                self.identity.agent_id,
+                expected_gateway_public_key_hex or "",
+                expected_build_config_id or "",
             )
             if not is_valid:
                 raise ValueError(f"Invalid delegation request: {error_msg}")
@@ -273,6 +278,17 @@ class AgentDelegationNetwork:
                     self.identity,
                     DelegationStatus.FAILED,
                     error=f"No handler available for action: {delegation_request.action}"
+                )
+                return result.to_action_request(self.identity)
+
+            replay_allowed, replay_reason = DelegationProtocol.consume_delegation_request_replay(replay_key)
+            if not replay_allowed:
+                logger.warning(replay_reason)
+                result = DelegationProtocol.create_delegation_result(
+                    delegation_request,
+                    self.identity,
+                    DelegationStatus.FAILED,
+                    error=replay_reason,
                 )
                 return result.to_action_request(self.identity)
             

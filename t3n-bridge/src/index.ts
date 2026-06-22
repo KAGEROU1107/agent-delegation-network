@@ -13,7 +13,7 @@
  */
 
 import { createT3nSession } from "./t3n_auth.js";
-import { runAdnWithRealDid } from "./adn_runner.js";
+import { prepareAdnExecution, runAdnWithRealDid, type TeeAuthorizationResult } from "./adn_runner.js";
 import {
   registerAdnContract,
   type ContractInfo,
@@ -184,7 +184,69 @@ async function main() {
 
   let adnResult;
   try {
-    adnResult = await runAdnWithRealDid(apiKey, tenantDid);
+    if (!preRegisteredContract) {
+      throw new Error(
+        "Live Python ADN execution now requires a compiled v3.9.2 WASM contract, " +
+        "because workers only accept real delegate-task authorization results."
+      );
+    }
+
+    const preparedExecution = await prepareAdnExecution(tenantDid);
+    console.log(`  [+] Prepared worker target for PROCESS_DATA: ${preparedExecution.worker1.agentId}`);
+    console.log(`  [+] Prepared worker target for VALIDATE_QUALITY: ${preparedExecution.validator.agentId}`);
+
+    const expectedBuildConfigId = preRegisteredContract.deploymentManifest.buildConfigId;
+
+    const authorizeWorkerTarget = async (
+      targetAgentId: string,
+      action: "PROCESS_DATA" | "VALIDATE_QUALITY"
+    ): Promise<TeeAuthorizationResult> => {
+      const delegationEnvelope = await buildWireDelegationEnvelope(tenantDid, targetAgentId, apiKey, { action });
+      const result = await invokeDelegateTask(t3n, tenantDid, {
+        to_agent_id: targetAgentId,
+        action,
+        __delegation_envelope: delegationEnvelope,
+      });
+      if (result.status !== "ROUTED") {
+        throw new Error(`delegate-task for ${action} did not return ROUTED`);
+      }
+      if (result.routed_to !== targetAgentId) {
+        throw new Error(`delegate-task for ${action} returned unexpected target ${result.routed_to}`);
+      }
+      if (result.credential_enforced !== true) {
+        throw new Error(`delegate-task for ${action} did not confirm credential_enforced=true`);
+      }
+      if (!result.credential_fingerprint) {
+        throw new Error(`delegate-task for ${action} did not return credential_fingerprint`);
+      }
+      if (!result.build_config_id) {
+        throw new Error(`delegate-task for ${action} did not return build_config_id`);
+      }
+      if (result.build_config_id !== expectedBuildConfigId) {
+        throw new Error(
+          `delegate-task for ${action} returned build_config_id ${result.build_config_id}, ` +
+          `expected ${expectedBuildConfigId}`
+        );
+      }
+      console.log(`  [+] delegate-task ${action}: ${result.delegation_id} -> ${result.routed_to}`);
+      return {
+        delegation_id: result.delegation_id,
+        status: result.status,
+        routed_to: result.routed_to,
+        credential_fingerprint: result.credential_fingerprint,
+        credential_enforced: result.credential_enforced,
+        build_config_id: result.build_config_id,
+      };
+    };
+
+    const teeAuthorizationBundle = {
+      buildConfigId: expectedBuildConfigId,
+      processData: await authorizeWorkerTarget(preparedExecution.worker1.agentId, "PROCESS_DATA"),
+      validateQuality: await authorizeWorkerTarget(preparedExecution.validator.agentId, "VALIDATE_QUALITY"),
+    };
+
+    console.log("  [+] Real T3N authorization bundle acquired for prepared Python workers.");
+    adnResult = await runAdnWithRealDid(apiKey, tenantDid, preparedExecution, teeAuthorizationBundle);
     console.log(`  [+] Unique cryptographic identities: ${adnResult.uniqueIdentities}/4`);
     console.log(`  [+] Records processed: ${adnResult.recordsProcessed}`);
     console.log(`  [+] Total revenue: $${adnResult.totalRevenue}`);

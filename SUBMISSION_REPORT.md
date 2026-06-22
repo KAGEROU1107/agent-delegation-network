@@ -8,7 +8,7 @@
 **Demo Video**: https://youtu.be/ukZQ7F81aho  
 **SDK**: `@terminal3/t3n-sdk@3.5.2`  
 **Contract**: `adn-processor v3.9.2` — issuer-authenticated TEE authorization decision for delegated calls + verified worker results + mandatory policy TTL
-**Live proof**: `proof/live_run_v3.8.1_final_88b7b88.txt` (v3.8.1 structural — current). v3.9.2 is built + unit-tested (Rust 25/25, Python 54/54) but **not yet deployed**; the last *deployed/invoked* contract is the v3.8.1 structural build in that proof. Operator must build v3.9.2 with `ADN_TRUSTED_ISSUER` (see `t3n-bridge/scripts/derive_issuer.mjs`) and run a fresh live proof.
+**Live proof**: `proof/live_run_v3.8.1_final_88b7b88.txt` (v3.8.1 structural — current). v3.9.2 is built + unit-tested (Rust 25/25, Python 61/61) but **not yet deployed**; the last *deployed/invoked* contract is the v3.8.1 structural build in that proof. Operator must build v3.9.2 with `ADN_TRUSTED_ISSUER` (see `t3n-bridge/scripts/derive_issuer.mjs`) and run a fresh live proof.
 
 ---
 
@@ -22,7 +22,7 @@ Live run against T3N testnet — 20/20 WIT exports, real DID, unique per-run has
 
 ## What Was Built
 
-An integration prototype demonstrating real Terminal 3 authentication, SDK-native delegation credential construction, Rust/WASM TEE contract invocation, and — as of **v3.9.2** — an **issuer-authenticated, cryptographically verified TEE authorization decision** on `delegate-task`. The agent signature (secp256k1) is verified against the credential's agent public key over the invocation preimage; the request hash is recomputed in-contract and bound to the call's `to_agent_id`/`action`; the user signature (EIP-191) is recovered over the exact credential JCS bytes; the nonce is required at exactly 16 bytes; and issuer policy TTL is mandatory in `1..=300`. Verification is pure Rust (`k256`) compiled to `wasm32-wasip2` — **no host primitive** — refuting the earlier claim that ECDSA recovery required one.
+An integration prototype demonstrating real Terminal 3 authentication, SDK-native delegation credential construction, Rust/WASM TEE contract invocation, and — as of **v3.9.2** — an **issuer-authenticated, cryptographically verified TEE authorization decision** on `delegate-task`. The bridge now prepares Python worker identities first, obtains real `delegate-task` authorization for those exact worker IDs, and requires a dedicated pinned gateway signer before Python worker execution. The agent signature (secp256k1) is verified against the credential's agent public key over the invocation preimage; the request hash is recomputed in-contract and bound to the call's `to_agent_id`/`action`; the user signature (EIP-191) is recovered over the exact credential JCS bytes; the nonce is required at exactly 16 bytes; and issuer policy TTL is mandatory in `1..=300`. Verification is pure Rust (`k256`) compiled to `wasm32-wasip2` — **no host primitive** — refuting the earlier claim that ECDSA recovery required one.
 
 Authorization root (current v3.9.2 path, introduced in v3.9.1): a tenant-controlled issuer Ethereum address is pinned into the contract at build time (`ADN_TRUSTED_ISSUER`). `user_sig` is **mandatory**, recovered via EIP-191 over the credential JCS, and required to equal the pinned issuer — so a self-issued credential is rejected. The issuer-signed credential also carries an authorization policy (`adn_authorization_v1`) binding target, action, and max TTL. The pinned address is public (not secret); rotation is a new contract version. **One property remains runtime-blocked, not effort-blocked, and is NOT claimed: durable replay prevention** — this `generic-input` WIT world imports no KV/storage capability, so consumed nonces cannot be persisted *in this contract*. (This bounds the present world; it does not assert Terminal 3 offers no state-capable contract model.) An exact-invocation replay within the credential TTL is therefore not prevented at the contract layer; short (≤300s) TTLs bound the window. Persistent workflow state for the other 19 exports is unavailable for the same KV reason.
 
@@ -41,7 +41,7 @@ Python worker execution now requires a signed gateway `TEE_AUTHORIZATION` receip
 | Per-call DelegationEnvelope | buildInvocationPreimage + signAgentInvocation — full wire shape |
 | Negative live TEE test | Empty records → `process-data: records cannot be empty` rejection |
 | Multi-agent Ed25519 delegation | 4 distinct identities, signed payloads, tamper detection |
-| Python security tests | 54/54 pass — 34 adapter/policy tests, 13 worker-result/TEE-receipt verifier tests, and 7 audit-guard tests |
+| Python security tests | 61/61 pass — 34 adapter/policy tests, 19 worker-result and gateway-receipt verifier tests, and 8 audit-guard tests |
 | Worker-result verification (v3.9.2; H-05/06/07) | Coordinator verifies each worker result before consuming it: Ed25519 signature (`verify_action_request`, `TASK_RESULT`); signer pinned by **exact worker public key** (H-06), with `agent_id` as auxiliary check; `result_data` bound to signed `data_hash`; outer envelope nonce == body nonce (H-07); originating `delegation_id`; audience == coordinator; status `COMPLETED`; signed gateway `TEE_AUTHORIZATION` receipt bound to target/action/request hash; lock-guarded single-use result nonce with bounded in-memory retention. `src/result_verifier.py`. **Scope (H-09):** the single-use check is per-process (in-memory); durable duplicate-result rejection across restarts requires a persistent coordinator-side ledger. Direct matrix `tests/test_result_verifier.py` (H-08): accept + fail-closed cases for missing/wrong TEE receipt, other worker key, wrong delegation id, wrong audience, modified body, missing data_hash, inconsistent nonce, stale proof, second use, plus bounded retention and concurrent duplicate checks. |
 
 ---
@@ -245,22 +245,13 @@ Residual gap: an `is-live` host primitive for real-time revocation registry look
 
 ## Security
 
-54 Python security tests across 11 categories:
+61 Python security tests across 3 suites:
 
-| Category | Tests | Result |
+| Suite | Tests | Result |
 |---|---|---|
-| Structural tamper | 6 | PASS |
-| Replay attack | 2 | |
-| Expired proof | 2 | |
-| Wrong audience | 2 | |
-| Forged key | 1 | |
-| Missing fields | 4 | |
-| Identity distinctness | 2 | |
-| Delegation policy enforcement | 9 | |
-| Credential TTL window | 5 | |
-| Worker-result verifier and TEE receipt matrix | 13 | |
-| Result nonce retention and concurrency | 2 | |
-| Audit guardrails | 7 | |
+| Adapter/policy negative-security checks | 34 | PASS |
+| Worker-result and gateway-receipt verifier checks | 19 | PASS |
+| Audit guardrails | 8 | PASS |
 
 Run: `python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py -v --tb=short`
 

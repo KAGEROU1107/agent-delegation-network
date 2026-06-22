@@ -290,8 +290,10 @@ class DelegationProtocol:
     @staticmethod
     def validate_delegation_request(
         signed_request: Dict,
-        receiver_agent_id: str
-    ) -> Tuple[bool, str]:
+        receiver_agent_id: str,
+        expected_gateway_public_key_hex: str,
+        expected_build_config_id: str,
+    ) -> Tuple[bool, str, Optional[str]]:
         """
         Validate a signed delegation request received over the wire.
 
@@ -308,7 +310,12 @@ class DelegationProtocol:
         # Step 1: Ed25519 signature + payload-hash integrity
         is_valid, err = verify_action_request(signed_request, "DELEGATE_TASK")
         if not is_valid:
-            return False, f"Signature verification failed: {err}"
+            return False, f"Signature verification failed: {err}", None
+
+        if not expected_gateway_public_key_hex:
+            return False, "Expected gateway public key is required", None
+        if not expected_build_config_id:
+            return False, "Expected build_config_id is required", None
 
         # Step 2: Verify delegation_data wasn't tampered with after signing.
         # data_hash (inside the signed fields) must match SHA-256 of actual delegation_data.
@@ -316,32 +323,33 @@ class DelegationProtocol:
             delegation_data = signed_request.get("delegation_data", {})
             expected_data_hash = _sha256(_canonical(delegation_data))
             if signed_request["data_hash"] != expected_data_hash:
-                return False, "DELEGATION_DATA_TAMPERED: payload hash mismatch"
+                return False, "DELEGATION_DATA_TAMPERED: payload hash mismatch", None
 
         request = DelegationRequest.from_action_request(signed_request)
 
         if request.is_expired():
-            return False, "Delegation request has expired"
+            return False, "Delegation request has expired", None
 
         if request.to_agent_id != receiver_agent_id:
             return False, (
                 f"Delegation not addressed to this agent "
                 f"(expected {receiver_agent_id}, got {request.to_agent_id})"
-            )
+            ), None
 
         if not request.tee_authorization:
-            return False, "TEE authorization receipt required before worker execution"
+            return False, "TEE authorization receipt required before worker execution", None
         try:
             verify_tee_authorization_receipt(
                 request.tee_authorization,
-                expected_gateway_pubkey_hex=signed_request.get("public_key_hex", ""),
+                expected_gateway_pubkey_hex=expected_gateway_public_key_hex,
                 expected_delegation_id=request.delegation_id,
                 expected_to_agent_id=receiver_agent_id,
                 expected_action=request.action,
                 expected_parameters=request.parameters,
+                expected_build_config_id=expected_build_config_id,
             )
         except RuntimeError as exc:
-            return False, f"TEE authorization invalid: {exc}"
+            return False, f"TEE authorization invalid: {exc}", None
 
         request_hash = signed_request.get("data_hash") or _sha256(_canonical(signed_request.get("delegation_data", {})))
         replay_key = _sha256(_canonical({
@@ -349,21 +357,27 @@ class DelegationProtocol:
             "request_hash": request_hash,
             "gateway_receipt_fingerprint": receipt_fingerprint(request.tee_authorization),
         }))
+        if not replay_key:
+            return False, "Delegation request replay key missing", None
+
+        return True, "Delegation request is valid", replay_key
+
+    @staticmethod
+    def consume_delegation_request_replay(replay_key: str) -> Tuple[bool, str]:
         now = time.monotonic()
         with _seen_delegation_request_lock:
             cutoff = now - SEEN_DELEGATION_REQUEST_TTL_SECONDS
             while _seen_delegation_request_order and _seen_delegation_request_order[0][1] <= cutoff:
-                replay_nonce, _created_at = _seen_delegation_request_order.popleft()
-                _seen_delegation_requests.discard(replay_nonce)
+                seen_key, _created_at = _seen_delegation_request_order.popleft()
+                _seen_delegation_requests.discard(seen_key)
             while len(_seen_delegation_request_order) > MAX_SEEN_DELEGATION_REQUESTS:
-                replay_nonce, _created_at = _seen_delegation_request_order.popleft()
-                _seen_delegation_requests.discard(replay_nonce)
+                seen_key, _created_at = _seen_delegation_request_order.popleft()
+                _seen_delegation_requests.discard(seen_key)
             if not replay_key or replay_key in _seen_delegation_requests:
                 return False, "Delegation request replay detected"
             _seen_delegation_requests.add(replay_key)
             _seen_delegation_request_order.append((replay_key, now))
-
-        return True, "Delegation request is valid"
+        return True, ""
     
     @staticmethod
     def create_delegation_result(

@@ -144,6 +144,13 @@ jobs:
           ADN_RELEASE_REPOSITORY: ${{ github.repository }}
         run: python scripts/verify_release.py proof/release
 
+      - name: Remote-verify GitHub proof input artifact
+        env:
+          ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX: ${{ secrets.ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX }}
+          ADN_RELEASE_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/verify_release_remote.py proof/release --github-token "$GITHUB_TOKEN" --repository "$GITHUB_REPOSITORY"
+
       - name: Upload CI attestation
         uses: actions/upload-artifact@v4
         with:

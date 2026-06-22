@@ -236,6 +236,7 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     claim_matrix = read("docs/security/claim-matrix.md")
     release_gate = read("scripts/release_gate.py")
     release_verifier = read("scripts/verify_release.py")
+    remote_verifier = read("scripts/verify_release_remote.py")
     schema = read("schemas/adn-release-proof-v1.schema.json")
     workflow = read(".github/workflows/ci.yml")
     release_workflow = read(".github/workflows/release-proof.yml")
@@ -273,6 +274,14 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "PROOF_INPUT_FILES" in release_verifier
     assert "attestation_phase" in release_verifier
     assert "proof_input_digest" in release_verifier
+    assert "GitHubActionsClient" in remote_verifier
+    assert "get_workflow_run" in remote_verifier
+    assert "get_workflow_run_artifact" in remote_verifier
+    assert "download_artifact_zip" in remote_verifier
+    assert "proof-input.tar" in remote_verifier
+    assert "artifact_digest" in remote_verifier
+    assert "proof_input_digest" in remote_verifier
+    assert "REMOTE_OK" in remote_verifier
     assert "adn-release-proof-v1" in schema
     assert "workflow_dispatch" in release_workflow
     assert "ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX" in release_workflow
@@ -286,5 +295,6 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert 'artifact_id": int(os.environ["GITHUB_RUN_ID"])' not in release_workflow
     assert 'workflow_conclusion": "success"' in release_workflow
     assert "python scripts/verify_release.py proof/release" in release_workflow
+    assert "python scripts/verify_release_remote.py proof/release" in release_workflow
     assert "actions/upload-artifact" in release_workflow
     assert "python scripts/release_gate.py" in workflow

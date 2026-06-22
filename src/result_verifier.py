@@ -42,6 +42,7 @@ def verify_worker_result(
     expected_gateway_public_key_hex=None,
     expected_action=None,
     expected_parameters=None,
+    expected_build_config_id=None,
 ):
     if expected_tee_authorization is None:
         raise RuntimeError('expected TEE authorization is required')
@@ -84,6 +85,7 @@ def verify_worker_result(
         expected_to_agent_id=expected_worker_id,
         expected_action=expected_action,
         expected_parameters=expected_parameters,
+        expected_build_config_id=expected_build_config_id,
     )
     _consume_result_nonce(rd.get('nonce'))
     return rd

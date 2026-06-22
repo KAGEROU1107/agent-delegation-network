@@ -37,6 +37,8 @@ def _receipt_body(receipt: Dict[str, Any]) -> Dict[str, Any]:
         "action",
         "request_hash",
         "credential_fingerprint",
+        "credential_enforced",
+        "build_config_id",
     ]
     return {key: receipt.get(key) for key in keys}
 
@@ -67,6 +69,8 @@ def build_tee_authorization_receipt(
         "action": action,
         "request_hash": tee_authorization_request_hash(to_agent_id, action, parameters),
         "credential_fingerprint": tee_result.get("credential_fingerprint"),
+        "credential_enforced": tee_result.get("credential_enforced"),
+        "build_config_id": tee_result.get("build_config_id"),
     }
     proof = gateway_identity.sign_action(RECEIPT_ACTION, delegation_id, data=body)
     return {
@@ -83,6 +87,7 @@ def verify_tee_authorization_receipt(
     expected_to_agent_id: str,
     expected_action: str,
     expected_parameters: Optional[Dict[str, Any]] = None,
+    expected_build_config_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Validate that a signed receipt authorizes exactly this worker request."""
     if not isinstance(receipt, dict):
@@ -103,6 +108,8 @@ def verify_tee_authorization_receipt(
         raise RuntimeError("TEE authorization action mismatch")
     if not body["credential_fingerprint"]:
         raise RuntimeError("TEE authorization credential fingerprint missing")
+    if expected_build_config_id is not None and body["build_config_id"] != expected_build_config_id:
+        raise RuntimeError("TEE authorization build_config_id mismatch")
 
     if expected_parameters is not None:
         expected_hash = tee_authorization_request_hash(

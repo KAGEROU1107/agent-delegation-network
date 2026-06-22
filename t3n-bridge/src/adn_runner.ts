@@ -16,11 +16,14 @@
  */
 
 import { spawn } from "child_process";
+import type { ChildProcessWithoutNullStreams } from "child_process";
 import { writeFileSync, unlinkSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { tmpdir } from "os";
 import { randomBytes } from "crypto";
+import { EventEmitter } from "events";
+import { PassThrough } from "stream";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ADN_ROOT = join(__dirname, "../../");
@@ -37,6 +40,17 @@ export interface AdnDelegationResult {
   uniqueIdentities: number;
 }
 
+export interface TeeAuthorizationBundle {
+  processData?: Record<string, unknown>;
+  validateQuality?: Record<string, unknown>;
+  buildConfigId?: string;
+}
+
+export interface RunAdnDeps {
+  spawnImpl?: typeof spawn;
+  pythonExecutable?: string;
+}
+
 /**
  * Run the Python Agent Delegation Network with the real authenticated DID.
  * The DID comes from T3N auth — NOT hardcoded.
@@ -49,7 +63,9 @@ export interface AdnDelegationResult {
  */
 export async function runAdnWithRealDid(
   apiKey: string,
-  tenantDid: string
+  tenantDid: string,
+  teeAuthorizationBundle: TeeAuthorizationBundle = {},
+  deps: RunAdnDeps = {}
 ): Promise<AdnDelegationResult> {
   // Write script to a temp file so no value is interpolated into a command string.
   const tmpFile = join(tmpdir(), `adn_run_${randomBytes(8).toString("hex")}.py`);
@@ -90,6 +106,7 @@ if csv_path:
 from src.delegation_protocol import DelegationProtocol, DelegationStatus
 from src.result_verifier import verify_worker_result
 from src.tee_authorization import build_tee_authorization_receipt
+tee_bundle = json.loads(os.environ.get('TEE_AUTHORIZATION_BUNDLE_JSON', '{}'))
 
 coord_id = coordinator.identity.agent_id
 w1_id    = worker1.identity.agent_id
@@ -141,11 +158,13 @@ validator.register_task_handler('VALIDATE_QUALITY', validate_handler)
 params1 = {'data_source': 'csv', 'time_period': 'Q1-2026', 'filters': []}
 auth1 = build_tee_authorization_receipt(
     gateway_identity=coordinator.identity,
-    tee_result={
+    tee_result=tee_bundle.get('processData') or {
         'delegation_id': 'tee-del-python-process-data',
         'status': 'ROUTED',
         'routed_to': w1_id,
         'credential_fingerprint': 'local-gateway-process-data',
+        'credential_enforced': True,
+        'build_config_id': tee_bundle.get('buildConfigId'),
     },
     action='PROCESS_DATA',
     parameters=params1,
@@ -154,18 +173,31 @@ did1 = coordinator.delegate_task(w1_id, 'PROCESS_DATA', 'process sales data', pa
 req1 = coordinator._delegations[did1]
 sig1 = req1.to_action_request(coordinator.identity)
 res1 = worker1.process_delegation_request(sig1)
-rd1 = verify_worker_result(res1, w1_id, worker1.identity.public_key_hex, did1, coord_id, expected_tee_authorization=auth1)
+rd1 = verify_worker_result(
+    res1,
+    w1_id,
+    worker1.identity.public_key_hex,
+    did1,
+    coord_id,
+    expected_tee_authorization=auth1,
+    expected_gateway_public_key_hex=auth1['gateway_public_key_hex'],
+    expected_action='PROCESS_DATA',
+    expected_parameters=params1,
+    expected_build_config_id=auth1.get('build_config_id'),
+)
 pd = (rd1.get('result') or {}).get('processed_data', {})
 if not pd: raise RuntimeError('worker1 returned no processed_data — status: ' + str(res1['result_data'].get('status')) + ' error: ' + str(res1['result_data'].get('error')))
 
 params2 = {'data': pd}
 auth2 = build_tee_authorization_receipt(
     gateway_identity=coordinator.identity,
-    tee_result={
+    tee_result=tee_bundle.get('validateQuality') or {
         'delegation_id': 'tee-del-python-validate-quality',
         'status': 'ROUTED',
         'routed_to': val_id,
         'credential_fingerprint': 'local-gateway-validate-quality',
+        'credential_enforced': True,
+        'build_config_id': tee_bundle.get('buildConfigId'),
     },
     action='VALIDATE_QUALITY',
     parameters=params2,
@@ -174,7 +206,18 @@ did2 = coordinator.delegate_task(val_id, 'VALIDATE_QUALITY', 'validate data qual
 req2 = coordinator._delegations[did2]
 sig2 = req2.to_action_request(coordinator.identity)
 res2 = validator.process_delegation_request(sig2)
-rd2 = verify_worker_result(res2, val_id, validator.identity.public_key_hex, did2, coord_id, expected_tee_authorization=auth2)
+rd2 = verify_worker_result(
+    res2,
+    val_id,
+    validator.identity.public_key_hex,
+    did2,
+    coord_id,
+    expected_tee_authorization=auth2,
+    expected_gateway_public_key_hex=auth2['gateway_public_key_hex'],
+    expected_action='VALIDATE_QUALITY',
+    expected_parameters=params2,
+    expected_build_config_id=auth2.get('build_config_id'),
+)
 vd = (rd2.get('result') or {})
 
 print(json.dumps({
@@ -190,16 +233,20 @@ print(json.dumps({
 }))
 `;
 
+  const spawnImpl = deps.spawnImpl ?? spawn;
+  const pythonExecutable = deps.pythonExecutable ?? "python3";
+
   return new Promise((resolve, reject) => {
     writeFileSync(tmpFile, script, "utf-8");
 
-    const proc = spawn("python3", [tmpFile], {
+    const proc = spawnImpl(pythonExecutable, [tmpFile], {
       env: {
         ...process.env,
         ADN_ROOT,
         T3N_API_KEY: apiKey,
         DID: tenantDid,
         T3_MOCK: "false",
+        TEE_AUTHORIZATION_BUNDLE_JSON: JSON.stringify(teeAuthorizationBundle),
       },
     });
 
@@ -223,4 +270,3 @@ print(json.dumps({
     });
   });
 }
-

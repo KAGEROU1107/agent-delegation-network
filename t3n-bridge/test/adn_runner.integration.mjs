@@ -1,4 +1,7 @@
 import assert from "assert/strict";
+import { existsSync, mkdtempSync, rmSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 
 import { prepareAdnExecution, prepareGatewayKeyBundle, runAdnWithRealDid } from "../src/adn_runner.ts";
 
@@ -9,6 +12,11 @@ const authorizationExpiresAt = "2999-01-01T00:00:00+00:00";
 
 const prepared = await prepareAdnExecution(tenantDid, { pythonExecutable });
 const gatewayKeyBundle = await prepareGatewayKeyBundle({ pythonExecutable });
+const previousReplayLedgerDir = process.env.ADN_REPLAY_LEDGER_DIR;
+const previousReplayIntegrityKey = process.env.ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX;
+const replayLedgerDir = mkdtempSync(join(tmpdir(), "adn-persistent-replay-"));
+process.env.ADN_REPLAY_LEDGER_DIR = replayLedgerDir;
+process.env.ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX = "33".repeat(32);
 assert.equal("gateway" in prepared, false);
 const teeBundle = {
   buildConfigId,
@@ -32,45 +40,60 @@ const teeBundle = {
   },
 };
 
-const result = await runAdnWithRealDid(
-  tenantDid,
-  prepared,
-  teeBundle,
-  gatewayKeyBundle,
-  { pythonExecutable }
-);
+try {
+  const result = await runAdnWithRealDid(
+    tenantDid,
+    prepared,
+    teeBundle,
+    gatewayKeyBundle,
+    { pythonExecutable }
+  );
 
-assert.equal(result.success, true);
-assert.equal(result.tenantDid, tenantDid);
-assert.equal(result.uniqueIdentities, 4);
-assert.ok(result.recordsProcessed > 0);
-assert.ok(result.totalRevenue > 0);
-assert.equal(result.qualityPassed, true);
-assert.ok(result.qualityScore >= 0.8);
+  assert.equal(result.success, true);
+  assert.equal(result.tenantDid, tenantDid);
+  assert.equal(result.uniqueIdentities, 4);
+  assert.ok(result.recordsProcessed > 0);
+  assert.ok(result.totalRevenue > 0);
+  assert.equal(result.qualityPassed, true);
+  assert.ok(result.qualityScore >= 0.8);
+  assert.ok(existsSync(join(replayLedgerDir, "replay_ledger.sqlite3")));
 
-await assert.rejects(
-  () =>
-    runAdnWithRealDid(
-      tenantDid,
-      prepared,
-      { buildConfigId, processData: teeBundle.processData },
-      gatewayKeyBundle,
-      { pythonExecutable }
-    ),
-  /validateQuality TEE authorization bundle is required/
-);
+  await assert.rejects(
+    () =>
+      runAdnWithRealDid(
+        tenantDid,
+        prepared,
+        { buildConfigId, processData: teeBundle.processData },
+        gatewayKeyBundle,
+        { pythonExecutable }
+      ),
+    /validateQuality TEE authorization bundle is required/
+  );
 
-const mismatchedBundle = JSON.parse(JSON.stringify(teeBundle));
-mismatchedBundle.processData.routed_to = prepared.validator.agentId;
+  const mismatchedBundle = JSON.parse(JSON.stringify(teeBundle));
+  mismatchedBundle.processData.routed_to = prepared.validator.agentId;
 
-await assert.rejects(
-  () => runAdnWithRealDid(tenantDid, prepared, mismatchedBundle, gatewayKeyBundle, { pythonExecutable }),
-  /processData routed_to mismatch/
-);
+  await assert.rejects(
+    () => runAdnWithRealDid(tenantDid, prepared, mismatchedBundle, gatewayKeyBundle, { pythonExecutable }),
+    /processData routed_to mismatch/
+  );
 
-const wrongGatewayBundle = { ...gatewayKeyBundle, publicKeyHex: "00".repeat(32) };
+  const wrongGatewayBundle = { ...gatewayKeyBundle, publicKeyHex: "00".repeat(32) };
 
-await assert.rejects(
-  () => runAdnWithRealDid(tenantDid, prepared, teeBundle, wrongGatewayBundle, { pythonExecutable }),
-  /Trusted gateway public key mismatch/
-);
+  await assert.rejects(
+    () => runAdnWithRealDid(tenantDid, prepared, teeBundle, wrongGatewayBundle, { pythonExecutable }),
+    /Trusted gateway public key mismatch/
+  );
+} finally {
+  if (previousReplayLedgerDir === undefined) {
+    delete process.env.ADN_REPLAY_LEDGER_DIR;
+  } else {
+    process.env.ADN_REPLAY_LEDGER_DIR = previousReplayLedgerDir;
+  }
+  if (previousReplayIntegrityKey === undefined) {
+    delete process.env.ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX;
+  } else {
+    process.env.ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX = previousReplayIntegrityKey;
+  }
+  rmSync(replayLedgerDir, { recursive: true, force: true });
+}

@@ -16,6 +16,7 @@ os.environ["T3_MOCK"] = "false"
 
 from src.agent_delegation_network import create_agent
 import src.delegation_protocol as delegation_protocol
+import src.replay_ledger as replay_ledger
 from src.tee_authorization import build_tee_authorization_receipt
 import src.result_verifier as result_verifier
 
@@ -31,7 +32,9 @@ def _mk(name):
 
 
 @pytest.fixture
-def verifier_context():
+def verifier_context(monkeypatch, tmp_path):
+    monkeypatch.setenv("ADN_REPLAY_LEDGER_DIR", str(tmp_path / "replay-ledger"))
+    monkeypatch.setenv("ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX", "11" * 32)
     result_verifier._seen.clear()
     if hasattr(result_verifier, "_seen_order"):
         result_verifier._seen_order.clear()
@@ -483,7 +486,7 @@ def test_request_replay_reservation_is_atomic_across_processes(tmp_path):
 
         while time.time() < {start_at!r}:
             time.sleep(0.01)
-        allowed, reason = dp.DelegationProtocol.begin_delegation_request_execution(
+        allowed, reason, _token = dp.DelegationProtocol.begin_delegation_request_execution(
             "shared-replay-key",
             time.time() + 60,
         )
@@ -512,6 +515,66 @@ def test_request_replay_reservation_is_atomic_across_processes(tmp_path):
         results.append(json.loads(stdout.strip()))
 
     assert sum(1 for item in results if item["allowed"]) == 1
+
+
+def test_stale_request_execution_token_cannot_finalize_new_lease(monkeypatch, tmp_path):
+    monkeypatch.setenv("ADN_REPLAY_LEDGER_DIR", str(tmp_path / "replay-ledger"))
+    integrity_key = "22" * 32
+    allowed_a, reason_a, token_a = replay_ledger.begin_request_execution(
+        replay_key="fenced-replay-key",
+        replay_expires_at=time.time() + 600,
+        owner_agent_id="worker-a",
+        delegation_id="tee-del-fenced",
+        payload_fingerprint="receipt-a",
+        integrity_secret_hex=integrity_key,
+    )
+    assert allowed_a, reason_a
+
+    monkeypatch.setattr(replay_ledger, "RUNNING_LEASE_SECONDS", -1)
+
+    allowed_b, reason_b, token_b = replay_ledger.begin_request_execution(
+        replay_key="fenced-replay-key",
+        replay_expires_at=time.time() + 600,
+        owner_agent_id="worker-b",
+        delegation_id="tee-del-fenced",
+        payload_fingerprint="receipt-b",
+        integrity_secret_hex=integrity_key,
+    )
+    assert allowed_b, reason_b
+    assert token_b != token_a
+
+    assert replay_ledger.finalize_request_execution(
+        replay_key="fenced-replay-key",
+        final_state=replay_ledger.REQUEST_STATE_COMPLETED,
+        integrity_secret_hex=integrity_key,
+    ) is False
+    assert replay_ledger.finalize_request_execution(
+        replay_key="fenced-replay-key",
+        final_state=replay_ledger.REQUEST_STATE_COMPLETED,
+        integrity_secret_hex=integrity_key,
+        execution_token=token_a,
+    ) is False
+    assert replay_ledger.finalize_request_execution(
+        replay_key="fenced-replay-key",
+        final_state=replay_ledger.REQUEST_STATE_COMPLETED,
+        integrity_secret_hex=integrity_key,
+        execution_token=token_b,
+    ) is True
+
+
+def test_result_replay_requires_integrity_key(monkeypatch, tmp_path):
+    monkeypatch.setenv("ADN_REPLAY_LEDGER_DIR", str(tmp_path / "replay-ledger"))
+
+    ok, reason = replay_ledger.consume_result_replay(
+        replay_key="result-replay-key",
+        owner_agent_id="coordinator",
+        delegation_id="tee-del-result",
+        payload_fingerprint="payload",
+        integrity_secret_hex=None,
+    )
+
+    assert ok is False
+    assert "integrity" in reason.lower()
 
 
 def test_worker_requires_expected_gateway_context(verifier_context):

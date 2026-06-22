@@ -220,7 +220,7 @@ ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_IS
 
 # Deploy/invoke the pinned artifact and capture fresh proof
 cd ../t3n-bridge
-T3N_API_KEY=0x<your_key> ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> ADN_GATEWAY_PRIVATE_KEY_HEX=<32-byte-ed25519-seed-hex> ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX=<matching-ed25519-pubkey-hex> ADN_GATEWAY_KEY_ID=<gateway-key-id> node --loader ts-node/esm src/index.ts 2>&1 | tee ../proof/live_run_v3.9.2.txt
+T3N_API_KEY=0x<your_key> ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> ADN_GATEWAY_PRIVATE_KEY_HEX=<32-byte-ed25519-seed-hex> ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX=<matching-ed25519-pubkey-hex> ADN_GATEWAY_KEY_ID=<gateway-key-id> ADN_REPLAY_LEDGER_DIR=../runtime/replay_ledger ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX=<32-byte-replay-hmac-key-hex> node --loader ts-node/esm src/index.ts 2>&1 | tee ../proof/live_run_v3.9.2.txt
 ```
 
 The bridge writes `proof/deployment_manifest_v3.9.2.local.json` with the actual post-build `localWasmSha256` and `manifestDigest`. The committed live proof remains v3.8.1 until this pinned v3.9.2 sequence is run against T3N and the resulting proof plus deployment manifest are committed.
@@ -277,15 +277,15 @@ Run the local feature-pattern demo: `T3N_API_KEY=0x<key> python demo/features_de
 
 **What is enforced in the current live v3.8.1 proof:** T3N authentication, SDK-native credential construction, Rust/WASM TEE structural validation of envelope presence, credential domain, TTL, delegated function scope, nonce format (≥8 bytes), and `agent_sig` presence. Delegation envelope is **mandatory** on `delegate-task` in v3.8.1 source. Trust policy requires both action rule AND explicit trust relationship (dual default-deny).
 
-**Explicit live-proof boundaries:** v3.9.2 source adds issuer-pinned cryptographic verification, request binding, digest-derived delegation IDs, and a prepare -> authorize -> execute Python bridge that requires real `delegate-task` outputs for exact prepared worker IDs plus a dedicated pinned gateway signer. Workers now require the exact gateway public key, `gateway_key_id`, `build_config_id`, and `authorization_expires_at` carried by the typed authorization bundle. Worker request replay is recorded in a durable on-disk ledger keyed by delegation ID, request hash, and receipt fingerprint; completed requests stay single-use across restarts, running tasks renew their replay lease while active, and handler crashes become bounded retryable failures. Coordinator-side worker-result verification also persists accepted result fingerprints in a durable replay ledger so restarts do not re-accept the same signed result. It is still not backed by a pinned live deployment proof, and the receipt remains gateway-linked local evidence rather than a T3N-attested worker-dispatch primitive. Durable contract-layer nonce replay registry, persistent workflow state, and immediate revocation-registry lookup remain unproven in the current `generic-input` contract world.
+**Explicit live-proof boundaries:** v3.9.2 source adds issuer-pinned cryptographic verification, request binding, digest-derived delegation IDs, and a prepare -> authorize -> execute Python bridge that requires real `delegate-task` outputs for exact prepared worker IDs plus a dedicated pinned gateway signer. Workers now require the exact gateway public key, `gateway_key_id`, `build_config_id`, and `authorization_expires_at` carried by the typed authorization bundle. Worker request replay is recorded in a durable on-disk ledger keyed by delegation ID, request hash, and receipt fingerprint; completed requests stay single-use across restarts, running tasks renew their replay lease with an execution-token fence, and handler crashes become bounded retryable failures. Coordinator-side worker-result verification also persists accepted result fingerprints in a durable replay ledger so restarts do not re-accept the same signed result. Live bridge execution requires `ADN_REPLAY_LEDGER_DIR` outside the temp tree and `ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX`; request/result replay rows are MACed with domain-separated HMAC keys. It is still not backed by a pinned live deployment proof, and the receipt remains gateway-linked local evidence rather than a T3N-attested worker-dispatch primitive. Durable contract-layer nonce replay registry, persistent workflow state, and immediate revocation-registry lookup remain unproven in the current `generic-input` contract world.
 
-70 Python security tests across 3 suites: 34 adapter/policy negative-security checks,
-26 worker-result, gateway-receipt, request/result replay, and bridge-hardening verification checks, and 10 audit guardrails.
+72 Python security tests across 3 suites: 34 adapter/policy negative-security checks,
+28 worker-result, gateway-receipt, request/result replay, and bridge-hardening verification checks, and 10 audit guardrails.
 Tests cover Python signing adapter, policy logic, coordinator-side result verification, TypeScript bridge buildability, and Rust/WASM contract enforcement. The committed live T3N proof remains the v3.8.1 structural proof until a pinned v3.9.2 run is captured.
 
 ```
 python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py -v --tb=short
-# 70 passed
+# 72 passed
 ```
 
 ---

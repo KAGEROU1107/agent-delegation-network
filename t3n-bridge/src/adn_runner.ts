@@ -13,7 +13,7 @@
  */
 
 import { spawn } from "child_process";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { tmpdir } from "os";
@@ -415,12 +415,26 @@ function cleanupTempFiles(paths: string[], dirs: string[] = []): void {
 function requireHexEnv(name: string): string {
   const value = process.env[name]?.trim().replace(/^0x/i, "").toLowerCase();
   if (!value) {
-    throw new Error(`${name} is required for the Python gateway signer`);
+    throw new Error(`${name} is required`);
   }
   if (!/^[0-9a-f]{64}$/.test(value)) {
     throw new Error(`${name} must be 32 bytes of hex, with or without 0x.`);
   }
   return value;
+}
+
+function requireReplayLedgerDir(): string {
+  const dir = process.env.ADN_REPLAY_LEDGER_DIR?.trim();
+  if (!dir) {
+    throw new Error("ADN_REPLAY_LEDGER_DIR is required for durable live replay protection");
+  }
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  chmodSync(dir, 0o700);
+  return dir;
+}
+
+function requireReplayLedgerIntegrityKey(): string {
+  return requireHexEnv("ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX");
 }
 
 export function requireConfiguredGatewayKeyBundleFromEnv(): GatewayKeyBundle {
@@ -521,6 +535,8 @@ export async function runAdnWithRealDid(
   gatewayKeyBundle: GatewayKeyBundle,
   deps: RunAdnDeps = {},
 ): Promise<AdnDelegationResult> {
+  const replayLedgerDir = requireReplayLedgerDir();
+  const replayLedgerIntegrityKey = requireReplayLedgerIntegrityKey();
   const tempDir = createSecureTempDir("adn_execute");
   const identityBundlePath = writeJsonTemp(tempDir, "adn_identity_bundle", preparedExecution);
   const teeAuthorizationPath = writeJsonTemp(tempDir, "adn_tee_bundle", teeAuthorizationBundle);
@@ -534,7 +550,8 @@ export async function runAdnWithRealDid(
         ADN_IDENTITY_BUNDLE_PATH: identityBundlePath,
         TEE_AUTHORIZATION_BUNDLE_PATH: teeAuthorizationPath,
         ADN_GATEWAY_KEY_BUNDLE_PATH: gatewayKeyBundlePath,
-        ADN_REPLAY_LEDGER_DIR: join(tempDir, "replay-ledger"),
+        ADN_REPLAY_LEDGER_DIR: replayLedgerDir,
+        ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX: replayLedgerIntegrityKey,
       },
       deps,
     );

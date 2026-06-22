@@ -372,7 +372,7 @@ class DelegationProtocol:
         delegation_id: str = "",
         payload_fingerprint: str = "",
         integrity_secret_hex: Optional[str] = None,
-    ) -> Tuple[bool, str]:
+    ) -> Tuple[bool, str, Optional[str]]:
         return begin_request_execution(
             replay_key=replay_key,
             replay_expires_at=replay_expires_at,
@@ -386,8 +386,9 @@ class DelegationProtocol:
     def heartbeat_delegation_request_execution(
         replay_key: str,
         integrity_secret_hex: Optional[str] = None,
-    ) -> None:
-        heartbeat_request_execution(replay_key, integrity_secret_hex)
+        execution_token: Optional[str] = None,
+    ) -> bool:
+        return heartbeat_request_execution(replay_key, integrity_secret_hex, execution_token)
 
     @staticmethod
     def finalize_delegation_request_execution(
@@ -395,14 +396,16 @@ class DelegationProtocol:
         state: str,
         integrity_secret_hex: Optional[str] = None,
         error: Optional[str] = None,
-    ) -> None:
+        execution_token: Optional[str] = None,
+    ) -> bool:
         if state not in {REQUEST_STATE_COMPLETED, REQUEST_STATE_RETRYABLE_FAILURE}:
             raise ValueError(f"Unsupported replay state: {state}")
-        finalize_request_execution(
+        return finalize_request_execution(
             replay_key=replay_key,
             final_state=state,
             integrity_secret_hex=integrity_secret_hex,
             last_error=error,
+            execution_token=execution_token,
         )
     
     @staticmethod

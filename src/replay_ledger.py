@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import os
+import secrets
 import sqlite3
 import tempfile
 import time
@@ -21,6 +22,7 @@ RESULT_REPLAY_TTL_SECONDS = 15 * 60
 MAX_REQUEST_ATTEMPTS = 2
 _CONNECT_RETRY_ATTEMPTS = 8
 _CONNECT_RETRY_DELAY_SECONDS = 0.05
+_INTEGRITY_DOMAIN_PREFIX = "adn.replay-ledger.integrity"
 
 
 def _best_effort_chmod(path: Path, mode: int) -> None:
@@ -70,10 +72,17 @@ def _connect() -> sqlite3.Connection:
                     delegation_id TEXT,
                     payload_fingerprint TEXT,
                     integrity_mac TEXT,
-                    last_error TEXT
+                    last_error TEXT,
+                    execution_token TEXT
                 )
                 """
             )
+            columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(replay_entries)").fetchall()
+            }
+            if "execution_token" not in columns:
+                conn.execute("ALTER TABLE replay_entries ADD COLUMN execution_token TEXT")
             _best_effort_chmod(db_path, 0o600)
             return conn
         except sqlite3.OperationalError as exc:
@@ -101,6 +110,7 @@ def _stable_record_payload(record: Dict[str, Any]) -> str:
         "delegation_id": record.get("delegation_id"),
         "payload_fingerprint": record.get("payload_fingerprint"),
         "last_error": record.get("last_error"),
+        "execution_token": record.get("execution_token"),
     }
     return json.dumps(body, sort_keys=True, separators=(",", ":"))
 
@@ -110,6 +120,21 @@ def _compute_integrity_mac(record: Dict[str, Any], integrity_secret_hex: Optiona
         return None
     secret = bytes.fromhex(integrity_secret_hex)
     return hmac.new(secret, _stable_record_payload(record).encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def derive_integrity_key(secret_hex: Optional[str], domain: str) -> Optional[str]:
+    if not secret_hex:
+        return None
+    secret = bytes.fromhex(secret_hex)
+    label = f"{_INTEGRITY_DOMAIN_PREFIX}.{domain}".encode("utf-8")
+    return hmac.new(secret, label, hashlib.sha256).hexdigest()
+
+
+def configured_integrity_key(domain: str) -> Optional[str]:
+    return derive_integrity_key(
+        os.environ.get("ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX", "").strip(),
+        domain,
+    )
 
 
 def _verify_integrity(record: sqlite3.Row, integrity_secret_hex: Optional[str]) -> None:
@@ -140,6 +165,7 @@ def _write_record(
     payload_fingerprint: str,
     integrity_secret_hex: Optional[str],
     last_error: Optional[str] = None,
+    execution_token: Optional[str] = None,
 ) -> None:
     record = {
         "replay_key": replay_key,
@@ -154,6 +180,7 @@ def _write_record(
         "delegation_id": delegation_id,
         "payload_fingerprint": payload_fingerprint,
         "last_error": last_error,
+        "execution_token": execution_token,
     }
     record["integrity_mac"] = _compute_integrity_mac(record, integrity_secret_hex)
     conn.execute(
@@ -161,8 +188,8 @@ def _write_record(
         INSERT INTO replay_entries (
             replay_key, kind, state, attempt_count, max_attempts, first_seen_at,
             updated_at, expires_at, owner_agent_id, delegation_id, payload_fingerprint,
-            integrity_mac, last_error
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            integrity_mac, last_error, execution_token
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(replay_key) DO UPDATE SET
             kind=excluded.kind,
             state=excluded.state,
@@ -175,7 +202,8 @@ def _write_record(
             delegation_id=excluded.delegation_id,
             payload_fingerprint=excluded.payload_fingerprint,
             integrity_mac=excluded.integrity_mac,
-            last_error=excluded.last_error
+            last_error=excluded.last_error,
+            execution_token=excluded.execution_token
         """,
         (
             replay_key,
@@ -191,6 +219,7 @@ def _write_record(
             payload_fingerprint,
             record["integrity_mac"],
             last_error,
+            execution_token,
         ),
     )
 
@@ -202,11 +231,12 @@ def begin_request_execution(
     delegation_id: str,
     payload_fingerprint: str,
     integrity_secret_hex: Optional[str],
-) -> Tuple[bool, str]:
+) -> Tuple[bool, str, Optional[str]]:
     if not replay_key:
-        return False, "Delegation request replay key missing"
+        return False, "Delegation request replay key missing", None
 
     now_ts = time.time()
+    execution_token = secrets.token_hex(16)
     conn = _connect()
     try:
         conn.execute("BEGIN IMMEDIATE")
@@ -231,9 +261,10 @@ def begin_request_execution(
                 delegation_id=delegation_id,
                 payload_fingerprint=payload_fingerprint,
                 integrity_secret_hex=integrity_secret_hex,
+                execution_token=execution_token,
             )
             conn.commit()
-            return True, ""
+            return True, "", execution_token
 
         _verify_integrity(row, integrity_secret_hex)
         existing = _row_to_dict(row)
@@ -246,13 +277,13 @@ def begin_request_execution(
 
         if state == REQUEST_STATE_COMPLETED:
             conn.commit()
-            return False, "Delegation request replay detected"
+            return False, "Delegation request replay detected", None
         if state == REQUEST_STATE_FINAL_FAILURE:
             conn.commit()
-            return False, "Delegation request reached final failure"
+            return False, "Delegation request reached final failure", None
         if state == REQUEST_STATE_RUNNING and (now_ts - updated_at) < RUNNING_LEASE_SECONDS:
             conn.commit()
-            return False, "Delegation request already running"
+            return False, "Delegation request already running", None
         if attempt_count >= max_attempts:
             _write_record(
                 conn,
@@ -269,9 +300,10 @@ def begin_request_execution(
                 payload_fingerprint=payload_fingerprint,
                 integrity_secret_hex=integrity_secret_hex,
                 last_error="Delegation request retry limit exceeded",
+                execution_token=None,
             )
             conn.commit()
-            return False, "Delegation request retry limit exceeded"
+            return False, "Delegation request retry limit exceeded", None
 
         _write_record(
             conn,
@@ -287,16 +319,21 @@ def begin_request_execution(
             delegation_id=delegation_id,
             payload_fingerprint=payload_fingerprint,
             integrity_secret_hex=integrity_secret_hex,
+            execution_token=execution_token,
         )
         conn.commit()
-        return True, ""
+        return True, "", execution_token
     finally:
         conn.close()
 
 
-def heartbeat_request_execution(replay_key: str, integrity_secret_hex: Optional[str]) -> None:
+def heartbeat_request_execution(
+    replay_key: str,
+    integrity_secret_hex: Optional[str],
+    execution_token: Optional[str],
+) -> bool:
     if not replay_key:
-        return
+        return False
     now_ts = time.time()
     conn = _connect()
     try:
@@ -307,12 +344,16 @@ def heartbeat_request_execution(replay_key: str, integrity_secret_hex: Optional[
         ).fetchone()
         if row is None:
             conn.commit()
-            return
+            return False
         _verify_integrity(row, integrity_secret_hex)
         existing = _row_to_dict(row)
         if existing["state"] != REQUEST_STATE_RUNNING:
             conn.commit()
-            return
+            return False
+        existing_token = existing.get("execution_token")
+        if existing_token and existing_token != execution_token:
+            conn.commit()
+            return False
         _write_record(
             conn,
             replay_key=replay_key,
@@ -328,8 +369,10 @@ def heartbeat_request_execution(replay_key: str, integrity_secret_hex: Optional[
             payload_fingerprint=existing.get("payload_fingerprint") or "",
             integrity_secret_hex=integrity_secret_hex,
             last_error=existing.get("last_error"),
+            execution_token=existing.get("execution_token"),
         )
         conn.commit()
+        return True
     finally:
         conn.close()
 
@@ -339,9 +382,10 @@ def finalize_request_execution(
     final_state: str,
     integrity_secret_hex: Optional[str],
     last_error: Optional[str] = None,
-) -> None:
+    execution_token: Optional[str] = None,
+) -> bool:
     if not replay_key:
-        return
+        return False
     now_ts = time.time()
     conn = _connect()
     try:
@@ -352,9 +396,13 @@ def finalize_request_execution(
         ).fetchone()
         if row is None:
             conn.commit()
-            return
+            return False
         _verify_integrity(row, integrity_secret_hex)
         existing = _row_to_dict(row)
+        existing_token = existing.get("execution_token")
+        if existing_token and existing_token != execution_token:
+            conn.commit()
+            return False
         next_state = final_state
         if final_state == REQUEST_STATE_RETRYABLE_FAILURE and int(existing["attempt_count"]) >= int(existing["max_attempts"]):
             next_state = REQUEST_STATE_FINAL_FAILURE
@@ -374,8 +422,10 @@ def finalize_request_execution(
             payload_fingerprint=existing.get("payload_fingerprint") or "",
             integrity_secret_hex=integrity_secret_hex,
             last_error=last_error,
+            execution_token=None,
         )
         conn.commit()
+        return True
     finally:
         conn.close()
 
@@ -390,6 +440,8 @@ def consume_result_replay(
 ) -> Tuple[bool, str]:
     if not replay_key:
         return False, "result replay key missing"
+    if not integrity_secret_hex:
+        return False, "result replay integrity key missing"
 
     now_ts = time.time()
     effective_expires_at = float(expires_at or (now_ts + RESULT_REPLAY_TTL_SECONDS))

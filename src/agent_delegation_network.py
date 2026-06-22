@@ -23,6 +23,7 @@ from src.delegation_policy import DelegationPolicyEngine, DelegationPolicy
 from src.terminal3_agent_auth_adapter import sign_action_request, verify_action_request
 from src.tee_authorization import receipt_fingerprint
 from src.execution_receipt import build_receipt, verify_receipt
+from src.replay_ledger import configured_integrity_key, derive_integrity_key
 
 
 # Set up logging
@@ -46,7 +47,18 @@ def _delegation_request_replay_expires_at(delegation_request: DelegationRequest)
     return expires_at
 
 
-def _start_request_replay_heartbeat(replay_key: str, integrity_secret_hex: Optional[str]):
+def _request_replay_integrity_key(identity: AgentIdentity) -> Optional[str]:
+    configured = configured_integrity_key("request")
+    if configured:
+        return configured
+    return derive_integrity_key(identity.private_key_hex, "request")
+
+
+def _start_request_replay_heartbeat(
+    replay_key: str,
+    integrity_secret_hex: Optional[str],
+    execution_token: Optional[str],
+):
     stop_event = Event()
 
     def _loop():
@@ -54,6 +66,7 @@ def _start_request_replay_heartbeat(replay_key: str, integrity_secret_hex: Optio
             DelegationProtocol.heartbeat_delegation_request_execution(
                 replay_key,
                 integrity_secret_hex,
+                execution_token,
             )
 
     thread = Thread(target=_loop, daemon=True)
@@ -316,13 +329,14 @@ class AgentDelegationNetwork:
                 )
                 return result.to_action_request(self.identity)
 
-            replay_allowed, replay_reason = DelegationProtocol.begin_delegation_request_execution(
+            replay_integrity_key = _request_replay_integrity_key(self.identity)
+            replay_allowed, replay_reason, replay_execution_token = DelegationProtocol.begin_delegation_request_execution(
                 replay_key,
                 _delegation_request_replay_expires_at(delegation_request),
                 self.identity.agent_id,
                 delegation_request.delegation_id,
                 receipt_fingerprint(delegation_request.tee_authorization or {}),
-                self.identity.private_key_hex,
+                replay_integrity_key,
             )
             if not replay_allowed:
                 logger.warning(replay_reason)
@@ -352,7 +366,8 @@ class AgentDelegationNetwork:
             # Execute the task
             heartbeat_stop, heartbeat_thread = _start_request_replay_heartbeat(
                 replay_key,
-                self.identity.private_key_hex,
+                replay_integrity_key,
+                replay_execution_token,
             )
 
             try:
@@ -369,7 +384,8 @@ class AgentDelegationNetwork:
                 DelegationProtocol.finalize_delegation_request_execution(
                     replay_key,
                     "COMPLETED",
-                    self.identity.private_key_hex,
+                    replay_integrity_key,
+                    execution_token=replay_execution_token,
                 )
                 
                 status = DelegationStatus.COMPLETED
@@ -379,8 +395,9 @@ class AgentDelegationNetwork:
                 DelegationProtocol.finalize_delegation_request_execution(
                     replay_key,
                     "RETRYABLE_FAILURE",
-                    self.identity.private_key_hex,
+                    replay_integrity_key,
                     error=str(e),
+                    execution_token=replay_execution_token,
                 )
                 result = DelegationProtocol.create_delegation_result(
                     delegation_request,

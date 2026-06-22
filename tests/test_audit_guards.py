@@ -137,8 +137,12 @@ def test_runner_uses_private_temp_dir_for_sensitive_files():
     assert "mode: 0o600" in runner
     assert "0o700" in runner
     assert "ADN_REPLAY_LEDGER_DIR" in runner
+    assert "ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX" in runner
+    assert "ADN_REPLAY_LEDGER_DIR is required for durable live replay protection" in runner
+    assert "ADN_REPLAY_LEDGER_DIR: replayLedgerDir" in runner
     assert "sqlite3" in replay_ledger
     assert "BEGIN IMMEDIATE" in replay_ledger
+    assert "execution_token" in replay_ledger
 
 
 def test_live_demo_docs_require_pinned_deployment_sequence():

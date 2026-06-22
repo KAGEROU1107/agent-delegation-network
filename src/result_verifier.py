@@ -2,7 +2,7 @@ import threading
 import time
 from collections import deque
 
-from src.replay_ledger import consume_result_replay
+from src.replay_ledger import configured_integrity_key, consume_result_replay
 from src.terminal3_agent_auth_adapter import verify_action_request, _canonical, _sha256
 from src.tee_authorization import receipt_fingerprint, verify_tee_authorization_receipt
 
@@ -48,7 +48,7 @@ def _consume_result_replay(proof, rd, receipt, expected_worker_pubkey_hex, coord
         delegation_id=rd.get("delegation_id") or "",
         payload_fingerprint=proof.get("data_hash") or "",
         expires_at=None,
-        integrity_secret_hex=None,
+        integrity_secret_hex=configured_integrity_key("result"),
     )
     if not ok:
         raise RuntimeError(reason)

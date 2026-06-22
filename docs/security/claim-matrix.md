@@ -9,7 +9,7 @@ Current release label: `source-hardened / live-proof pending`.
 | T3N-attested authorization | Not claimed | Worker-verifiable T3N invocation receipt, signed response, or attestation |
 | Durable host replay protection | Conditional | `ADN_RUNTIME_MODE=live`, persistent ledger configuration, restart replay proof |
 | Contract-layer persistence | Not claimed | State-capable WIT/storage world and nonce consume proof |
-| Deployment artifact provenance | Partial | deployment manifest finalization with registration response digest and invocation digest |
+| Deployment artifact provenance | Partial | `adn-release-proof-v1` manifest finalization with registration response, invocation receipt, T3N evidence digest, replay proof, and CI artifact evidence |
 | Production-security release | Blocked | executor key separation, live proof artifact, visible CI success |
 
 ## Release Gate Checklist

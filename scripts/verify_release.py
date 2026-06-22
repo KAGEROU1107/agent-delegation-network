@@ -22,6 +22,7 @@ REQUIRED_PROOF_FILES = [
     "deployment_manifest.sig",
     "registration_response.json",
     "invocation_receipt.json",
+    "t3n_evidence.json",
     "replay_restart_proof.json",
     "ci_release_sha.json",
 ]
@@ -40,7 +41,13 @@ def read_json(path: Path) -> Any:
 
 
 def manifest_body(manifest: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in manifest.items() if key != "manifestDigest"}
+    return {key: value for key, value in manifest.items() if key != "manifest_digest"}
+
+
+def require_fields(label: str, payload: dict[str, Any], fields: list[str]) -> None:
+    missing = [field for field in fields if payload.get(field) in (None, "")]
+    if missing:
+        raise RuntimeError(f"{label} missing required fields: " + ", ".join(missing))
 
 
 def require_digest(label: str, expected: str, payload: Any) -> None:
@@ -81,10 +88,30 @@ def verify_release_dir(proof_dir: Path | str) -> dict[str, Any]:
     signature_doc = read_json(proof_path / "deployment_manifest.sig")
     registration_response = read_json(proof_path / "registration_response.json")
     invocation_receipt = read_json(proof_path / "invocation_receipt.json")
+    t3n_evidence = read_json(proof_path / "t3n_evidence.json")
     replay_restart_proof = read_json(proof_path / "replay_restart_proof.json")
     ci_release = read_json(proof_path / "ci_release_sha.json")
 
-    require_digest("manifest", str(manifest.get("manifestDigest", "")), manifest_body(manifest))
+    require_fields(
+        "deployment manifest",
+        manifest,
+        [
+            "schema_version",
+            "build_commit",
+            "build_config_id",
+            "local_wasm_sha256",
+            "remote_contract_id",
+            "raw_registration_response_digest",
+            "first_invocation_digest",
+            "t3n_evidence_digest",
+            "operator_public_key",
+            "manifest_digest",
+        ],
+    )
+    if manifest.get("schema_version") != "adn-release-proof-v1":
+        raise RuntimeError("deployment manifest schema_version must be adn-release-proof-v1")
+
+    require_digest("manifest", str(manifest.get("manifest_digest", "")), manifest_body(manifest))
     require_digest(
         "registration response",
         str(manifest.get("raw_registration_response_digest", "")),
@@ -95,9 +122,19 @@ def verify_release_dir(proof_dir: Path | str) -> dict[str, Any]:
         str(manifest.get("first_invocation_digest", "")),
         invocation_receipt,
     )
+    require_digest(
+        "T3N evidence",
+        str(manifest.get("t3n_evidence_digest", "")),
+        t3n_evidence,
+    )
     verify_manifest_signature(manifest, signature_doc)
 
-    if ci_release.get("status") != "success":
+    require_fields(
+        "CI release evidence",
+        ci_release,
+        ["repository", "sha", "workflow_run_id", "workflow_conclusion", "artifact_id", "retrieved_at"],
+    )
+    if ci_release.get("workflow_conclusion") != "success":
         raise RuntimeError("CI status is not successful for release SHA")
     if ci_release.get("sha") != manifest.get("build_commit"):
         raise RuntimeError("release SHA does not match manifest build_commit")
@@ -105,11 +142,11 @@ def verify_release_dir(proof_dir: Path | str) -> dict[str, Any]:
         raise RuntimeError("invocation receipt build_config_id does not match manifest")
     if replay_restart_proof.get("build_config_id") != manifest.get("build_config_id"):
         raise RuntimeError("replay proof build_config_id does not match manifest")
-    if replay_restart_proof.get("requestReplayRejected") is not True:
+    if replay_restart_proof.get("request_replay_rejected") is not True:
         raise RuntimeError("replay proof does not show request replay rejection")
-    if replay_restart_proof.get("resultReplayRejected") is not True:
+    if replay_restart_proof.get("result_replay_rejected") is not True:
         raise RuntimeError("replay proof does not show result replay rejection")
-    if replay_restart_proof.get("ledgerPersistedAcrossRestart") is not True:
+    if replay_restart_proof.get("ledger_persisted_across_restart") is not True:
         raise RuntimeError("replay proof does not show restart persistence")
 
     return {

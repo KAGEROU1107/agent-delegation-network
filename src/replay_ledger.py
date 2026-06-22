@@ -4,6 +4,7 @@ import json
 import os
 import secrets
 import sqlite3
+import stat
 import tempfile
 import time
 from pathlib import Path
@@ -130,14 +131,58 @@ def derive_integrity_key(secret_hex: Optional[str], domain: str) -> Optional[str
     return hmac.new(secret, label, hashlib.sha256).hexdigest()
 
 
+def _validate_live_integrity_key_file(key_file: Path) -> None:
+    if not key_file.is_absolute():
+        raise RuntimeError("ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE must be absolute in live mode")
+
+    try:
+        link_stat = os.lstat(key_file)
+    except OSError as exc:
+        raise RuntimeError(f"ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE is not readable: {exc}") from exc
+
+    if stat.S_ISLNK(link_stat.st_mode):
+        raise RuntimeError("ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE must not be a symlink in live mode")
+    if not stat.S_ISREG(link_stat.st_mode):
+        raise RuntimeError("ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE must be a regular file in live mode")
+
+    parent = key_file.parent
+    try:
+        parent_stat = os.stat(parent)
+    except OSError as exc:
+        raise RuntimeError(f"ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE parent is not readable: {exc}") from exc
+
+    # Windows does not provide reliable POSIX mode/uid semantics for this check.
+    if os.name == "nt":
+        return
+
+    file_mode = stat.S_IMODE(link_stat.st_mode)
+    parent_mode = stat.S_IMODE(parent_stat.st_mode)
+    if file_mode != 0o600:
+        raise RuntimeError("ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE must have 0600 permissions in live mode")
+    if parent_mode != 0o700:
+        raise RuntimeError("ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE parent must have 0700 permissions in live mode")
+
+    if hasattr(os, "geteuid"):
+        expected_uid = os.geteuid()
+        if link_stat.st_uid != expected_uid:
+            raise RuntimeError("ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE must be owned by the service user")
+        if parent_stat.st_uid != expected_uid:
+            raise RuntimeError("ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE parent must be owned by the service user")
+
+
 def _configured_integrity_secret_hex() -> Optional[str]:
     raw_env_secret = os.environ.get("ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX", "").strip()
     key_file = os.environ.get("ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE", "").strip()
     runtime_mode = os.environ.get("ADN_RUNTIME_MODE", "").strip().lower()
     if runtime_mode == "live" and raw_env_secret:
         raise RuntimeError("ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX is not accepted in live mode")
+    if runtime_mode == "live" and not key_file:
+        raise RuntimeError("ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE is required in live mode")
     if key_file:
-        return Path(key_file).read_text(encoding="utf-8").strip().removeprefix("0x").lower()
+        key_path = Path(key_file)
+        if runtime_mode == "live":
+            _validate_live_integrity_key_file(key_path)
+        return key_path.read_text(encoding="utf-8").strip().removeprefix("0x").lower()
     return raw_env_secret.removeprefix("0x").lower() or None
 
 

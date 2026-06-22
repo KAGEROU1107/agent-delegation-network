@@ -39,12 +39,14 @@ The release proof verifier expects:
 - `deployment_manifest.sig`
 - `registration_response.json`
 - `invocation_receipt.json`
+- `t3n_evidence.json`
 - `replay_restart_proof.json`
 - `ci_release_sha.json`
 
 The verifier checks manifest digest, operator signature, registration response
-digest, first invocation digest, release SHA, CI status, build configuration,
-and replay restart proof booleans.
+digest, first invocation digest, T3N evidence digest, release SHA, CI workflow
+evidence fields, build configuration, and snake_case replay restart proof
+booleans.
 
 Persistent auction, vault, KYC, DAO, bond, and reputation systems cannot be
 claimed until state-capable contract or executor storage semantics are designed,

@@ -136,15 +136,15 @@ elif mode == "replay":
     except RuntimeError as exc:
         result_error = str(exc)
     output = {
-        "requestReplayRejected": replayed["result_data"]["status"] == "FAILED" and "replay" in request_error.lower(),
-        "resultReplayRejected": "replay" in result_error.lower() or "consumed" in result_error.lower(),
-        "requestError": request_error,
-        "resultError": result_error,
-        "ledgerPersistedAcrossRestart": True,
+        "request_replay_rejected": replayed["result_data"]["status"] == "FAILED" and "replay" in request_error.lower(),
+        "result_replay_rejected": "replay" in result_error.lower() or "consumed" in result_error.lower(),
+        "request_error": request_error,
+        "result_error": result_error,
+        "ledger_persisted_across_restart": True,
         "build_config_id": BUILD_CONFIG_ID,
     }
     print(json.dumps(output, sort_keys=True))
-    if not output["requestReplayRejected"] or not output["resultReplayRejected"]:
+    if not output["request_replay_rejected"] or not output["result_replay_rejected"]:
         raise SystemExit(2)
 else:
     raise SystemExit(f"unknown mode: {mode}")
@@ -172,9 +172,9 @@ try {
   assert.equal(created.created, true);
   assert.equal(created.requestStatus, "COMPLETED");
   const replayed = runFixture("replay");
-  assert.equal(replayed.requestReplayRejected, true);
-  assert.equal(replayed.resultReplayRejected, true);
-  assert.equal(replayed.ledgerPersistedAcrossRestart, true);
+  assert.equal(replayed.request_replay_rejected, true);
+  assert.equal(replayed.result_replay_rejected, true);
+  assert.equal(replayed.ledger_persisted_across_restart, true);
   assert.equal(replayed.build_config_id, "adn-build-restart");
   assert.ok(existsSync(join(replayLedgerDir, "replay_ledger.sqlite3")));
 } finally {

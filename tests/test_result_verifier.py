@@ -739,3 +739,30 @@ def test_duplicate_result_nonce_is_atomic_under_concurrency(verifier_context, mo
 
     assert outcomes.count("accepted") == 1
     assert outcomes.count("rejected") == 1
+
+
+def test_live_integrity_key_file_must_be_absolute(monkeypatch):
+    monkeypatch.setenv("ADN_RUNTIME_MODE", "live")
+    monkeypatch.delenv("ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX", raising=False)
+    monkeypatch.setenv("ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE", "relative-replay.key")
+
+    with pytest.raises(RuntimeError, match="must be absolute"):
+        replay_ledger.configured_integrity_key("request")
+
+
+def test_live_integrity_key_file_is_validated_at_python_boundary(monkeypatch, tmp_path):
+    key_dir = tmp_path / "keys"
+    key_dir.mkdir()
+    key_file = key_dir / "replay-hmac.key"
+    key_file.write_text("12" * 32, encoding="utf-8")
+    try:
+        os.chmod(key_dir, 0o700)
+        os.chmod(key_file, 0o600)
+    except OSError:
+        pass
+
+    monkeypatch.setenv("ADN_RUNTIME_MODE", "live")
+    monkeypatch.delenv("ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX", raising=False)
+    monkeypatch.setenv("ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE", str(key_file))
+
+    assert replay_ledger.configured_integrity_key("request") == replay_ledger.derive_integrity_key("12" * 32, "request")

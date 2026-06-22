@@ -6,8 +6,13 @@
  * script_name format: z:<40-hex-tid>:<tail>  (strip "did:t3n:" prefix)
  */
 
-import { createHash } from "crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import {
+  createHash,
+  createPrivateKey,
+  createPublicKey,
+  sign as signBytes,
+} from "crypto";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import type { TenantClient, T3nClient } from "@terminal3/t3n-sdk";
@@ -15,27 +20,38 @@ import type { TenantClient, T3nClient } from "@terminal3/t3n-sdk";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WASM_PATH = join(__dirname, "../../contract/target/wasm32-wasip2/release/adn_processor.wasm");
 const PROOF_DIR = join(__dirname, "../../proof");
-const DEPLOYMENT_MANIFEST_PATH = join(PROOF_DIR, "deployment_manifest_v3.9.2.local.json");
+const RELEASE_PROOF_DIR = join(PROOF_DIR, "release");
+const DEPLOYMENT_MANIFEST_PATH = join(RELEASE_PROOF_DIR, "deployment_manifest.json");
+const DEPLOYMENT_MANIFEST_SIGNATURE_PATH = join(RELEASE_PROOF_DIR, "deployment_manifest.sig");
+const REGISTRATION_RESPONSE_PATH = join(RELEASE_PROOF_DIR, "registration_response.json");
+const INVOCATION_RECEIPT_PATH = join(RELEASE_PROOF_DIR, "invocation_receipt.json");
+const T3N_EVIDENCE_PATH = join(RELEASE_PROOF_DIR, "t3n_evidence.json");
+const LEGACY_DEPLOYMENT_MANIFEST_PATH = join(PROOF_DIR, "deployment_manifest_v3.9.2.local.json");
 const CONTRACT_TAIL = "adn-processor";
 const CONTRACT_VERSION = "3.9.2"; // mandatory-envelope enforcement (C-01 fix, rebuilt 2026-06-20)
+const ED25519_PKCS8_SEED_PREFIX = Buffer.from("302e020100300506032b657004220420", "hex");
 
 export interface DeploymentManifest {
-  v: "adn.deployment_manifest/1";
-  contractTail: string;
-  contractVersion: string;
-  buildCommit: string;
-  rustcVersion: string;
-  trustedIssuer: string;
-  tenantDid: string;
-  buildConfigId: string;
-  localWasmSha256: string;
-  registrationStatus: "pending" | "registered";
-  registeredAt?: string;
-  contractId?: number;
-  registrationResponseDigest?: string;
-  firstInvocationDigest?: string;
-  operatorSignature?: string;
-  manifestDigest: string;
+  schema_version: "adn-release-proof-v1";
+  contract_tail: string;
+  contract_version: string;
+  build_commit: string;
+  rustc_version: string;
+  trusted_issuer: string;
+  tenant_did: string;
+  build_config_id: string;
+  local_wasm_sha256: string;
+  registration_status: "pending" | "registered";
+  registered_at?: string;
+  remote_contract_id?: number;
+  raw_registration_response_digest?: string;
+  raw_registration_response_path?: string;
+  first_invocation_digest?: string;
+  first_invocation_path?: string;
+  t3n_evidence_digest?: string;
+  t3n_evidence_path?: string;
+  operator_public_key?: string;
+  manifest_digest: string;
 }
 
 export interface ContractInfo {
@@ -70,12 +86,22 @@ function sha256Hex(data: string | Buffer): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
-function stableJson(value: unknown): string {
-  try {
+function normalizeHex(value: string | undefined): string | undefined {
+  const normalized = value?.trim().replace(/^0x/i, "").toLowerCase();
+  return normalized || undefined;
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") {
     return JSON.stringify(value ?? null);
-  } catch {
-    return JSON.stringify(String(value));
   }
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => canonicalJson(entry)).join(",")}]`;
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, entry]) => entry !== undefined)
+    .sort(([left], [right]) => left.localeCompare(right));
+  return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`).join(",")}}`;
 }
 
 function buildConfigId(buildCommit: string, rustcVersion: string, trustedIssuer: string, tenantDid: string): string {
@@ -91,18 +117,82 @@ function requireManifestEnv(name: string): string {
   return value;
 }
 
-function digestManifest(manifest: Omit<DeploymentManifest, "manifestDigest">): DeploymentManifest {
-  return { ...manifest, manifestDigest: sha256Hex(JSON.stringify(manifest)) };
+function privateKeyFromSeedHex(seedHex: string) {
+  if (!/^[0-9a-f]{64}$/.test(seedHex)) {
+    throw new Error("ADN_RELEASE_OPERATOR_PRIVATE_KEY_HEX must be a 32-byte Ed25519 seed hex string");
+  }
+  return createPrivateKey({
+    key: Buffer.concat([ED25519_PKCS8_SEED_PREFIX, Buffer.from(seedHex, "hex")]),
+    format: "der",
+    type: "pkcs8",
+  });
 }
 
-function manifestWithoutDigest(manifest: DeploymentManifest): Omit<DeploymentManifest, "manifestDigest"> {
-  const { manifestDigest: _manifestDigest, ...body } = manifest;
+function derivePublicKeyHexFromSeed(seedHex: string): string {
+  const privateKey = privateKeyFromSeedHex(seedHex);
+  const spki = createPublicKey(privateKey).export({ format: "der", type: "spki" }) as Buffer;
+  return spki.subarray(spki.length - 32).toString("hex");
+}
+
+function releaseOperatorPublicKeyHex(): string | undefined {
+  const configuredPublicKey = normalizeHex(process.env.ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX);
+  if (configuredPublicKey) {
+    if (!/^[0-9a-f]{64}$/.test(configuredPublicKey)) {
+      throw new Error("ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX must be a 32-byte Ed25519 public key hex string");
+    }
+    return configuredPublicKey;
+  }
+  const seedHex = normalizeHex(process.env.ADN_RELEASE_OPERATOR_PRIVATE_KEY_HEX);
+  return seedHex ? derivePublicKeyHexFromSeed(seedHex) : undefined;
+}
+
+function digestManifest(manifest: Omit<DeploymentManifest, "manifest_digest">): DeploymentManifest {
+  return { ...manifest, manifest_digest: sha256Hex(canonicalJson(manifest)) };
+}
+
+function manifestWithoutDigest(manifest: DeploymentManifest): Omit<DeploymentManifest, "manifest_digest"> {
+  const { manifest_digest: _manifestDigest, ...body } = manifest;
   return body;
 }
 
+function writeJsonArtifact(path: string, payload: unknown): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${canonicalJson(payload)}\n`, "utf-8");
+}
+
+function writeManifestSignatureIfConfigured(deploymentManifest: DeploymentManifest): void {
+  const seedHex = normalizeHex(process.env.ADN_RELEASE_OPERATOR_PRIVATE_KEY_HEX);
+  if (!seedHex) {
+    rmSync(DEPLOYMENT_MANIFEST_SIGNATURE_PATH, { force: true });
+    return;
+  }
+
+  const privateKey = privateKeyFromSeedHex(seedHex);
+  const derivedPublicKeyHex = derivePublicKeyHexFromSeed(seedHex);
+  const configuredPublicKeyHex = normalizeHex(process.env.ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX);
+  const manifestPublicKeyHex = normalizeHex(deploymentManifest.operator_public_key);
+
+  if (configuredPublicKeyHex && configuredPublicKeyHex !== derivedPublicKeyHex) {
+    throw new Error("ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX does not match ADN_RELEASE_OPERATOR_PRIVATE_KEY_HEX");
+  }
+  if (manifestPublicKeyHex && manifestPublicKeyHex !== derivedPublicKeyHex) {
+    throw new Error("deployment manifest operator_public_key does not match ADN_RELEASE_OPERATOR_PRIVATE_KEY_HEX");
+  }
+
+  const signedBody = Buffer.from(canonicalJson(manifestWithoutDigest(deploymentManifest)), "utf-8");
+  const signatureDoc = {
+    algorithm: "ed25519",
+    public_key_hex: derivedPublicKeyHex,
+    signature_hex: signBytes(null, signedBody, privateKey).toString("hex"),
+  };
+  writeJsonArtifact(DEPLOYMENT_MANIFEST_SIGNATURE_PATH, signatureDoc);
+}
+
 function writeDeploymentManifest(deploymentManifest: DeploymentManifest): DeploymentManifest {
-  mkdirSync(PROOF_DIR, { recursive: true });
-  writeFileSync(DEPLOYMENT_MANIFEST_PATH, JSON.stringify(deploymentManifest, null, 2) + "\n", "utf-8");
+  mkdirSync(RELEASE_PROOF_DIR, { recursive: true });
+  writeJsonArtifact(DEPLOYMENT_MANIFEST_PATH, deploymentManifest);
+  writeJsonArtifact(LEGACY_DEPLOYMENT_MANIFEST_PATH, deploymentManifest);
+  writeManifestSignatureIfConfigured(deploymentManifest);
   return deploymentManifest;
 }
 
@@ -114,17 +204,17 @@ function writePendingDeploymentManifest(localWasmSha256: string): DeploymentMani
   const buildConfig = buildConfigId(buildCommit, rustcVersion, trustedIssuer, tenantDid);
 
   const unsignedManifest = {
-    v: "adn.deployment_manifest/1" as const,
-    contractTail: CONTRACT_TAIL,
-    contractVersion: CONTRACT_VERSION,
-    buildCommit,
-    rustcVersion,
-    trustedIssuer,
-    tenantDid,
-    buildConfigId: buildConfig,
-    localWasmSha256,
-    registrationStatus: "pending" as const,
-    operatorSignature: process.env.ADN_DEPLOYMENT_OPERATOR_SIGNATURE?.trim() || undefined,
+    schema_version: "adn-release-proof-v1" as const,
+    contract_tail: CONTRACT_TAIL,
+    contract_version: CONTRACT_VERSION,
+    build_commit: buildCommit,
+    rustc_version: rustcVersion,
+    trusted_issuer: trustedIssuer,
+    tenant_did: tenantDid,
+    build_config_id: buildConfig,
+    local_wasm_sha256: localWasmSha256,
+    registration_status: "pending" as const,
+    operator_public_key: releaseOperatorPublicKeyHex(),
   };
   return writeDeploymentManifest(digestManifest(unsignedManifest));
 }
@@ -134,12 +224,14 @@ export function finalizeDeploymentManifest(
   rawRegistrationResponse: unknown,
   contractId?: number,
 ): DeploymentManifest {
+  writeJsonArtifact(REGISTRATION_RESPONSE_PATH, rawRegistrationResponse);
   const finalized = digestManifest({
     ...manifestWithoutDigest(pendingManifest),
-    registrationStatus: "registered",
-    registeredAt: new Date().toISOString(),
-    contractId,
-    registrationResponseDigest: sha256Hex(stableJson(rawRegistrationResponse)),
+    registration_status: "registered",
+    registered_at: new Date().toISOString(),
+    remote_contract_id: contractId,
+    raw_registration_response_digest: sha256Hex(canonicalJson(rawRegistrationResponse)),
+    raw_registration_response_path: "registration_response.json",
   });
   return writeDeploymentManifest(finalized);
 }
@@ -148,12 +240,17 @@ export function recordFirstInvocationDigest(
   contractInfo: ContractInfo,
   invocationResult: unknown,
 ): ContractInfo {
-  if (contractInfo.deploymentManifest.firstInvocationDigest) {
+  if (contractInfo.deploymentManifest.first_invocation_digest) {
     return contractInfo;
   }
+  writeJsonArtifact(INVOCATION_RECEIPT_PATH, invocationResult);
+  writeJsonArtifact(T3N_EVIDENCE_PATH, invocationResult);
   const deploymentManifest = writeDeploymentManifest(digestManifest({
     ...manifestWithoutDigest(contractInfo.deploymentManifest),
-    firstInvocationDigest: sha256Hex(stableJson(invocationResult)),
+    first_invocation_digest: sha256Hex(canonicalJson(invocationResult)),
+    first_invocation_path: "invocation_receipt.json",
+    t3n_evidence_digest: sha256Hex(canonicalJson(invocationResult)),
+    t3n_evidence_path: "t3n_evidence.json",
   }));
   return { ...contractInfo, deploymentManifest };
 }
@@ -170,7 +267,7 @@ export async function registerAdnContract(
   const localWasmSha256 = sha256Hex(wasm);
   let deploymentManifest = writePendingDeploymentManifest(localWasmSha256);
   console.log(`  [+] Local WASM SHA-256: ${localWasmSha256}`);
-  console.log(`  [+] Deployment manifest digest: ${deploymentManifest.manifestDigest}`);
+  console.log(`  [+] Deployment manifest digest: ${deploymentManifest.manifest_digest}`);
   console.log(`  [+] Deployment manifest: ${DEPLOYMENT_MANIFEST_PATH}`);
   let contractId: number | undefined;
   try {

@@ -13,6 +13,7 @@ REQUIRED_FILES = [
     "docs/security/claim-matrix.md",
     "docs/architecture/security-invariants.md",
     "scripts/verify_release.py",
+    "schemas/adn-release-proof-v1.schema.json",
 ]
 
 REQUIRED_TERMS = [

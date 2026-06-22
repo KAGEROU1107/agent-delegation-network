@@ -33,19 +33,24 @@ def test_contract_and_bridge_expose_non_self_referential_build_identity():
     assert "ADN_WASM_SHA256" not in contract
     assert "wasm_sha256" not in contract
     assert "build_config_id" in contract
-    assert "localWasmSha256" in bridge
+    assert "local_wasm_sha256" in bridge
     assert "deploymentManifest" in bridge
-    assert "manifestDigest" in bridge
+    assert "manifest_digest" in bridge
+    assert "canonicalJson" in bridge
+    assert "deployment_manifest.json" in bridge
+    assert "registration_response.json" in bridge
+    assert "invocation_receipt.json" in bridge
+    assert "t3n_evidence.json" in bridge
     assert "ADN_BUILD_COMMIT" in bridge
     assert "ADN_RUSTC_VERSION" in bridge
     assert "already exists remotely" in bridge
     assert "refusing to continue without remote artifact identity verification" in bridge
     assert "Bump CONTRACT_VERSION for a fresh immutable deployment" in bridge
     assert "finalizeDeploymentManifest" in bridge
-    assert "registrationResponseDigest" in bridge
-    assert "registeredAt" in bridge
-    assert "registrationStatus" in bridge
-    assert "firstInvocationDigest" in bridge
+    assert "raw_registration_response_digest" in bridge
+    assert "registered_at" in bridge
+    assert "registration_status" in bridge
+    assert "first_invocation_digest" in bridge
 
 
 def test_map_setup_and_docs_do_not_claim_broad_acl_fallback():
@@ -178,6 +183,10 @@ def test_runner_uses_private_temp_dir_for_sensitive_files():
     assert "BEGIN IMMEDIATE" in replay_ledger
     assert "execution_token" in replay_ledger
     assert "ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE" in replay_ledger
+    assert "_validate_live_integrity_key_file" in replay_ledger
+    assert "must not be a symlink in live mode" in replay_ledger
+    assert "0600 permissions" in replay_ledger
+    assert "0700 permissions" in replay_ledger
 
 
 def test_security_invariants_document_runtime_boundaries():
@@ -218,7 +227,7 @@ def test_live_demo_docs_require_pinned_deployment_sequence():
     assert "ADN_REPLAY_LEDGER_KEY_REF=file:/var/lib/adn/replay-hmac.key" in readme
     assert "cargo test --locked" in readme
     assert "cargo build --locked --target wasm32-wasip2 --release" in readme
-    assert "deployment_manifest_v3.9.2.local.json" in readme
+    assert "proof/release/deployment_manifest.json" in readme
     assert "proof/live_run_v3.9.2.txt" in readme
 
 
@@ -227,6 +236,7 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     claim_matrix = read("docs/security/claim-matrix.md")
     release_gate = read("scripts/release_gate.py")
     release_verifier = read("scripts/verify_release.py")
+    schema = read("schemas/adn-release-proof-v1.schema.json")
     workflow = read(".github/workflows/ci.yml")
 
     for content in (criteria, claim_matrix):
@@ -244,10 +254,14 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "docs/security/claim-matrix.md" in release_gate
     assert "docs/release/criteria.md" in release_gate
     assert "verify_release.py" in release_gate
+    assert "schemas/adn-release-proof-v1.schema.json" in release_gate
     assert "REQUIRED_PROOF_FILES" in release_verifier
     assert "deployment_manifest.sig" in release_verifier
     assert "registration_response.json" in release_verifier
+    assert "t3n_evidence.json" in release_verifier
     assert "replay_restart_proof.json" in release_verifier
     assert "canonical_json" in release_verifier
     assert "Ed25519PublicKey" in release_verifier
+    assert "manifest_digest" in release_verifier
+    assert "adn-release-proof-v1" in schema
     assert "python scripts/release_gate.py" in workflow

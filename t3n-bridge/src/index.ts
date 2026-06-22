@@ -224,7 +224,7 @@ async function main() {
     console.log(`  [+] Prepared worker target for VALIDATE_QUALITY: ${preparedExecution.validator.agentId}`);
     console.log(`  [+] Trusted gateway key id: ${gatewayKeyBundle.gatewayKeyId}`);
 
-    const expectedBuildConfigId = preRegisteredContract.deploymentManifest.buildConfigId;
+    const expectedBuildConfigId = preRegisteredContract.deploymentManifest.build_config_id;
 
     const authorizeWorkerTarget = async (
       targetAgentId: string,

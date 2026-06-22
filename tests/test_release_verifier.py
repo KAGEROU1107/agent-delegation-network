@@ -36,19 +36,25 @@ def build_valid_release_fixture(proof_dir: Path, monkeypatch):
     }
     replay_restart_proof = {
         "build_config_id": "adn-build-fixture",
-        "requestReplayRejected": True,
-        "resultReplayRejected": True,
-        "ledgerPersistedAcrossRestart": True,
+        "request_replay_rejected": True,
+        "result_replay_rejected": True,
+        "ledger_persisted_across_restart": True,
     }
     write_json(proof_dir / "registration_response.json", registration_response)
     write_json(proof_dir / "invocation_receipt.json", invocation_receipt)
+    write_json(proof_dir / "t3n_evidence.json", invocation_receipt)
     write_json(proof_dir / "replay_restart_proof.json", replay_restart_proof)
     write_json(proof_dir / "ci_release_sha.json", {
+        "repository": "KAGEROU1107/agent-delegation-network",
         "sha": "abc123",
-        "status": "success",
+        "workflow_run_id": 12345,
+        "workflow_conclusion": "success",
+        "artifact_id": 67890,
+        "retrieved_at": "2026-06-23T00:00:00Z",
     })
 
     manifest_body = {
+        "schema_version": "adn-release-proof-v1",
         "build_commit": "abc123",
         "rustc_version": "rustc 1.0.0",
         "tenant_did": "did:t3n:fixture",
@@ -70,7 +76,7 @@ def build_valid_release_fixture(proof_dir: Path, monkeypatch):
     }
     manifest = {
         **manifest_body,
-        "manifestDigest": verify_release.digest_hex(
+        "manifest_digest": verify_release.digest_hex(
             verify_release.canonical_json(manifest_body).encode("utf-8")
         ),
     }

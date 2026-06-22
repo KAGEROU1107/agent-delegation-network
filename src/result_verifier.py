@@ -39,7 +39,19 @@ def verify_worker_result(
     expected_delegation_id,
     coordinator_id,
     expected_tee_authorization=None,
+    expected_gateway_public_key_hex=None,
+    expected_action=None,
+    expected_parameters=None,
 ):
+    if expected_tee_authorization is None:
+        raise RuntimeError('expected TEE authorization is required')
+    if not expected_gateway_public_key_hex:
+        raise RuntimeError('expected gateway public key is required')
+    if not expected_action:
+        raise RuntimeError('expected action is required')
+    if expected_parameters is None:
+        raise RuntimeError('expected parameters are required')
+
     ok, err = verify_action_request(proof, 'TASK_RESULT')
     if not ok:
         raise RuntimeError('worker result signature invalid: ' + str(err))
@@ -63,18 +75,15 @@ def verify_worker_result(
     receipt = rd.get('tee_authorization')
     if not receipt:
         raise RuntimeError('result missing TEE authorization receipt')
-    if expected_tee_authorization is not None:
-        if receipt_fingerprint(receipt) != receipt_fingerprint(expected_tee_authorization):
-            raise RuntimeError('result TEE authorization receipt mismatch')
-        expected_gateway_pubkey = expected_tee_authorization.get('gateway_public_key_hex', '')
-    else:
-        expected_gateway_pubkey = receipt.get('gateway_public_key_hex', '')
+    if receipt_fingerprint(receipt) != receipt_fingerprint(expected_tee_authorization):
+        raise RuntimeError('result TEE authorization receipt mismatch')
     verify_tee_authorization_receipt(
         receipt,
-        expected_gateway_pubkey_hex=expected_gateway_pubkey,
+        expected_gateway_pubkey_hex=expected_gateway_public_key_hex,
         expected_delegation_id=expected_delegation_id,
         expected_to_agent_id=expected_worker_id,
-        expected_action=receipt.get('action', ''),
+        expected_action=expected_action,
+        expected_parameters=expected_parameters,
     )
     _consume_result_nonce(rd.get('nonce'))
     return rd

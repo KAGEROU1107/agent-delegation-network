@@ -6,12 +6,22 @@ Defines the structure and workflow for secure agent-to-agent delegation.
 import json
 import uuid
 import time
+import threading
+from collections import deque
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, asdict
 from enum import Enum
 
 from src.agent_identity import AgentIdentity, create_agent_identity
-from src.terminal3_agent_auth_adapter import sign_action_request, verify_action_request
+from src.terminal3_agent_auth_adapter import _canonical, _sha256, sign_action_request, verify_action_request
+from src.tee_authorization import receipt_fingerprint
+
+
+MAX_SEEN_DELEGATION_REQUESTS = 4096
+SEEN_DELEGATION_REQUEST_TTL_SECONDS = 15 * 60
+_seen_delegation_requests = set()
+_seen_delegation_request_order = deque()
+_seen_delegation_request_lock = threading.Lock()
 
 
 class DelegationAction(Enum):
@@ -332,6 +342,26 @@ class DelegationProtocol:
             )
         except RuntimeError as exc:
             return False, f"TEE authorization invalid: {exc}"
+
+        request_hash = signed_request.get("data_hash") or _sha256(_canonical(signed_request.get("delegation_data", {})))
+        replay_key = _sha256(_canonical({
+            "delegation_id": request.delegation_id,
+            "request_hash": request_hash,
+            "gateway_receipt_fingerprint": receipt_fingerprint(request.tee_authorization),
+        }))
+        now = time.monotonic()
+        with _seen_delegation_request_lock:
+            cutoff = now - SEEN_DELEGATION_REQUEST_TTL_SECONDS
+            while _seen_delegation_request_order and _seen_delegation_request_order[0][1] <= cutoff:
+                replay_nonce, _created_at = _seen_delegation_request_order.popleft()
+                _seen_delegation_requests.discard(replay_nonce)
+            while len(_seen_delegation_request_order) > MAX_SEEN_DELEGATION_REQUESTS:
+                replay_nonce, _created_at = _seen_delegation_request_order.popleft()
+                _seen_delegation_requests.discard(replay_nonce)
+            if not replay_key or replay_key in _seen_delegation_requests:
+                return False, "Delegation request replay detected"
+            _seen_delegation_requests.add(replay_key)
+            _seen_delegation_request_order.append((replay_key, now))
 
         return True, "Delegation request is valid"
     

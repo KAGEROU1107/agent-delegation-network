@@ -91,13 +91,20 @@ def verifier_context():
 
 
 def verify(context, proof, delegation_id=None, tee_authorization=None):
+    expected_tee_authorization = tee_authorization
+    expected_gateway_public_key_hex = (
+        tee_authorization["gateway_public_key_hex"] if tee_authorization else ""
+    )
     return result_verifier.verify_worker_result(
         proof,
         context.worker_id,
         context.worker_pubkey,
         delegation_id or proof["result_data"]["delegation_id"],
         context.coordinator_id,
-        expected_tee_authorization=tee_authorization,
+        expected_tee_authorization=expected_tee_authorization,
+        expected_gateway_public_key_hex=expected_gateway_public_key_hex,
+        expected_action="PROCESS_DATA",
+        expected_parameters={},
     )
 
 
@@ -139,6 +146,40 @@ def test_result_verifier_rejects_wrong_tee_authorization(verifier_context):
     expect_rejected(lambda: verify(verifier_context, result, delegation_id, wrong_receipt))
 
 
+def test_result_verifier_requires_expected_gateway_context(verifier_context):
+    delegation_id, receipt, result = verifier_context.fresh_result()
+
+    expect_rejected(
+        lambda: result_verifier.verify_worker_result(
+            result,
+            verifier_context.worker_id,
+            verifier_context.worker_pubkey,
+            delegation_id,
+            verifier_context.coordinator_id,
+        )
+    )
+
+
+def test_result_verifier_rejects_self_attested_gateway_key(verifier_context):
+    delegation_id, receipt, result = verifier_context.fresh_result()
+    forged = copy.deepcopy(result)
+    forged["result_data"]["tee_authorization"]["gateway_public_key_hex"] = verifier_context.other_pubkey
+
+    expect_rejected(
+        lambda: result_verifier.verify_worker_result(
+            forged,
+            verifier_context.worker_id,
+            verifier_context.worker_pubkey,
+            delegation_id,
+            verifier_context.coordinator_id,
+            expected_tee_authorization=receipt,
+            expected_gateway_public_key_hex=receipt["gateway_public_key_hex"],
+            expected_action="PROCESS_DATA",
+            expected_parameters={},
+        )
+    )
+
+
 def test_rejects_result_signed_by_unexpected_worker_key(verifier_context):
     delegation_id, receipt, result = verifier_context.fresh_result()
 
@@ -150,14 +191,17 @@ def test_rejects_result_signed_by_unexpected_worker_key(verifier_context):
             delegation_id,
             verifier_context.coordinator_id,
             expected_tee_authorization=receipt,
+            expected_gateway_public_key_hex=receipt["gateway_public_key_hex"],
+            expected_action="PROCESS_DATA",
+            expected_parameters={},
         )
     )
 
 
 def test_rejects_wrong_delegation_id(verifier_context):
-    _delegation_id, _receipt, result = verifier_context.fresh_result()
+    _delegation_id, receipt, result = verifier_context.fresh_result()
 
-    expect_rejected(lambda: verify(verifier_context, result, "wrong-delegation"))
+    expect_rejected(lambda: verify(verifier_context, result, "wrong-delegation", receipt))
 
 
 def test_rejects_wrong_coordinator_audience(verifier_context):
@@ -171,6 +215,9 @@ def test_rejects_wrong_coordinator_audience(verifier_context):
             delegation_id,
             "wrong-coordinator",
             expected_tee_authorization=receipt,
+            expected_gateway_public_key_hex=receipt["gateway_public_key_hex"],
+            expected_action="PROCESS_DATA",
+            expected_parameters={},
         )
     )
 
@@ -212,6 +259,27 @@ def test_rejects_duplicate_worker_result_nonce(verifier_context):
     verify(verifier_context, result, delegation_id, receipt)
 
     expect_rejected(lambda: verify(verifier_context, result, delegation_id, receipt))
+
+
+def test_worker_rejects_replayed_signed_request(verifier_context):
+    receipt = verifier_context.receipt_for("tee-del-replay")
+    delegation_id = verifier_context.coordinator.delegate_task(
+        verifier_context.worker_id,
+        "PROCESS_DATA",
+        "d",
+        {},
+        tee_authorization=receipt,
+    )
+    action_request = verifier_context.coordinator._delegations[delegation_id].to_action_request(
+        verifier_context.coordinator.identity
+    )
+
+    first = verifier_context.worker.process_delegation_request(action_request)
+    second = verifier_context.worker.process_delegation_request(action_request)
+
+    assert first["result_data"]["status"] == "COMPLETED"
+    assert second["result_data"]["status"] == "FAILED"
+    assert "replay" in second["result_data"]["error"].lower()
 
 
 def test_result_nonce_cache_is_bounded(verifier_context, monkeypatch):

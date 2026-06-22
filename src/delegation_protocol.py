@@ -292,6 +292,7 @@ class DelegationProtocol:
         signed_request: Dict,
         receiver_agent_id: str,
         expected_gateway_public_key_hex: str,
+        expected_gateway_key_id: str,
         expected_build_config_id: str,
     ) -> Tuple[bool, str, Optional[str]]:
         """
@@ -314,6 +315,8 @@ class DelegationProtocol:
 
         if not expected_gateway_public_key_hex:
             return False, "Expected gateway public key is required", None
+        if not expected_gateway_key_id:
+            return False, "Expected gateway key id is required", None
         if not expected_build_config_id:
             return False, "Expected build_config_id is required", None
 
@@ -342,6 +345,7 @@ class DelegationProtocol:
             verify_tee_authorization_receipt(
                 request.tee_authorization,
                 expected_gateway_pubkey_hex=expected_gateway_public_key_hex,
+                expected_gateway_key_id=expected_gateway_key_id,
                 expected_delegation_id=request.delegation_id,
                 expected_to_agent_id=receiver_agent_id,
                 expected_action=request.action,

@@ -214,6 +214,7 @@ export interface WireDelegationEnvelope {
   agent_sig: string;
   nonce: string;
   request_hash: string;
+  authorization_expires_at: string;
 }
 
 /**
@@ -232,6 +233,7 @@ export async function buildWireDelegationEnvelope(
   const agentSecret = new Uint8Array(randomBytes(32));
   const agentPubkey = await pubkeyFromSecret(agentSecret);
   const now = BigInt(Math.floor(Date.now() / 1000));
+  const authorizationExpiresAt = new Date((Number(now) + 290) * 1000).toISOString();
   const vcId = new Uint8Array(randomBytes(16));
 
   const credential = buildDelegationCredential({
@@ -257,6 +259,7 @@ export async function buildWireDelegationEnvelope(
     agent_sig: b64uEncodeBytes(envelope.agent_sig),
     nonce: b64uEncodeBytes(envelope.nonce),
     request_hash: b64uEncodeBytes(envelope.request_hash),
+    authorization_expires_at: authorizationExpiresAt,
   };
 }
 /**
@@ -362,5 +365,4 @@ export async function demonstrateNegativeEnvelopeTests(
 
   return { missingSig, shortNonce, noEnvelope };
 }
-
 

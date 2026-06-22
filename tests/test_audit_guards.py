@@ -93,15 +93,30 @@ def test_python_adn_runner_requires_real_t3n_bundle_and_pinned_gateway():
     runner = read("t3n-bridge/src/adn_runner.ts")
     protocol = read("src/delegation_protocol.py")
     receipt = read("src/tee_authorization.py")
+    index = read("t3n-bridge/src/index.ts")
 
     assert "prepareAdnExecution" in runner
+    assert "prepareGatewayKeyBundle" in runner
+    assert "requireConfiguredGatewayKeyBundleFromEnv" in runner
     assert "TEE authorization bundle is required" in runner
     assert "require_authorization_result('processData'" in runner
     assert "require_authorization_result('validateQuality'" in runner
+    assert "ADN_IDENTITY_BUNDLE_PATH" in runner
+    assert "TEE_AUTHORIZATION_BUNDLE_PATH" in runner
+    assert "ADN_GATEWAY_KEY_BUNDLE_PATH" in runner
+    assert "ADN_IDENTITY_BUNDLE_JSON" not in runner
+    assert "TEE_AUTHORIZATION_BUNDLE_JSON" not in runner
+    assert "T3N_API_KEY: apiKey" not in runner
     assert "expected_gateway_public_key_hex=trusted_gateway_public_key_hex" in runner
+    assert "expected_gateway_key_id=trusted_gateway_key_id" in runner
     assert "expected_gateway_pubkey_hex=signed_request.get(\"public_key_hex\", \"\")" not in protocol
+    assert "expected_gateway_key_id: str" in protocol
+    assert "ADN_GATEWAY_PRIVATE_KEY_HEX" in index
+    assert "ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX" in index
     assert "credential_enforced" in receipt
     assert "build_config_id" in receipt
+    assert "gateway_key_id" in receipt
+    assert "authorization_expires_at" in receipt
 
 
 def test_live_demo_docs_require_pinned_deployment_sequence():

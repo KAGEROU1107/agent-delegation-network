@@ -1,13 +1,15 @@
 import assert from "assert/strict";
 
-import { prepareAdnExecution, runAdnWithRealDid } from "../src/adn_runner.ts";
+import { prepareAdnExecution, prepareGatewayKeyBundle, runAdnWithRealDid } from "../src/adn_runner.ts";
 
 const pythonExecutable = process.platform === "win32" ? "python" : "python3";
 const tenantDid = "did:t3n:tenant";
 const buildConfigId = "adn-build-test";
-const apiKey = "0x" + "11".repeat(32);
+const authorizationExpiresAt = "2999-01-01T00:00:00+00:00";
 
 const prepared = await prepareAdnExecution(tenantDid, { pythonExecutable });
+const gatewayKeyBundle = await prepareGatewayKeyBundle({ pythonExecutable });
+assert.equal("gateway" in prepared, false);
 const teeBundle = {
   buildConfigId,
   processData: {
@@ -17,6 +19,7 @@ const teeBundle = {
     credential_fingerprint: "cred-process",
     credential_enforced: true,
     build_config_id: buildConfigId,
+    authorization_expires_at: authorizationExpiresAt,
   },
   validateQuality: {
     delegation_id: "tee-del-validate",
@@ -25,14 +28,15 @@ const teeBundle = {
     credential_fingerprint: "cred-validate",
     credential_enforced: true,
     build_config_id: buildConfigId,
+    authorization_expires_at: authorizationExpiresAt,
   },
 };
 
 const result = await runAdnWithRealDid(
-  apiKey,
   tenantDid,
   prepared,
   teeBundle,
+  gatewayKeyBundle,
   { pythonExecutable }
 );
 
@@ -47,10 +51,10 @@ assert.ok(result.qualityScore >= 0.8);
 await assert.rejects(
   () =>
     runAdnWithRealDid(
-      apiKey,
       tenantDid,
       prepared,
       { buildConfigId, processData: teeBundle.processData },
+      gatewayKeyBundle,
       { pythonExecutable }
     ),
   /validateQuality TEE authorization bundle is required/
@@ -60,6 +64,13 @@ const mismatchedBundle = JSON.parse(JSON.stringify(teeBundle));
 mismatchedBundle.processData.routed_to = prepared.validator.agentId;
 
 await assert.rejects(
-  () => runAdnWithRealDid(apiKey, tenantDid, prepared, mismatchedBundle, { pythonExecutable }),
+  () => runAdnWithRealDid(tenantDid, prepared, mismatchedBundle, gatewayKeyBundle, { pythonExecutable }),
   /processData routed_to mismatch/
+);
+
+const wrongGatewayBundle = { ...gatewayKeyBundle, publicKeyHex: "00".repeat(32) };
+
+await assert.rejects(
+  () => runAdnWithRealDid(tenantDid, prepared, teeBundle, wrongGatewayBundle, { pythonExecutable }),
+  /Trusted gateway public key mismatch/
 );

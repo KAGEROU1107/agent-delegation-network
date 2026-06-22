@@ -9,11 +9,16 @@
  * 5. [Optional] Register and invoke TEE contract if WASM available
  *
  * Usage:
- *   T3N_API_KEY=0x<key> ADN_BUILD_COMMIT=<commit> ADN_RUSTC_VERSION="<rustc --version>" ADN_TRUSTED_ISSUER=<issuer> ADN_TENANT_DID=<tenant-did> node --loader ts-node/esm src/index.ts
+ *   T3N_API_KEY=0x<key> ADN_BUILD_COMMIT=<commit> ADN_RUSTC_VERSION="<rustc --version>" ADN_TRUSTED_ISSUER=<issuer> ADN_TENANT_DID=<tenant-did> ADN_GATEWAY_PRIVATE_KEY_HEX=<ed25519-seed-hex> ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX=<ed25519-pubkey-hex> [ADN_GATEWAY_KEY_ID=<key-id>] node --loader ts-node/esm src/index.ts
  */
 
 import { createT3nSession } from "./t3n_auth.js";
-import { prepareAdnExecution, runAdnWithRealDid, type TeeAuthorizationResult } from "./adn_runner.js";
+import {
+  prepareAdnExecution,
+  requireConfiguredGatewayKeyBundleFromEnv,
+  runAdnWithRealDid,
+  type TeeAuthorizationResult,
+} from "./adn_runner.js";
 import {
   registerAdnContract,
   type ContractInfo,
@@ -92,6 +97,18 @@ function requirePinnedRuntimeConfig(authenticatedAddress: string, authenticatedT
 
   console.log(`  [+] Pinned issuer matches authenticated T3N issuer: 0x${normalizedPinned}`);
   console.log(`  [+] Pinned tenant DID matches authenticated T3N tenant: ${authenticatedTenantDid}`);
+}
+
+function requireGatewayRuntimeConfig() {
+  try {
+    return requireConfiguredGatewayKeyBundleFromEnv();
+  } catch (err) {
+    throw new Error(
+      "ADN_GATEWAY_PRIVATE_KEY_HEX and ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX are required " +
+      "for the pinned Python gateway signer. " +
+      ((err as Error).message || String(err))
+    );
+  }
 }
 
 function parseSaleAmounts(): number[] {
@@ -191,9 +208,11 @@ async function main() {
       );
     }
 
+    const gatewayKeyBundle = requireGatewayRuntimeConfig();
     const preparedExecution = await prepareAdnExecution(tenantDid);
     console.log(`  [+] Prepared worker target for PROCESS_DATA: ${preparedExecution.worker1.agentId}`);
     console.log(`  [+] Prepared worker target for VALIDATE_QUALITY: ${preparedExecution.validator.agentId}`);
+    console.log(`  [+] Trusted gateway key id: ${gatewayKeyBundle.gatewayKeyId}`);
 
     const expectedBuildConfigId = preRegisteredContract.deploymentManifest.buildConfigId;
 
@@ -236,6 +255,7 @@ async function main() {
         credential_fingerprint: result.credential_fingerprint,
         credential_enforced: result.credential_enforced,
         build_config_id: result.build_config_id,
+        authorization_expires_at: delegationEnvelope.authorization_expires_at,
       };
     };
 
@@ -246,7 +266,7 @@ async function main() {
     };
 
     console.log("  [+] Real T3N authorization bundle acquired for prepared Python workers.");
-    adnResult = await runAdnWithRealDid(apiKey, tenantDid, preparedExecution, teeAuthorizationBundle);
+    adnResult = await runAdnWithRealDid(tenantDid, preparedExecution, teeAuthorizationBundle, gatewayKeyBundle);
     console.log(`  [+] Unique cryptographic identities: ${adnResult.uniqueIdentities}/4`);
     console.log(`  [+] Records processed: ${adnResult.recordsProcessed}`);
     console.log(`  [+] Total revenue: $${adnResult.totalRevenue}`);

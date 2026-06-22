@@ -24,7 +24,7 @@ Full output: [`proof/live_run_v3.8.1_final_88b7b88.txt`](proof/live_run_v3.8.1_f
   [35s sleep — credential window expires]
   [+] post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer v3.8.1)
   [+] missing agent_sig:    REJECTED: delegate-task: agent_sig missing from envelope
-  [+] short nonce (4 bytes): REJECTED: delegate-task: nonce must be exactly 16 bytes
+  [+] short nonce (4 bytes): REJECTED: delegate-task: nonce too short (< 8 bytes)
 
 [Phase 1] T3N Auth
   [+] handshake() complete
@@ -70,7 +70,7 @@ WASM contract: REGISTERED + INVOKED (v3.8.1, 20/20 WIT functions)
 SDK:    @terminal3/t3n-sdk@3.5.2
 WASM:   adn_processor.wasm v3.8.1 — hardened envelope validation + SHA-256 credential fingerprint
 Proof:  proof/live_run_v3.8.1_final_88b7b88.txt
-Run:    T3N_API_KEY=0x<key> node --loader ts-node/esm src/index.ts  (from t3n-bridge/)
+Run:    T3N_API_KEY=0x<key> ADN_GATEWAY_PRIVATE_KEY_HEX=<ed25519-seed-hex> ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX=<ed25519-pubkey-hex> node --loader ts-node/esm src/index.ts  (from t3n-bridge/)
 ```
 
 ---
@@ -220,7 +220,7 @@ ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_IS
 
 # Deploy/invoke the pinned artifact and capture fresh proof
 cd ../t3n-bridge
-T3N_API_KEY=0x<your_key> ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> node --loader ts-node/esm src/index.ts 2>&1 | tee ../proof/live_run_v3.9.2.txt
+T3N_API_KEY=0x<your_key> ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> ADN_GATEWAY_PRIVATE_KEY_HEX=<32-byte-ed25519-seed-hex> ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX=<matching-ed25519-pubkey-hex> ADN_GATEWAY_KEY_ID=<gateway-key-id> node --loader ts-node/esm src/index.ts 2>&1 | tee ../proof/live_run_v3.9.2.txt
 ```
 
 The bridge writes `proof/deployment_manifest_v3.9.2.local.json` with the actual post-build `localWasmSha256` and `manifestDigest`. The committed live proof remains v3.8.1 until this pinned v3.9.2 sequence is run against T3N and the resulting proof plus deployment manifest are committed.
@@ -277,15 +277,15 @@ Run the local feature-pattern demo: `T3N_API_KEY=0x<key> python demo/features_de
 
 **What is enforced in the current live v3.8.1 proof:** T3N authentication, SDK-native credential construction, Rust/WASM TEE structural validation of envelope presence, credential domain, TTL, delegated function scope, nonce format (≥8 bytes), and `agent_sig` presence. Delegation envelope is **mandatory** on `delegate-task` in v3.8.1 source. Trust policy requires both action rule AND explicit trust relationship (dual default-deny).
 
-**Explicit live-proof boundaries:** v3.9.2 source adds issuer-pinned cryptographic verification, request binding, digest-derived delegation IDs, and a prepare -> authorize -> execute Python bridge that requires real `delegate-task` outputs for exact prepared worker IDs plus a dedicated pinned gateway signer. It is still not backed by a pinned live deployment proof, and the receipt remains gateway-linked local evidence rather than a T3N-attested worker-dispatch primitive. Durable nonce replay registry, persistent workflow state, and immediate revocation-registry lookup remain unproven in the current `generic-input` contract world.
+**Explicit live-proof boundaries:** v3.9.2 source adds issuer-pinned cryptographic verification, request binding, digest-derived delegation IDs, and a prepare -> authorize -> execute Python bridge that requires real `delegate-task` outputs for exact prepared worker IDs plus a dedicated pinned gateway signer. Workers now require the exact gateway public key, `gateway_key_id`, `build_config_id`, and `authorization_expires_at` carried by the typed authorization bundle. It is still not backed by a pinned live deployment proof, and the receipt remains gateway-linked local evidence rather than a T3N-attested worker-dispatch primitive. Durable nonce replay registry, persistent workflow state, and immediate revocation-registry lookup remain unproven in the current `generic-input` contract world.
 
-61 Python security tests across 3 suites: adapter/policy negative-security checks,
-worker-result and gateway-receipt verification, and audit guardrails.
+63 Python security tests across 3 suites: 34 adapter/policy negative-security checks,
+21 worker-result and gateway-receipt verification checks, and 8 audit guardrails.
 Tests cover Python signing adapter, policy logic, coordinator-side result verification, TypeScript bridge buildability, and Rust/WASM contract enforcement. The committed live T3N proof remains the v3.8.1 structural proof until a pinned v3.9.2 run is captured.
 
 ```
 python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py -v --tb=short
-# 54 passed
+# 63 passed
 ```
 
 ---

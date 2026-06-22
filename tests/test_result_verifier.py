@@ -18,6 +18,8 @@ import src.result_verifier as result_verifier
 
 _PRIVATE_KEY_KW = "private" + "_key_hex"
 BUILD_CONFIG_ID = "adn-build-test"
+GATEWAY_KEY_ID = "gateway-key-1"
+AUTHORIZATION_EXPIRES_AT = "2999-01-01T00:00:00+00:00"
 
 
 def _mk(name):
@@ -56,9 +58,12 @@ def verifier_context():
         parameters=None,
         credential_enforced=True,
         build_config_id=BUILD_CONFIG_ID,
+        gateway_key_id=GATEWAY_KEY_ID,
+        authorization_expires_at=AUTHORIZATION_EXPIRES_AT,
     ):
         return build_tee_authorization_receipt(
             gateway_identity=gateway.identity,
+            gateway_key_id=gateway_key_id,
             tee_result={
                 "delegation_id": delegation_id,
                 "status": "ROUTED",
@@ -66,6 +71,7 @@ def verifier_context():
                 "credential_fingerprint": f"cred-{delegation_id}",
                 "credential_enforced": credential_enforced,
                 "build_config_id": build_config_id,
+                "authorization_expires_at": authorization_expires_at,
             },
             action=action,
             parameters=parameters or {},
@@ -86,6 +92,7 @@ def verifier_context():
         return delegation_id, receipt, worker.process_delegation_request(
             action_request,
             expected_gateway_public_key_hex=gateway.identity.public_key_hex,
+            expected_gateway_key_id=GATEWAY_KEY_ID,
             expected_build_config_id=BUILD_CONFIG_ID,
         )
 
@@ -95,6 +102,7 @@ def verifier_context():
         worker_pubkey=worker_pubkey,
         other_pubkey=other.identity.public_key_hex,
         gateway_pubkey=gateway.identity.public_key_hex,
+        gateway_key_id=GATEWAY_KEY_ID,
         fresh_result=fresh_result,
         receipt_for=receipt_for,
         coordinator=coordinator,
@@ -116,6 +124,7 @@ def verify(context, proof, delegation_id=None, tee_authorization=None):
         context.coordinator_id,
         expected_tee_authorization=expected_tee_authorization,
         expected_gateway_public_key_hex=context.gateway_pubkey,
+        expected_gateway_key_id=context.gateway_key_id,
         expected_action="PROCESS_DATA",
         expected_parameters={},
         expected_build_config_id=BUILD_CONFIG_ID,
@@ -150,6 +159,7 @@ def test_worker_rejects_delegation_without_tee_authorization(verifier_context):
     result = verifier_context.worker.process_delegation_request(
         action_request,
         expected_gateway_public_key_hex=verifier_context.gateway_pubkey,
+        expected_gateway_key_id=verifier_context.gateway_key_id,
         expected_build_config_id=BUILD_CONFIG_ID,
     )
 
@@ -192,6 +202,7 @@ def test_result_verifier_rejects_self_attested_gateway_key(verifier_context):
             verifier_context.coordinator_id,
             expected_tee_authorization=receipt,
             expected_gateway_public_key_hex=receipt["gateway_public_key_hex"],
+            expected_gateway_key_id=verifier_context.gateway_key_id,
             expected_action="PROCESS_DATA",
             expected_parameters={},
             expected_build_config_id=BUILD_CONFIG_ID,
@@ -211,6 +222,7 @@ def test_rejects_result_signed_by_unexpected_worker_key(verifier_context):
             verifier_context.coordinator_id,
             expected_tee_authorization=receipt,
             expected_gateway_public_key_hex=receipt["gateway_public_key_hex"],
+            expected_gateway_key_id=verifier_context.gateway_key_id,
             expected_action="PROCESS_DATA",
             expected_parameters={},
             expected_build_config_id=BUILD_CONFIG_ID,
@@ -236,6 +248,7 @@ def test_rejects_wrong_coordinator_audience(verifier_context):
             "wrong-coordinator",
             expected_tee_authorization=receipt,
             expected_gateway_public_key_hex=receipt["gateway_public_key_hex"],
+            expected_gateway_key_id=verifier_context.gateway_key_id,
             expected_action="PROCESS_DATA",
             expected_parameters={},
             expected_build_config_id=BUILD_CONFIG_ID,
@@ -298,11 +311,13 @@ def test_worker_rejects_replayed_signed_request(verifier_context):
     first = verifier_context.worker.process_delegation_request(
         action_request,
         expected_gateway_public_key_hex=verifier_context.gateway_pubkey,
+        expected_gateway_key_id=verifier_context.gateway_key_id,
         expected_build_config_id=BUILD_CONFIG_ID,
     )
     second = verifier_context.worker.process_delegation_request(
         action_request,
         expected_gateway_public_key_hex=verifier_context.gateway_pubkey,
+        expected_gateway_key_id=verifier_context.gateway_key_id,
         expected_build_config_id=BUILD_CONFIG_ID,
     )
 
@@ -349,6 +364,7 @@ def test_worker_rejects_receipt_without_credential_enforcement(verifier_context)
     result = verifier_context.worker.process_delegation_request(
         action_request,
         expected_gateway_public_key_hex=verifier_context.gateway_pubkey,
+        expected_gateway_key_id=verifier_context.gateway_key_id,
         expected_build_config_id=BUILD_CONFIG_ID,
     )
 
@@ -375,11 +391,62 @@ def test_worker_rejects_receipt_without_build_config_id(verifier_context):
     result = verifier_context.worker.process_delegation_request(
         action_request,
         expected_gateway_public_key_hex=verifier_context.gateway_pubkey,
+        expected_gateway_key_id=verifier_context.gateway_key_id,
         expected_build_config_id=BUILD_CONFIG_ID,
     )
 
     assert result["result_data"]["status"] == "FAILED"
     assert "build_config_id" in result["result_data"]["error"]
+
+
+def test_worker_rejects_receipt_without_gateway_key_id(verifier_context):
+    receipt = verifier_context.receipt_for("tee-del-missing-gateway-key-id")
+    receipt["gateway_key_id"] = None
+    delegation_id = verifier_context.coordinator.delegate_task(
+        verifier_context.worker_id,
+        "PROCESS_DATA",
+        "d",
+        {},
+        tee_authorization=receipt,
+    )
+    action_request = verifier_context.coordinator._delegations[delegation_id].to_action_request(
+        verifier_context.coordinator.identity
+    )
+
+    result = verifier_context.worker.process_delegation_request(
+        action_request,
+        expected_gateway_public_key_hex=verifier_context.gateway_pubkey,
+        expected_gateway_key_id=verifier_context.gateway_key_id,
+        expected_build_config_id=BUILD_CONFIG_ID,
+    )
+
+    assert result["result_data"]["status"] == "FAILED"
+    assert "gateway_key_id" in result["result_data"]["error"]
+
+
+def test_worker_rejects_receipt_without_authorization_expiry(verifier_context):
+    receipt = verifier_context.receipt_for("tee-del-missing-expiry")
+    receipt["authorization_expires_at"] = None
+    delegation_id = verifier_context.coordinator.delegate_task(
+        verifier_context.worker_id,
+        "PROCESS_DATA",
+        "d",
+        {},
+        tee_authorization=receipt,
+    )
+    action_request = verifier_context.coordinator._delegations[delegation_id].to_action_request(
+        verifier_context.coordinator.identity
+    )
+
+    result = verifier_context.worker.process_delegation_request(
+        action_request,
+        expected_gateway_public_key_hex=verifier_context.gateway_pubkey,
+        expected_gateway_key_id=verifier_context.gateway_key_id,
+        expected_build_config_id=BUILD_CONFIG_ID,
+    )
+
+    assert result["result_data"]["status"] == "FAILED"
+    assert "authorization_expires_at" in result["result_data"]["error"]
 
 
 def test_result_nonce_cache_is_bounded(verifier_context, monkeypatch):

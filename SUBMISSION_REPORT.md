@@ -8,7 +8,7 @@
 **Demo Video**: https://youtu.be/ukZQ7F81aho  
 **SDK**: `@terminal3/t3n-sdk@3.5.2`  
 **Contract**: `adn-processor v3.9.2` — issuer-authenticated TEE authorization decision for delegated calls + verified worker results + mandatory policy TTL
-**Live proof**: `proof/live_run_v3.8.1_final_88b7b88.txt` (v3.8.1 structural — current). v3.9.2 is built + unit-tested (Rust 25/25, Python 61/61) but **not yet deployed**; the last *deployed/invoked* contract is the v3.8.1 structural build in that proof. Operator must build v3.9.2 with `ADN_TRUSTED_ISSUER` (see `t3n-bridge/scripts/derive_issuer.mjs`) and run a fresh live proof.
+**Live proof**: `proof/live_run_v3.8.1_final_88b7b88.txt` (v3.8.1 structural — current). v3.9.2 is built + unit-tested (Rust 25/25, Python 63/63) but **not yet deployed**; the last *deployed/invoked* contract is the v3.8.1 structural build in that proof. Operator must build v3.9.2 with `ADN_TRUSTED_ISSUER` (see `t3n-bridge/scripts/derive_issuer.mjs`), provide a pinned gateway signer, and run a fresh live proof.
 
 ---
 
@@ -26,7 +26,7 @@ An integration prototype demonstrating real Terminal 3 authentication, SDK-nativ
 
 Authorization root (current v3.9.2 path, introduced in v3.9.1): a tenant-controlled issuer Ethereum address is pinned into the contract at build time (`ADN_TRUSTED_ISSUER`). `user_sig` is **mandatory**, recovered via EIP-191 over the credential JCS, and required to equal the pinned issuer — so a self-issued credential is rejected. The issuer-signed credential also carries an authorization policy (`adn_authorization_v1`) binding target, action, and max TTL. The pinned address is public (not secret); rotation is a new contract version. **One property remains runtime-blocked, not effort-blocked, and is NOT claimed: durable replay prevention** — this `generic-input` WIT world imports no KV/storage capability, so consumed nonces cannot be persisted *in this contract*. (This bounds the present world; it does not assert Terminal 3 offers no state-capable contract model.) An exact-invocation replay within the credential TTL is therefore not prevented at the contract layer; short (≤300s) TTLs bound the window. Persistent workflow state for the other 19 exports is unavailable for the same KV reason.
 
-Python worker execution now requires a signed gateway `TEE_AUTHORIZATION` receipt bound to the TEE-shaped authorization result, credential fingerprint, target, action, and request hash. This closes the local "worker executes with no authorization receipt" gap, but it is not claimed as a T3N-attested worker-dispatch primitive until a fresh live gateway proof or TEE-attested output path exists.
+Python worker execution now requires a signed gateway `TEE_AUTHORIZATION` receipt bound to the TEE-shaped authorization result, credential fingerprint, target, action, request hash, `gateway_key_id`, `build_config_id`, and `authorization_expires_at`. This closes the local "worker executes with no authorization receipt" gap, but it is not claimed as a T3N-attested worker-dispatch primitive until a fresh live gateway proof or TEE-attested output path exists.
 
 ### Core capabilities demonstrated
 
@@ -41,7 +41,7 @@ Python worker execution now requires a signed gateway `TEE_AUTHORIZATION` receip
 | Per-call DelegationEnvelope | buildInvocationPreimage + signAgentInvocation — full wire shape |
 | Negative live TEE test | Empty records → `process-data: records cannot be empty` rejection |
 | Multi-agent Ed25519 delegation | 4 distinct identities, signed payloads, tamper detection |
-| Python security tests | 61/61 pass — 34 adapter/policy tests, 19 worker-result and gateway-receipt verifier tests, and 8 audit-guard tests |
+| Python security tests | 63/63 pass — 34 adapter/policy tests, 21 worker-result and gateway-receipt verifier tests, and 8 audit-guard tests |
 | Worker-result verification (v3.9.2; H-05/06/07) | Coordinator verifies each worker result before consuming it: Ed25519 signature (`verify_action_request`, `TASK_RESULT`); signer pinned by **exact worker public key** (H-06), with `agent_id` as auxiliary check; `result_data` bound to signed `data_hash`; outer envelope nonce == body nonce (H-07); originating `delegation_id`; audience == coordinator; status `COMPLETED`; signed gateway `TEE_AUTHORIZATION` receipt bound to target/action/request hash; lock-guarded single-use result nonce with bounded in-memory retention. `src/result_verifier.py`. **Scope (H-09):** the single-use check is per-process (in-memory); durable duplicate-result rejection across restarts requires a persistent coordinator-side ledger. Direct matrix `tests/test_result_verifier.py` (H-08): accept + fail-closed cases for missing/wrong TEE receipt, other worker key, wrong delegation id, wrong audience, modified body, missing data_hash, inconsistent nonce, stale proof, second use, plus bounded retention and concurrent duplicate checks. |
 
 ---
@@ -67,7 +67,7 @@ Full output: [`proof/live_run_v3.8.1_c01_proof.txt`](proof/live_run_v3.8.1_c01_p
   [+] revocation: SUCCESS (tee:delegation/contracts::revoke)
   [+] post-revocation call: REJECTED: delegate-task: credential expired (TEE contract layer — v3.8.1 TTL expiry; live registry lookup requires undocumented host primitive)
   [+] missing agent_sig:    REJECTED: delegate-task: agent_sig missing from envelope
-  [+] short nonce (4 bytes): REJECTED: delegate-task: nonce must be exactly 16 bytes
+  [+] short nonce (4 bytes): REJECTED: delegate-task: nonce too short (< 8 bytes)
 
 [Phase 2] Python ADN — Multi-Agent Delegation...
   [+] Unique cryptographic identities: 4/4
@@ -245,12 +245,12 @@ Residual gap: an `is-live` host primitive for real-time revocation registry look
 
 ## Security
 
-61 Python security tests across 3 suites:
+63 Python security tests across 3 suites:
 
 | Suite | Tests | Result |
 |---|---|---|
 | Adapter/policy negative-security checks | 34 | PASS |
-| Worker-result and gateway-receipt verifier checks | 19 | PASS |
+| Worker-result and gateway-receipt verifier checks | 21 | PASS |
 | Audit guardrails | 8 | PASS |
 
 Run: `python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py -v --tb=short`
@@ -290,7 +290,7 @@ ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_IS
 ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo build --locked --target wasm32-wasip2 --release
 
 cd ../t3n-bridge
-T3N_API_KEY=0x<your_key> ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> node --loader ts-node/esm src/index.ts 2>&1 | tee ../proof/live_run_v3.9.2.txt
+T3N_API_KEY=0x<your_key> ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> ADN_GATEWAY_PRIVATE_KEY_HEX=<32-byte-ed25519-seed-hex> ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX=<matching-ed25519-pubkey-hex> ADN_GATEWAY_KEY_ID=<gateway-key-id> node --loader ts-node/esm src/index.ts 2>&1 | tee ../proof/live_run_v3.9.2.txt
 
 # 10-phase Python interaction patterns demo (local TEE simulation)
 T3N_API_KEY=0x<your_key> python demo/features_demo.py

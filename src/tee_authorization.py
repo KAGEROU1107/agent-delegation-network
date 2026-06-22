@@ -5,6 +5,7 @@ but it does not directly dispatch Python workers. These helpers bind that
 decision-shaped output into the Python worker path with a signed gateway receipt.
 """
 
+import datetime
 from copy import deepcopy
 from typing import Any, Dict, Optional
 
@@ -40,6 +41,9 @@ def _receipt_body(receipt: Dict[str, Any]) -> Dict[str, Any]:
         "credential_enforced",
         "build_config_id",
         "tee_result_digest",
+        "gateway_key_id",
+        "authorization_expires_at",
+        "authorized_at",
     ]
     return {key: receipt.get(key) for key in keys}
 
@@ -51,6 +55,7 @@ def receipt_fingerprint(receipt: Dict[str, Any]) -> str:
 
 def build_tee_authorization_receipt(
     gateway_identity,
+    gateway_key_id: str,
     tee_result: Dict[str, Any],
     action: str,
     parameters: Optional[Dict[str, Any]] = None,
@@ -60,7 +65,13 @@ def build_tee_authorization_receipt(
     to_agent_id = tee_result.get("routed_to")
     if not delegation_id or not to_agent_id:
         raise ValueError("TEE authorization requires delegation_id and routed_to")
+    if not gateway_key_id:
+        raise ValueError("TEE authorization requires gateway_key_id")
+    authorization_expires_at = tee_result.get("authorization_expires_at")
+    if not authorization_expires_at:
+        raise ValueError("TEE authorization requires authorization_expires_at")
 
+    authorized_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
     body = {
         "v": RECEIPT_VERSION,
         "delegation_id": delegation_id,
@@ -73,6 +84,9 @@ def build_tee_authorization_receipt(
         "credential_enforced": tee_result.get("credential_enforced"),
         "build_config_id": tee_result.get("build_config_id"),
         "tee_result_digest": _sha256(_canonical(tee_result)),
+        "gateway_key_id": gateway_key_id,
+        "authorization_expires_at": authorization_expires_at,
+        "authorized_at": authorized_at,
     }
     proof = gateway_identity.sign_action(RECEIPT_ACTION, delegation_id, data=body)
     return {
@@ -85,6 +99,7 @@ def build_tee_authorization_receipt(
 def verify_tee_authorization_receipt(
     receipt: Dict[str, Any],
     expected_gateway_pubkey_hex: str,
+    expected_gateway_key_id: str,
     expected_delegation_id: str,
     expected_to_agent_id: str,
     expected_action: str,
@@ -116,6 +131,23 @@ def verify_tee_authorization_receipt(
         raise RuntimeError("TEE authorization build_config_id missing")
     if not body["tee_result_digest"]:
         raise RuntimeError("TEE authorization T3N result digest missing")
+    if not body["gateway_key_id"]:
+        raise RuntimeError("TEE authorization gateway_key_id missing")
+    if not expected_gateway_key_id:
+        raise RuntimeError("TEE authorization expected gateway_key_id required")
+    if body["gateway_key_id"] != expected_gateway_key_id:
+        raise RuntimeError("TEE authorization gateway_key_id mismatch")
+    if not body["authorization_expires_at"]:
+        raise RuntimeError("TEE authorization authorization_expires_at missing")
+    try:
+        authorization_expires = datetime.datetime.fromisoformat(body["authorization_expires_at"])
+        if authorization_expires.tzinfo is None:
+            authorization_expires = authorization_expires.replace(tzinfo=datetime.timezone.utc)
+    except ValueError as exc:
+        raise RuntimeError("TEE authorization authorization_expires_at invalid") from exc
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if now > authorization_expires:
+        raise RuntimeError("TEE authorization authorization_expires_at expired")
     if not expected_build_config_id:
         raise RuntimeError("TEE authorization expected build_config_id required")
     if body["build_config_id"] != expected_build_config_id:

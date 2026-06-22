@@ -1,17 +1,19 @@
 /**
  * Python ADN subprocess runner.
  *
- * Live execution now uses a strict three-step handoff:
+ * Live execution uses a strict three-step handoff:
  *   1. Prepare Python worker identities and return their stable IDs.
  *   2. Obtain real T3N delegate-task authorization for those exact IDs.
- *   3. Execute Python work only with the prepared identities and typed T3N results.
+ *   3. Execute Python work only with the prepared identities, typed T3N results,
+ *      and a separately provisioned gateway signing key.
  *
- * Security: no secret or path material is interpolated into command strings.
- * All values flow through the subprocess environment only.
+ * Security: the bridge no longer sends private keys or authorization bundles
+ * through child stdout or environment JSON blobs. Sensitive material is written
+ * to short-lived temp files and cleaned up after the subprocess exits.
  */
 
 import { spawn } from "child_process";
-import { writeFileSync, unlinkSync } from "fs";
+import { readFileSync, unlinkSync, writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { tmpdir } from "os";
@@ -45,7 +47,12 @@ export interface PreparedAdnExecution {
   worker1: PreparedAdnIdentity;
   worker2: PreparedAdnIdentity;
   validator: PreparedAdnIdentity;
-  gateway: PreparedAdnIdentity;
+}
+
+export interface GatewayKeyBundle {
+  gatewayKeyId: string;
+  publicKeyHex: string;
+  privateKeyHex: string;
 }
 
 export interface TeeAuthorizationResult {
@@ -55,6 +62,7 @@ export interface TeeAuthorizationResult {
   credential_fingerprint: string;
   credential_enforced: boolean;
   build_config_id: string;
+  authorization_expires_at: string;
 }
 
 export interface TeeAuthorizationBundle {
@@ -84,6 +92,20 @@ from src.result_verifier import verify_worker_result
 from src.tee_authorization import build_tee_authorization_receipt
 
 
+def write_output(payload):
+    output_path = os.environ.get('ADN_OUTPUT_PATH', '')
+    if not output_path:
+        raise RuntimeError('ADN_OUTPUT_PATH is required')
+    Path(output_path).write_text(json.dumps(payload), encoding='utf-8')
+
+
+def load_json_file(env_name):
+    input_path = os.environ.get(env_name, '')
+    if not input_path:
+        raise RuntimeError(f'{env_name} is required')
+    return json.loads(Path(input_path).read_text(encoding='utf-8'))
+
+
 def make_identity(name, private_key_hex=None):
     private_key_hex = private_key_hex or secrets.token_hex(32)
     agent = create_agent(name, private_key_hex=private_key_hex)
@@ -96,9 +118,8 @@ def make_identity(name, private_key_hex=None):
     return agent, packet
 
 
-def restore_identity(name, identity_bundle):
-    packet = identity_bundle.get(name) or {}
-    private_key_hex = packet.get('privateKeyHex')
+def restore_identity(name, packet):
+    private_key_hex = (packet or {}).get('privateKeyHex')
     if not private_key_hex:
         raise RuntimeError(f'{name} private key bundle missing')
     agent = create_agent(name, private_key_hex=private_key_hex)
@@ -107,6 +128,16 @@ def restore_identity(name, identity_bundle):
     if agent.identity.public_key_hex != packet.get('publicKeyHex'):
         raise RuntimeError(f'{name} publicKeyHex mismatch')
     return agent
+
+
+def restore_gateway_identity(gateway_bundle):
+    private_key_hex = (gateway_bundle or {}).get('privateKeyHex')
+    if not private_key_hex:
+        raise RuntimeError('gateway private key bundle missing')
+    gateway = create_agent('gateway', private_key_hex=private_key_hex)
+    if gateway.identity.public_key_hex != gateway_bundle.get('publicKeyHex'):
+        raise RuntimeError('Trusted gateway public key mismatch')
+    return gateway
 
 
 def load_amounts():
@@ -138,6 +169,8 @@ def require_authorization_result(name, tee_bundle, expected_worker_id, expected_
         raise RuntimeError(f'{name} build_config_id missing')
     if result.get('build_config_id') != expected_build_config_id:
         raise RuntimeError(f'{name} build_config_id mismatch')
+    if not result.get('authorization_expires_at'):
+        raise RuntimeError(f'{name} authorization_expires_at missing')
     return result
 
 
@@ -146,37 +179,53 @@ if mode == 'prepare':
     worker1, worker1_packet = make_identity('worker1')
     worker2, worker2_packet = make_identity('worker2')
     validator, validator_packet = make_identity('validator')
-    gateway, gateway_packet = make_identity('gateway')
-    print(json.dumps({
+    write_output({
         'tenantDid': tenant_did,
         'coordinator': coordinator_packet,
         'worker1': worker1_packet,
         'worker2': worker2_packet,
         'validator': validator_packet,
-        'gateway': gateway_packet,
-    }))
+    })
+    print(json.dumps({'status': 'prepared'}))
     raise SystemExit(0)
 
-identity_bundle = json.loads(os.environ['ADN_IDENTITY_BUNDLE_JSON'])
-tee_bundle = json.loads(os.environ['TEE_AUTHORIZATION_BUNDLE_JSON'])
-trusted_gateway_public_key_hex = os.environ.get('ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX', '')
-expected_build_config_id = tee_bundle.get('buildConfigId') or ''
+if mode == 'prepare_gateway':
+    gateway, gateway_packet = make_identity('gateway')
+    gateway_key_id = os.environ.get('ADN_GATEWAY_KEY_ID', '') or f"gateway-{gateway.identity.agent_id}"
+    write_output({
+        'gatewayKeyId': gateway_key_id,
+        'publicKeyHex': gateway_packet['publicKeyHex'],
+        'privateKeyHex': gateway_packet['privateKeyHex'],
+    })
+    print(json.dumps({'status': 'prepared_gateway'}))
+    raise SystemExit(0)
+
+identity_bundle = load_json_file('ADN_IDENTITY_BUNDLE_PATH')
+tee_bundle = load_json_file('TEE_AUTHORIZATION_BUNDLE_PATH')
+gateway_key_bundle = load_json_file('ADN_GATEWAY_KEY_BUNDLE_PATH')
 
 if identity_bundle.get('tenantDid') != tenant_did:
     raise RuntimeError('Prepared tenant DID mismatch')
+
+trusted_gateway_public_key_hex = gateway_key_bundle.get('publicKeyHex', '')
+trusted_gateway_key_id = gateway_key_bundle.get('gatewayKeyId', '')
+expected_build_config_id = tee_bundle.get('buildConfigId') or ''
+
 if not trusted_gateway_public_key_hex:
     raise RuntimeError('Trusted gateway public key is required')
+if not trusted_gateway_key_id:
+    raise RuntimeError('Trusted gateway key id is required')
 if not expected_build_config_id:
     raise RuntimeError('TEE authorization buildConfigId is required')
 
-coordinator = restore_identity('coordinator', identity_bundle)
-worker1 = restore_identity('worker1', identity_bundle)
-worker2 = restore_identity('worker2', identity_bundle)
-validator = restore_identity('validator', identity_bundle)
-gateway = restore_identity('gateway', identity_bundle)
-
-if gateway.identity.public_key_hex != trusted_gateway_public_key_hex:
-    raise RuntimeError('Trusted gateway public key mismatch')
+coordinator = restore_identity('coordinator', identity_bundle.get('coordinator'))
+worker1 = restore_identity('worker1', identity_bundle.get('worker1'))
+worker2 = restore_identity('worker2', identity_bundle.get('worker2'))
+validator = restore_identity('validator', identity_bundle.get('validator'))
+gateway = restore_gateway_identity({
+    'publicKeyHex': trusted_gateway_public_key_hex,
+    'privateKeyHex': gateway_key_bundle.get('privateKeyHex'),
+})
 
 unique_ids = len({
     coordinator.identity.agent_id,
@@ -241,6 +290,7 @@ params1 = {'data_source': 'csv', 'time_period': 'Q1-2026', 'filters': []}
 process_auth_result = require_authorization_result('processData', tee_bundle, w1_id, expected_build_config_id)
 auth1 = build_tee_authorization_receipt(
     gateway_identity=gateway.identity,
+    gateway_key_id=trusted_gateway_key_id,
     tee_result=process_auth_result,
     action='PROCESS_DATA',
     parameters=params1,
@@ -251,6 +301,7 @@ sig1 = req1.to_action_request(coordinator.identity)
 res1 = worker1.process_delegation_request(
     sig1,
     expected_gateway_public_key_hex=trusted_gateway_public_key_hex,
+    expected_gateway_key_id=trusted_gateway_key_id,
     expected_build_config_id=expected_build_config_id,
 )
 rd1 = verify_worker_result(
@@ -261,6 +312,7 @@ rd1 = verify_worker_result(
     coord_id,
     expected_tee_authorization=auth1,
     expected_gateway_public_key_hex=trusted_gateway_public_key_hex,
+    expected_gateway_key_id=trusted_gateway_key_id,
     expected_action='PROCESS_DATA',
     expected_parameters=params1,
     expected_build_config_id=expected_build_config_id,
@@ -277,6 +329,7 @@ params2 = {'data': processed_data}
 validate_auth_result = require_authorization_result('validateQuality', tee_bundle, val_id, expected_build_config_id)
 auth2 = build_tee_authorization_receipt(
     gateway_identity=gateway.identity,
+    gateway_key_id=trusted_gateway_key_id,
     tee_result=validate_auth_result,
     action='VALIDATE_QUALITY',
     parameters=params2,
@@ -287,6 +340,7 @@ sig2 = req2.to_action_request(coordinator.identity)
 res2 = validator.process_delegation_request(
     sig2,
     expected_gateway_public_key_hex=trusted_gateway_public_key_hex,
+    expected_gateway_key_id=trusted_gateway_key_id,
     expected_build_config_id=expected_build_config_id,
 )
 rd2 = verify_worker_result(
@@ -297,6 +351,7 @@ rd2 = verify_worker_result(
     coord_id,
     expected_tee_authorization=auth2,
     expected_gateway_public_key_hex=trusted_gateway_public_key_hex,
+    expected_gateway_key_id=trusted_gateway_key_id,
     expected_action='VALIDATE_QUALITY',
     expected_parameters=params2,
     expected_build_config_id=expected_build_config_id,
@@ -316,21 +371,66 @@ print(json.dumps({
 }))
 `;
 
-function runPythonJson<T>(env: Record<string, string>, deps: RunAdnDeps = {}): Promise<T> {
-  const tmpFile = join(tmpdir(), `adn_run_${randomBytes(8).toString("hex")}.py`);
+function tempPath(prefix: string, suffix: string): string {
+  return join(tmpdir(), `${prefix}_${randomBytes(8).toString("hex")}.${suffix}`);
+}
+
+function writeJsonTemp(prefix: string, payload: unknown): string {
+  const outputPath = tempPath(prefix, "json");
+  writeFileSync(outputPath, JSON.stringify(payload), "utf-8");
+  return outputPath;
+}
+
+function readJsonFile<T>(path: string): T {
+  return JSON.parse(readFileSync(path, "utf-8")) as T;
+}
+
+function cleanupTempFiles(paths: string[]): void {
+  for (const path of paths) {
+    try {
+      unlinkSync(path);
+    } catch {
+      // Best-effort cleanup only.
+    }
+  }
+}
+
+function requireHexEnv(name: string): string {
+  const value = process.env[name]?.trim().replace(/^0x/i, "").toLowerCase();
+  if (!value) {
+    throw new Error(`${name} is required for the Python gateway signer`);
+  }
+  if (!/^[0-9a-f]{64}$/.test(value)) {
+    throw new Error(`${name} must be 32 bytes of hex, with or without 0x.`);
+  }
+  return value;
+}
+
+export function requireConfiguredGatewayKeyBundleFromEnv(): GatewayKeyBundle {
+  const privateKeyHex = requireHexEnv("ADN_GATEWAY_PRIVATE_KEY_HEX");
+  const publicKeyHex = requireHexEnv("ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX");
+  const gatewayKeyId = process.env.ADN_GATEWAY_KEY_ID?.trim() || `gateway-${publicKeyHex.slice(0, 12)}`;
+  return {
+    gatewayKeyId,
+    publicKeyHex,
+    privateKeyHex,
+  };
+}
+
+function runPythonProcess(env: Record<string, string>, deps: RunAdnDeps = {}): Promise<{ stdout: string; stderr: string }> {
+  const scriptPath = tempPath("adn_run", "py");
   const spawnImpl = deps.spawnImpl ?? spawn;
   const pythonExecutable = deps.pythonExecutable ?? "python3";
 
   return new Promise((resolve, reject) => {
-    writeFileSync(tmpFile, RUNNER_SCRIPT, "utf-8");
+    writeFileSync(scriptPath, RUNNER_SCRIPT, "utf-8");
+    const childEnv: Record<string, string> = { ...process.env, ADN_ROOT, T3_MOCK: "false", ...env } as Record<string, string>;
+    delete childEnv.T3N_API_KEY;
+    delete childEnv.ADN_GATEWAY_PRIVATE_KEY_HEX;
+    delete childEnv.ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX;
 
-    const proc = spawnImpl(pythonExecutable, [tmpFile], {
-      env: {
-        ...process.env,
-        ADN_ROOT,
-        T3_MOCK: "false",
-        ...env,
-      },
+    const proc = spawnImpl(pythonExecutable, [scriptPath], {
+      env: childEnv,
     });
 
     let stdout = "";
@@ -342,53 +442,83 @@ function runPythonJson<T>(env: Record<string, string>, deps: RunAdnDeps = {}): P
       stderr += chunk.toString();
     });
     proc.on("close", (code) => {
-      try {
-        unlinkSync(tmpFile);
-      } catch {
-        // Best-effort cleanup only.
-      }
+      cleanupTempFiles([scriptPath]);
       if (code !== 0) {
         reject(new Error(`ADN process failed (exit ${code}):\n${stderr}`));
         return;
       }
-      try {
-        resolve(JSON.parse(stdout.trim()) as T);
-      } catch {
-        reject(new Error(`ADN output parse error:\n${stdout}\n${stderr}`));
-      }
+      resolve({ stdout, stderr });
     });
   });
 }
 
-export function prepareAdnExecution(
+export async function prepareAdnExecution(
   tenantDid: string,
   deps: RunAdnDeps = {}
 ): Promise<PreparedAdnExecution> {
-  return runPythonJson<PreparedAdnExecution>(
-    {
-      DID: tenantDid,
-      ADN_RUN_MODE: "prepare",
-    },
-    deps,
-  );
+  const outputPath = tempPath("adn_prepare", "json");
+  try {
+    await runPythonProcess(
+      {
+        DID: tenantDid,
+        ADN_RUN_MODE: "prepare",
+        ADN_OUTPUT_PATH: outputPath,
+      },
+      deps,
+    );
+    return readJsonFile<PreparedAdnExecution>(outputPath);
+  } finally {
+    cleanupTempFiles([outputPath]);
+  }
 }
 
-export function runAdnWithRealDid(
-  apiKey: string,
+export async function prepareGatewayKeyBundle(
+  deps: RunAdnDeps = {}
+): Promise<GatewayKeyBundle> {
+  const outputPath = tempPath("adn_gateway", "json");
+  try {
+    await runPythonProcess(
+      {
+        DID: "did:t3n:gateway-local",
+        ADN_RUN_MODE: "prepare_gateway",
+        ADN_OUTPUT_PATH: outputPath,
+      },
+      deps,
+    );
+    return readJsonFile<GatewayKeyBundle>(outputPath);
+  } finally {
+    cleanupTempFiles([outputPath]);
+  }
+}
+
+export async function runAdnWithRealDid(
   tenantDid: string,
   preparedExecution: PreparedAdnExecution,
   teeAuthorizationBundle: TeeAuthorizationBundle,
+  gatewayKeyBundle: GatewayKeyBundle,
   deps: RunAdnDeps = {},
 ): Promise<AdnDelegationResult> {
-  return runPythonJson<AdnDelegationResult>(
-    {
-      DID: tenantDid,
-      T3N_API_KEY: apiKey,
-      ADN_RUN_MODE: "execute",
-      ADN_IDENTITY_BUNDLE_JSON: JSON.stringify(preparedExecution),
-      ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX: preparedExecution.gateway.publicKeyHex,
-      TEE_AUTHORIZATION_BUNDLE_JSON: JSON.stringify(teeAuthorizationBundle),
-    },
-    deps,
-  );
+  const identityBundlePath = writeJsonTemp("adn_identity_bundle", preparedExecution);
+  const teeAuthorizationPath = writeJsonTemp("adn_tee_bundle", teeAuthorizationBundle);
+  const gatewayKeyBundlePath = writeJsonTemp("adn_gateway_bundle", gatewayKeyBundle);
+
+  try {
+    const { stdout, stderr } = await runPythonProcess(
+      {
+        DID: tenantDid,
+        ADN_RUN_MODE: "execute",
+        ADN_IDENTITY_BUNDLE_PATH: identityBundlePath,
+        TEE_AUTHORIZATION_BUNDLE_PATH: teeAuthorizationPath,
+        ADN_GATEWAY_KEY_BUNDLE_PATH: gatewayKeyBundlePath,
+      },
+      deps,
+    );
+    try {
+      return JSON.parse(stdout.trim()) as AdnDelegationResult;
+    } catch {
+      throw new Error(`ADN output parse error:\n${stdout}\n${stderr}`);
+    }
+  } finally {
+    cleanupTempFiles([identityBundlePath, teeAuthorizationPath, gatewayKeyBundlePath]);
+  }
 }

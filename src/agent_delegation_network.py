@@ -212,6 +212,7 @@ class AgentDelegationNetwork:
         self,
         signed_request: Dict,
         expected_gateway_public_key_hex: Optional[str] = None,
+        expected_gateway_key_id: Optional[str] = None,
         expected_build_config_id: Optional[str] = None,
     ) -> Dict:
         """
@@ -246,6 +247,7 @@ class AgentDelegationNetwork:
                 signed_request,
                 self.identity.agent_id,
                 expected_gateway_public_key_hex or "",
+                expected_gateway_key_id or "",
                 expected_build_config_id or "",
             )
             if not is_valid:

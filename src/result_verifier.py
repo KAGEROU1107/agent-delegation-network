@@ -40,6 +40,7 @@ def verify_worker_result(
     coordinator_id,
     expected_tee_authorization=None,
     expected_gateway_public_key_hex=None,
+    expected_gateway_key_id=None,
     expected_action=None,
     expected_parameters=None,
     expected_build_config_id=None,
@@ -48,6 +49,8 @@ def verify_worker_result(
         raise RuntimeError('expected TEE authorization is required')
     if not expected_gateway_public_key_hex:
         raise RuntimeError('expected gateway public key is required')
+    if not expected_gateway_key_id:
+        raise RuntimeError('expected gateway key id is required')
     if not expected_build_config_id:
         raise RuntimeError('expected build_config_id is required')
     if not expected_action:
@@ -83,6 +86,7 @@ def verify_worker_result(
     verify_tee_authorization_receipt(
         receipt,
         expected_gateway_pubkey_hex=expected_gateway_public_key_hex,
+        expected_gateway_key_id=expected_gateway_key_id,
         expected_delegation_id=expected_delegation_id,
         expected_to_agent_id=expected_worker_id,
         expected_action=expected_action,

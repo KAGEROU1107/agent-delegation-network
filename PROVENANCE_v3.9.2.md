@@ -10,7 +10,7 @@ coordinator-side worker-result verification in the Python flow (H-05).
 | WASM size | 411,778 bytes |
 | Rust toolchain | rustc 1.96.0 (ac68faa20 2026-05-25) |
 | Target | wasm32-wasip2 |
-| Tests | Rust 25/25 (`cargo test --locked`, including digest delegation ID and pinned/unpinned production-path coverage); Python 63/63 (`pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py`) |
+| Tests | Rust 25/25 (`cargo test --locked`, including digest delegation ID and pinned/unpinned production-path coverage); Python 65/65 (`pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py`) |
 
 ## The committed WASM SHA is the UNPINNED build (fails closed)
 
@@ -26,7 +26,7 @@ RUSTC_VERSION="$(rustc --version)"
 ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo test --locked
 ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> cargo build --locked --target wasm32-wasip2 --release
 ADN_TRUSTED_ISSUER=58da990a8f4a3a6ca7cb6315d68a140105917352 ADN_TENANT_DID=did:t3n:fixture cargo test --locked
-python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py -v --tb=short   # 63/63
+python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py -v --tb=short   # 65/65
 cd ../t3n-bridge && T3N_API_KEY=0x<key> ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> ADN_GATEWAY_PRIVATE_KEY_HEX=<32-byte-ed25519-seed-hex> ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX=<matching-ed25519-pubkey-hex> ADN_GATEWAY_KEY_ID=<gateway-key-id> node --loader ts-node/esm src/index.ts 2>&1 | tee ../proof/live_run_v3.9.2.txt
 ```
 
@@ -45,6 +45,10 @@ Python multi-agent flow:
 - dedicated pinned gateway signer issues the worker receipt; workers and the
   coordinator both require the pinned gateway public key, exact `gateway_key_id`,
   exact `build_config_id`, and `authorization_expires_at`
+- worker request replay is recorded in a durable on-disk ledger keyed by
+  `SHA-256(delegation_id || request_hash || receipt_fingerprint)`; completed
+  requests remain single-use across restart, while handler failures are marked
+  `RETRYABLE_FAILURE` so the same authorization can be retried before expiry
 - coordinator verifies each worker result (Ed25519 sig, signer, data_hash binding,
   delegation_id, audience, COMPLETED status, signed gateway TEE authorization
   receipt, lock-guarded single-use result nonce with bounded in-memory retention)

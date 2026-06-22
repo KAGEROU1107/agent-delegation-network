@@ -7,6 +7,7 @@ import json
 import time
 import uuid
 import logging
+import datetime
 from typing import Dict, List, Optional, Any, Callable
 from pathlib import Path
 from threading import Lock
@@ -26,6 +27,22 @@ from src.execution_receipt import build_receipt, verify_receipt
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _delegation_request_replay_expires_at(delegation_request: DelegationRequest) -> float:
+    """Bound request replay retention to the shortest trusted authorization window."""
+    expires_at = float(delegation_request.expires_at or time.time())
+    receipt = delegation_request.tee_authorization or {}
+    authorization_expires_at = receipt.get("authorization_expires_at")
+    if authorization_expires_at:
+        try:
+            parsed = datetime.datetime.fromisoformat(str(authorization_expires_at))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+            expires_at = min(expires_at, parsed.timestamp())
+        except ValueError:
+            pass
+    return expires_at
 
 
 class AgentDelegationNetwork:
@@ -283,7 +300,10 @@ class AgentDelegationNetwork:
                 )
                 return result.to_action_request(self.identity)
 
-            replay_allowed, replay_reason = DelegationProtocol.consume_delegation_request_replay(replay_key)
+            replay_allowed, replay_reason = DelegationProtocol.begin_delegation_request_execution(
+                replay_key,
+                _delegation_request_replay_expires_at(delegation_request),
+            )
             if not replay_allowed:
                 logger.warning(replay_reason)
                 result = DelegationProtocol.create_delegation_result(
@@ -321,11 +341,20 @@ class AgentDelegationNetwork:
                     DelegationStatus.COMPLETED,
                     result=task_result
                 )
+                DelegationProtocol.finalize_delegation_request_execution(
+                    replay_key,
+                    "COMPLETED",
+                )
                 
                 status = DelegationStatus.COMPLETED
                 
             except Exception as e:
                 logger.error(f"Task execution failed: {e}")
+                DelegationProtocol.finalize_delegation_request_execution(
+                    replay_key,
+                    "RETRYABLE_FAILURE",
+                    error=str(e),
+                )
                 result = DelegationProtocol.create_delegation_result(
                     delegation_request,
                     self.identity,

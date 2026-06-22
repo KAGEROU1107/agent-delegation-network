@@ -277,15 +277,15 @@ Run the local feature-pattern demo: `T3N_API_KEY=0x<key> python demo/features_de
 
 **What is enforced in the current live v3.8.1 proof:** T3N authentication, SDK-native credential construction, Rust/WASM TEE structural validation of envelope presence, credential domain, TTL, delegated function scope, nonce format (≥8 bytes), and `agent_sig` presence. Delegation envelope is **mandatory** on `delegate-task` in v3.8.1 source. Trust policy requires both action rule AND explicit trust relationship (dual default-deny).
 
-**Explicit live-proof boundaries:** v3.9.2 source adds issuer-pinned cryptographic verification, request binding, digest-derived delegation IDs, and a prepare -> authorize -> execute Python bridge that requires real `delegate-task` outputs for exact prepared worker IDs plus a dedicated pinned gateway signer. Workers now require the exact gateway public key, `gateway_key_id`, `build_config_id`, and `authorization_expires_at` carried by the typed authorization bundle. It is still not backed by a pinned live deployment proof, and the receipt remains gateway-linked local evidence rather than a T3N-attested worker-dispatch primitive. Durable nonce replay registry, persistent workflow state, and immediate revocation-registry lookup remain unproven in the current `generic-input` contract world.
+**Explicit live-proof boundaries:** v3.9.2 source adds issuer-pinned cryptographic verification, request binding, digest-derived delegation IDs, and a prepare -> authorize -> execute Python bridge that requires real `delegate-task` outputs for exact prepared worker IDs plus a dedicated pinned gateway signer. Workers now require the exact gateway public key, `gateway_key_id`, `build_config_id`, and `authorization_expires_at` carried by the typed authorization bundle. Worker request replay is recorded in a durable on-disk ledger keyed by delegation ID, request hash, and receipt fingerprint; completed requests stay single-use across restarts, while handler crashes become retryable failures. It is still not backed by a pinned live deployment proof, and the receipt remains gateway-linked local evidence rather than a T3N-attested worker-dispatch primitive. Durable contract-layer nonce replay registry, persistent workflow state, and immediate revocation-registry lookup remain unproven in the current `generic-input` contract world.
 
-63 Python security tests across 3 suites: 34 adapter/policy negative-security checks,
-21 worker-result and gateway-receipt verification checks, and 8 audit guardrails.
+65 Python security tests across 3 suites: 34 adapter/policy negative-security checks,
+23 worker-result, gateway-receipt, and worker replay verification checks, and 8 audit guardrails.
 Tests cover Python signing adapter, policy logic, coordinator-side result verification, TypeScript bridge buildability, and Rust/WASM contract enforcement. The committed live T3N proof remains the v3.8.1 structural proof until a pinned v3.9.2 run is captured.
 
 ```
 python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py -v --tb=short
-# 63 passed
+# 65 passed
 ```
 
 ---

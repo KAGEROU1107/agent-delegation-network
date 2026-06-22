@@ -4,10 +4,13 @@ Defines the structure and workflow for secure agent-to-agent delegation.
 """
 
 import json
+import os
+import tempfile
 import uuid
 import time
 import threading
 from collections import deque
+from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, asdict
 from enum import Enum
@@ -22,6 +25,58 @@ SEEN_DELEGATION_REQUEST_TTL_SECONDS = 15 * 60
 _seen_delegation_requests = set()
 _seen_delegation_request_order = deque()
 _seen_delegation_request_lock = threading.Lock()
+REPLAY_LEDGER_VERSION = "adn.replay_ledger/1"
+REPLAY_STATE_RUNNING = "RUNNING"
+REPLAY_STATE_COMPLETED = "COMPLETED"
+REPLAY_STATE_RETRYABLE_FAILURE = "RETRYABLE_FAILURE"
+REPLAY_RUNNING_LEASE_SECONDS = 5 * 60
+
+
+def _replay_ledger_dir() -> Path:
+    configured = os.environ.get("ADN_REPLAY_LEDGER_DIR", "").strip()
+    if configured:
+        return Path(configured)
+    return Path(tempfile.gettempdir()) / "adn_replay_ledger"
+
+
+def _replay_record_path(replay_key: str) -> Path:
+    return _replay_ledger_dir() / f"{replay_key}.json"
+
+
+def _write_replay_record(path: Path, payload: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+    tmp_path.replace(path)
+
+
+def _load_replay_record(path: Path) -> Optional[Dict[str, Any]]:
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        return None
+
+
+def _prune_expired_replay_records_locked(now_ts: float) -> None:
+    ledger_dir = _replay_ledger_dir()
+    if not ledger_dir.exists():
+        return
+    for path in ledger_dir.glob("*.json"):
+        record = _load_replay_record(path)
+        if not record:
+            continue
+        expires_at = float(record.get("expires_at") or 0.0)
+        if expires_at and expires_at <= now_ts:
+            try:
+                path.unlink()
+            except OSError:
+                pass
 
 
 class DelegationAction(Enum):
@@ -367,9 +422,11 @@ class DelegationProtocol:
         return True, "Delegation request is valid", replay_key
 
     @staticmethod
-    def consume_delegation_request_replay(replay_key: str) -> Tuple[bool, str]:
+    def begin_delegation_request_execution(replay_key: str, replay_expires_at: float) -> Tuple[bool, str]:
         now = time.monotonic()
+        now_ts = time.time()
         with _seen_delegation_request_lock:
+            _prune_expired_replay_records_locked(now_ts)
             cutoff = now - SEEN_DELEGATION_REQUEST_TTL_SECONDS
             while _seen_delegation_request_order and _seen_delegation_request_order[0][1] <= cutoff:
                 seen_key, _created_at = _seen_delegation_request_order.popleft()
@@ -377,11 +434,69 @@ class DelegationProtocol:
             while len(_seen_delegation_request_order) > MAX_SEEN_DELEGATION_REQUESTS:
                 seen_key, _created_at = _seen_delegation_request_order.popleft()
                 _seen_delegation_requests.discard(seen_key)
-            if not replay_key or replay_key in _seen_delegation_requests:
+
+            if not replay_key:
+                return False, "Delegation request replay key missing"
+
+            record_path = _replay_record_path(replay_key)
+            record = _load_replay_record(record_path)
+            if record:
+                state = str(record.get("state") or "")
+                updated_at = float(record.get("updated_at") or 0.0)
+                if state == REPLAY_STATE_COMPLETED:
+                    return False, "Delegation request replay detected"
+                if state == REPLAY_STATE_RUNNING and (now_ts - updated_at) < REPLAY_RUNNING_LEASE_SECONDS:
+                    return False, "Delegation request already running"
+
+            if replay_key in _seen_delegation_requests:
                 return False, "Delegation request replay detected"
+
+            attempt_count = int((record or {}).get("attempt_count") or 0) + 1
+            first_seen_at = float((record or {}).get("first_seen_at") or now_ts)
+            expires_at = float((record or {}).get("expires_at") or replay_expires_at or now_ts)
+            record_payload = {
+                "v": REPLAY_LEDGER_VERSION,
+                "replay_key": replay_key,
+                "state": REPLAY_STATE_RUNNING,
+                "attempt_count": attempt_count,
+                "first_seen_at": first_seen_at,
+                "updated_at": now_ts,
+                "expires_at": min(expires_at, replay_expires_at) if replay_expires_at else expires_at,
+            }
+            _write_replay_record(record_path, record_payload)
             _seen_delegation_requests.add(replay_key)
             _seen_delegation_request_order.append((replay_key, now))
         return True, ""
+
+    @staticmethod
+    def finalize_delegation_request_execution(
+        replay_key: str,
+        state: str,
+        error: Optional[str] = None,
+    ) -> None:
+        if state not in {REPLAY_STATE_COMPLETED, REPLAY_STATE_RETRYABLE_FAILURE}:
+            raise ValueError(f"Unsupported replay state: {state}")
+
+        now_ts = time.time()
+        with _seen_delegation_request_lock:
+            _prune_expired_replay_records_locked(now_ts)
+            if not replay_key:
+                return
+            record_path = _replay_record_path(replay_key)
+            record = _load_replay_record(record_path) or {
+                "v": REPLAY_LEDGER_VERSION,
+                "replay_key": replay_key,
+                "attempt_count": 0,
+                "first_seen_at": now_ts,
+                "expires_at": now_ts + SEEN_DELEGATION_REQUEST_TTL_SECONDS,
+            }
+            record["state"] = state
+            record["updated_at"] = now_ts
+            if error:
+                record["last_error"] = error
+            _write_replay_record(record_path, record)
+            if state == REPLAY_STATE_RETRYABLE_FAILURE:
+                _seen_delegation_requests.discard(replay_key)
     
     @staticmethod
     def create_delegation_result(

@@ -12,6 +12,7 @@ sys.path.insert(0, os.getcwd())
 os.environ["T3_MOCK"] = "false"
 
 from src.agent_delegation_network import create_agent
+import src.delegation_protocol as delegation_protocol
 from src.tee_authorization import build_tee_authorization_receipt
 import src.result_verifier as result_verifier
 
@@ -324,6 +325,90 @@ def test_worker_rejects_replayed_signed_request(verifier_context):
     assert first["result_data"]["status"] == "COMPLETED"
     assert second["result_data"]["status"] == "FAILED"
     assert "replay" in second["result_data"]["error"].lower()
+
+
+def test_worker_request_replay_persists_across_restart(verifier_context, monkeypatch, tmp_path):
+    monkeypatch.setenv("ADN_REPLAY_LEDGER_DIR", str(tmp_path / "replay-ledger"))
+    delegation_protocol._seen_delegation_requests.clear()
+    delegation_protocol._seen_delegation_request_order.clear()
+
+    receipt = verifier_context.receipt_for("tee-del-durable-replay")
+    delegation_id = verifier_context.coordinator.delegate_task(
+        verifier_context.worker_id,
+        "PROCESS_DATA",
+        "d",
+        {},
+        tee_authorization=receipt,
+    )
+    action_request = verifier_context.coordinator._delegations[delegation_id].to_action_request(
+        verifier_context.coordinator.identity
+    )
+
+    first = verifier_context.worker.process_delegation_request(
+        action_request,
+        expected_gateway_public_key_hex=verifier_context.gateway_pubkey,
+        expected_gateway_key_id=verifier_context.gateway_key_id,
+        expected_build_config_id=BUILD_CONFIG_ID,
+    )
+    assert first["result_data"]["status"] == "COMPLETED"
+
+    delegation_protocol._seen_delegation_requests.clear()
+    delegation_protocol._seen_delegation_request_order.clear()
+
+    second = verifier_context.worker.process_delegation_request(
+        action_request,
+        expected_gateway_public_key_hex=verifier_context.gateway_pubkey,
+        expected_gateway_key_id=verifier_context.gateway_key_id,
+        expected_build_config_id=BUILD_CONFIG_ID,
+    )
+
+    assert second["result_data"]["status"] == "FAILED"
+    assert "replay" in second["result_data"]["error"].lower()
+
+
+def test_worker_allows_retry_after_retryable_handler_failure(verifier_context, monkeypatch, tmp_path):
+    monkeypatch.setenv("ADN_REPLAY_LEDGER_DIR", str(tmp_path / "replay-ledger"))
+    delegation_protocol._seen_delegation_requests.clear()
+    delegation_protocol._seen_delegation_request_order.clear()
+
+    attempts = {"count": 0}
+
+    def flaky_handler(_payload):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise RuntimeError("transient worker failure")
+        return {"status": "success", "processed_data": {"x": 1}}
+
+    verifier_context.worker.register_task_handler("PROCESS_DATA", flaky_handler)
+
+    receipt = verifier_context.receipt_for("tee-del-retryable")
+    delegation_id = verifier_context.coordinator.delegate_task(
+        verifier_context.worker_id,
+        "PROCESS_DATA",
+        "d",
+        {},
+        tee_authorization=receipt,
+    )
+    action_request = verifier_context.coordinator._delegations[delegation_id].to_action_request(
+        verifier_context.coordinator.identity
+    )
+
+    first = verifier_context.worker.process_delegation_request(
+        action_request,
+        expected_gateway_public_key_hex=verifier_context.gateway_pubkey,
+        expected_gateway_key_id=verifier_context.gateway_key_id,
+        expected_build_config_id=BUILD_CONFIG_ID,
+    )
+    assert first["result_data"]["status"] == "FAILED"
+    assert "transient worker failure" in first["result_data"]["error"]
+
+    second = verifier_context.worker.process_delegation_request(
+        action_request,
+        expected_gateway_public_key_hex=verifier_context.gateway_pubkey,
+        expected_gateway_key_id=verifier_context.gateway_key_id,
+        expected_build_config_id=BUILD_CONFIG_ID,
+    )
+    assert second["result_data"]["status"] == "COMPLETED"
 
 
 def test_worker_requires_expected_gateway_context(verifier_context):

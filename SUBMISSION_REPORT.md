@@ -8,7 +8,7 @@
 **Demo Video**: https://youtu.be/ukZQ7F81aho  
 **SDK**: `@terminal3/t3n-sdk@3.5.2`  
 **Contract**: `adn-processor v3.9.2` — issuer-authenticated TEE authorization decision for delegated calls + verified worker results + mandatory policy TTL
-**Live proof**: `proof/live_run_v3.8.1_final_88b7b88.txt` (v3.8.1 structural — current). v3.9.2 is built + unit-tested (Rust 25/25, Python 63/63) but **not yet deployed**; the last *deployed/invoked* contract is the v3.8.1 structural build in that proof. Operator must build v3.9.2 with `ADN_TRUSTED_ISSUER` (see `t3n-bridge/scripts/derive_issuer.mjs`), provide a pinned gateway signer, and run a fresh live proof.
+**Live proof**: `proof/live_run_v3.8.1_final_88b7b88.txt` (v3.8.1 structural — current). v3.9.2 is built + unit-tested (Rust 25/25, Python 65/65) but **not yet deployed**; the last *deployed/invoked* contract is the v3.8.1 structural build in that proof. Operator must build v3.9.2 with `ADN_TRUSTED_ISSUER` (see `t3n-bridge/scripts/derive_issuer.mjs`), provide a pinned gateway signer, and run a fresh live proof.
 
 ---
 
@@ -28,6 +28,8 @@ Authorization root (current v3.9.2 path, introduced in v3.9.1): a tenant-control
 
 Python worker execution now requires a signed gateway `TEE_AUTHORIZATION` receipt bound to the TEE-shaped authorization result, credential fingerprint, target, action, request hash, `gateway_key_id`, `build_config_id`, and `authorization_expires_at`. This closes the local "worker executes with no authorization receipt" gap, but it is not claimed as a T3N-attested worker-dispatch primitive until a fresh live gateway proof or TEE-attested output path exists.
 
+Worker request replay is now recorded in a durable on-disk ledger keyed by `SHA-256(delegation_id || request_hash || receipt_fingerprint)`. Completed requests remain single-use across restarts; handler exceptions transition the ledger entry to `RETRYABLE_FAILURE`, allowing a bounded retry with the same authorization before expiry.
+
 ### Core capabilities demonstrated
 
 | Capability | Evidence |
@@ -41,8 +43,8 @@ Python worker execution now requires a signed gateway `TEE_AUTHORIZATION` receip
 | Per-call DelegationEnvelope | buildInvocationPreimage + signAgentInvocation — full wire shape |
 | Negative live TEE test | Empty records → `process-data: records cannot be empty` rejection |
 | Multi-agent Ed25519 delegation | 4 distinct identities, signed payloads, tamper detection |
-| Python security tests | 63/63 pass — 34 adapter/policy tests, 21 worker-result and gateway-receipt verifier tests, and 8 audit-guard tests |
-| Worker-result verification (v3.9.2; H-05/06/07) | Coordinator verifies each worker result before consuming it: Ed25519 signature (`verify_action_request`, `TASK_RESULT`); signer pinned by **exact worker public key** (H-06), with `agent_id` as auxiliary check; `result_data` bound to signed `data_hash`; outer envelope nonce == body nonce (H-07); originating `delegation_id`; audience == coordinator; status `COMPLETED`; signed gateway `TEE_AUTHORIZATION` receipt bound to target/action/request hash; lock-guarded single-use result nonce with bounded in-memory retention. `src/result_verifier.py`. **Scope (H-09):** the single-use check is per-process (in-memory); durable duplicate-result rejection across restarts requires a persistent coordinator-side ledger. Direct matrix `tests/test_result_verifier.py` (H-08): accept + fail-closed cases for missing/wrong TEE receipt, other worker key, wrong delegation id, wrong audience, modified body, missing data_hash, inconsistent nonce, stale proof, second use, plus bounded retention and concurrent duplicate checks. |
+| Python security tests | 65/65 pass — 34 adapter/policy tests, 23 worker-result, gateway-receipt, and worker replay verifier tests, and 8 audit-guard tests |
+| Worker-result verification (v3.9.2; H-05/06/07) | Coordinator verifies each worker result before consuming it: Ed25519 signature (`verify_action_request`, `TASK_RESULT`); signer pinned by **exact worker public key** (H-06), with `agent_id` as auxiliary check; `result_data` bound to signed `data_hash`; outer envelope nonce == body nonce (H-07); originating `delegation_id`; audience == coordinator; status `COMPLETED`; signed gateway `TEE_AUTHORIZATION` receipt bound to target/action/request hash; lock-guarded single-use result nonce with bounded in-memory retention. `src/result_verifier.py`. **Scope:** result-nonce duplicate rejection is still per-process (in-memory); durable result replay across restarts still needs a persistent coordinator-side ledger. Direct matrix `tests/test_result_verifier.py`: accept + fail-closed cases for missing/wrong TEE receipt, other worker key, wrong delegation id, wrong audience, modified body, missing data_hash, inconsistent nonce, stale proof, second use, plus bounded retention, concurrent duplicate checks, durable worker-request replay across restart, and retryable handler-failure semantics. |
 
 ---
 
@@ -245,12 +247,12 @@ Residual gap: an `is-live` host primitive for real-time revocation registry look
 
 ## Security
 
-63 Python security tests across 3 suites:
+65 Python security tests across 3 suites:
 
 | Suite | Tests | Result |
 |---|---|---|
 | Adapter/policy negative-security checks | 34 | PASS |
-| Worker-result and gateway-receipt verifier checks | 21 | PASS |
+| Worker-result, gateway-receipt, and worker replay verifier checks | 23 | PASS |
 | Audit guardrails | 8 | PASS |
 
 Run: `python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py -v --tb=short`

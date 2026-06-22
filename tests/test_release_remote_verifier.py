@@ -92,8 +92,9 @@ def build_valid_release_fixture(proof_dir: Path, monkeypatch):
     sign_manifest(proof_dir, manifest_body, private_key, public_key_hex)
     write_json(proof_dir / "ci_release_sha.json", {
         "evidence_source": "github_actions",
-        "generated_by": ".github/workflows/release-proof.yml",
-        "attestation_phase": "post_verify",
+        "generated_by": ".github/workflows/release-proof-attest.yml",
+        "attested_workflow": ".github/workflows/release-proof-input.yml",
+        "attestation_phase": "post_verify_completed_run",
         "repository": "KAGEROU1107/agent-delegation-network",
         "sha": "abc1234",
         "workflow_run_id": "12345",
@@ -109,7 +110,12 @@ def build_valid_release_fixture(proof_dir: Path, monkeypatch):
     })
 
 
-def build_artifact_zip(proof_dir: Path, *, omit: str | None = None) -> bytes:
+def build_artifact_zip(
+    proof_dir: Path,
+    *,
+    omit: str | None = None,
+    extra_members: dict[str, bytes] | None = None,
+) -> bytes:
     tar_bytes = io.BytesIO()
     with tarfile.open(fileobj=tar_bytes, mode="w") as tar:
         for name in verify_release.PROOF_INPUT_FILES:
@@ -117,6 +123,15 @@ def build_artifact_zip(proof_dir: Path, *, omit: str | None = None) -> bytes:
                 continue
             data = (proof_dir / name).read_bytes()
             info = tarfile.TarInfo(name=f"proof/release/{name}")
+            info.size = len(data)
+            info.mtime = 0
+            info.uid = 0
+            info.gid = 0
+            info.uname = ""
+            info.gname = ""
+            tar.addfile(info, io.BytesIO(data))
+        for name, data in (extra_members or {}).items():
+            info = tarfile.TarInfo(name=name)
             info.size = len(data)
             info.mtime = 0
             info.uid = 0
@@ -173,6 +188,7 @@ def make_client(proof_dir: Path, *, run_overrides: dict | None = None, artifact_
         "expired": False,
         "digest": f"sha256:{artifact_digest}",
         "archive_download_url": "https://api.github.local/artifacts/67890/zip",
+        "workflow_run": {"id": 12345},
     }
     return FakeGitHubClient(run, artifact, artifact_zip)
 
@@ -198,6 +214,63 @@ def test_remote_verifier_rejects_workflow_sha_mismatch(tmp_path, monkeypatch):
         verify_release_remote.verify_release_remote(proof_dir, client=client)
 
 
+def test_remote_verifier_rejects_in_progress_workflow_run(tmp_path, monkeypatch):
+    proof_dir = tmp_path / "proof"
+    build_valid_release_fixture(proof_dir, monkeypatch)
+    client = make_client(proof_dir, run_overrides={"conclusion": None})
+
+    with pytest.raises(RuntimeError, match="workflow run conclusion"):
+        verify_release_remote.verify_release_remote(proof_dir, client=client)
+
+
+def test_remote_verifier_rejects_artifact_from_different_workflow_run(tmp_path, monkeypatch):
+    proof_dir = tmp_path / "proof"
+    build_valid_release_fixture(proof_dir, monkeypatch)
+    client = make_client(proof_dir)
+    client.artifact["workflow_run"] = {"id": 99999}
+
+    with pytest.raises(RuntimeError, match="artifact does not belong"):
+        verify_release_remote.verify_release_remote(proof_dir, client=client)
+
+
+def test_remote_verifier_rejects_expired_artifact(tmp_path, monkeypatch):
+    proof_dir = tmp_path / "proof"
+    build_valid_release_fixture(proof_dir, monkeypatch)
+    client = make_client(proof_dir)
+    client.artifact["expired"] = True
+
+    with pytest.raises(RuntimeError, match="artifact has expired"):
+        verify_release_remote.verify_release_remote(proof_dir, client=client)
+
+
+def test_remote_verifier_rejects_artifact_url_mismatch(tmp_path, monkeypatch):
+    proof_dir = tmp_path / "proof"
+    build_valid_release_fixture(proof_dir, monkeypatch)
+    client = make_client(proof_dir)
+    ci_evidence = json.loads((proof_dir / "ci_release_sha.json").read_text(encoding="utf-8"))
+    ci_evidence["artifact_url"] = (
+        "https://github.com/KAGEROU1107/agent-delegation-network/actions/runs/12345/artifacts/99999"
+    )
+    write_json(proof_dir / "ci_release_sha.json", ci_evidence)
+
+    with pytest.raises(RuntimeError, match="artifact_url"):
+        verify_release_remote.verify_release_remote(proof_dir, client=client)
+
+
+def test_remote_verifier_rejects_metadata_digest_mismatch(tmp_path, monkeypatch):
+    proof_dir = tmp_path / "proof"
+    build_valid_release_fixture(proof_dir, monkeypatch)
+    client = make_client(proof_dir)
+    wrong_digest = "f" * 64
+    client.artifact["digest"] = f"sha256:{wrong_digest}"
+    ci_evidence = json.loads((proof_dir / "ci_release_sha.json").read_text(encoding="utf-8"))
+    ci_evidence["artifact_digest"] = wrong_digest
+    write_json(proof_dir / "ci_release_sha.json", ci_evidence)
+
+    with pytest.raises(RuntimeError, match="downloaded artifact digest"):
+        verify_release_remote.verify_release_remote(proof_dir, client=client)
+
+
 def test_remote_verifier_rejects_downloaded_artifact_digest_mismatch(tmp_path, monkeypatch):
     proof_dir = tmp_path / "proof"
     build_valid_release_fixture(proof_dir, monkeypatch)
@@ -215,4 +288,17 @@ def test_remote_verifier_rejects_archive_missing_proof_input(tmp_path, monkeypat
     client = make_client(proof_dir, artifact_zip=artifact_zip)
 
     with pytest.raises(RuntimeError, match="missing proof input"):
+        verify_release_remote.verify_release_remote(proof_dir, client=client)
+
+
+def test_remote_verifier_rejects_archive_path_traversal_entries(tmp_path, monkeypatch):
+    proof_dir = tmp_path / "proof"
+    build_valid_release_fixture(proof_dir, monkeypatch)
+    artifact_zip = build_artifact_zip(
+        proof_dir,
+        extra_members={"proof/release/../ci_release_sha.json": b"escape"},
+    )
+    client = make_client(proof_dir, artifact_zip=artifact_zip)
+
+    with pytest.raises(RuntimeError, match="unexpected proof input archive path"):
         verify_release_remote.verify_release_remote(proof_dir, client=client)

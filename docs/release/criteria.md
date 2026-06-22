@@ -11,10 +11,14 @@ gate below has evidence in the repository.
 - live proof artifact must include the exact pinned deployment run.
 - `python scripts/verify_release.py <proof-dir>` must pass for the proof bundle.
 - visible CI success must be attached to the release commit.
-- `.github/workflows/release-proof.yml` must first run
+- `.github/workflows/release-proof-input.yml` must run
   `python scripts/verify_release.py proof/release --input-only`, upload the
-  verified proof-input archive, then generate `ci_release_sha.json` from
-  GitHub Actions upload outputs before running `python scripts/verify_release.py proof/release`.
+  verified proof-input archive, and then finish without asserting its own final
+  success in `ci_release_sha.json`.
+- `.github/workflows/release-proof-attest.yml` must run from the completed
+  `Release Proof Input` workflow event, generate `ci_release_sha.json` from the
+  completed run and GitHub artifact metadata, then run
+  `python scripts/verify_release.py proof/release`.
 - `python scripts/verify_release_remote.py proof/release` must verify that the
   declared GitHub workflow run exists, completed successfully for the manifest
   commit, owns the declared artifact, and that the downloaded artifact contains
@@ -57,11 +61,12 @@ release SHA, GitHub Actions evidence fields, actual upload-artifact ID/URL/diges
 metadata, recomputed `proof_input_digest`, build configuration, and snake_case
 replay restart proof booleans.
 
-Remote CI provenance is checked by `scripts/verify_release_remote.py`. It uses
-GitHub Actions API evidence to fetch the declared workflow run and uploaded
-proof-input artifact, compares GitHub's artifact digest with the attestation,
-downloads the artifact ZIP, reads `proof-input.tar`, and recomputes the retained
-proof-input file digests.
+Remote CI provenance is checked by `scripts/verify_release_remote.py` from the
+attestation workflow, after the input workflow has completed. It uses GitHub
+Actions API evidence to fetch the declared workflow run and uploaded proof-input
+artifact, compares GitHub's artifact digest with the attestation, downloads the
+artifact ZIP, reads `proof-input.tar`, rejects unexpected archive paths, and
+recomputes the retained proof-input file digests.
 
 Persistent auction, vault, KYC, DAO, bond, and reputation systems cannot be
 claimed until state-capable contract or executor storage semantics are designed,

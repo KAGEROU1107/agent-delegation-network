@@ -13,6 +13,7 @@ import argparse
 import io
 import json
 import os
+import posixpath
 import re
 import tarfile
 import urllib.error
@@ -137,7 +138,20 @@ def extract_proof_input_tar(artifact_zip_bytes: bytes) -> dict[str, bytes]:
     extracted: dict[str, bytes] = {}
     try:
         with tarfile.open(fileobj=io.BytesIO(tar_payload), mode="r:*") as tar:
-            members = {member.name.replace("\\", "/"): member for member in tar.getmembers() if member.isfile()}
+            expected_paths = {f"proof/release/{name}" for name in verify_release.PROOF_INPUT_FILES}
+            members: dict[str, tarfile.TarInfo] = {}
+            for member in tar.getmembers():
+                normalized_name = member.name.replace("\\", "/")
+                normalized_path = posixpath.normpath(normalized_name)
+                if (
+                    normalized_name.startswith("/")
+                    or normalized_path != normalized_name
+                    or normalized_name not in expected_paths
+                ):
+                    raise RuntimeError(f"unexpected proof input archive path: {member.name}")
+                if not member.isfile():
+                    raise RuntimeError(f"unexpected proof input archive path: {member.name}")
+                members[normalized_name] = member
             for name in verify_release.PROOF_INPUT_FILES:
                 member_path = f"proof/release/{name}"
                 member = members.get(member_path)
@@ -176,9 +190,18 @@ def verify_run(ci_release: dict[str, Any], run: dict[str, Any], expected_reposit
         raise RuntimeError("workflow run repository does not match expected repository")
 
 
-def verify_artifact(ci_release: dict[str, Any], artifact: dict[str, Any]) -> str:
+def expected_artifact_url(repository: str, run_id: str, artifact_id: str) -> str:
+    return f"https://github.com/{repository}/actions/runs/{run_id}/artifacts/{artifact_id}"
+
+
+def verify_artifact(ci_release: dict[str, Any], artifact: dict[str, Any], repository: str, run_id: str) -> str:
     require_equal("artifact id", artifact.get("id"), ci_release.get("artifact_id"))
     require_equal("artifact name", artifact.get("name"), ci_release.get("artifact_name"))
+    workflow_run = artifact.get("workflow_run") or {}
+    if workflow_run and str(workflow_run.get("id", "")) != str(run_id):
+        raise RuntimeError("GitHub artifact does not belong to the declared workflow run")
+    if ci_release.get("artifact_url") != expected_artifact_url(repository, run_id, str(ci_release.get("artifact_id"))):
+        raise RuntimeError("CI release evidence artifact_url does not match expected GitHub artifact URL")
     if artifact.get("expired") is True:
         raise RuntimeError("GitHub artifact has expired")
 
@@ -213,7 +236,7 @@ def verify_release_remote(
     verify_run(ci_release, run, repository)
 
     artifact = api_client.get_workflow_run_artifact(repository, run_id, artifact_id)
-    attested_artifact_digest = verify_artifact(ci_release, artifact)
+    attested_artifact_digest = verify_artifact(ci_release, artifact, repository, run_id)
     artifact_zip = api_client.download_artifact_zip(artifact)
     downloaded_digest = verify_release.digest_hex(artifact_zip)
     if downloaded_digest != attested_artifact_digest:

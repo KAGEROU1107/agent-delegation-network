@@ -239,7 +239,8 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     remote_verifier = read("scripts/verify_release_remote.py")
     schema = read("schemas/adn-release-proof-v1.schema.json")
     workflow = read(".github/workflows/ci.yml")
-    release_workflow = read(".github/workflows/release-proof.yml")
+    release_input_workflow = read(".github/workflows/release-proof-input.yml")
+    release_attest_workflow = read(".github/workflows/release-proof-attest.yml")
 
     for content in (criteria, claim_matrix):
         assert "source-hardened / live-proof pending" in content
@@ -257,7 +258,8 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "docs/release/criteria.md" in release_gate
     assert "verify_release.py" in release_gate
     assert "schemas/adn-release-proof-v1.schema.json" in release_gate
-    assert ".github/workflows/release-proof.yml" in release_gate
+    assert ".github/workflows/release-proof-input.yml" in release_gate
+    assert ".github/workflows/release-proof-attest.yml" in release_gate
     assert "REQUIRED_PROOF_FILES" in release_verifier
     assert "deployment_manifest.sig" in release_verifier
     assert "registration_response.json" in release_verifier
@@ -273,28 +275,39 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "compute_proof_input_digest" in release_verifier
     assert "PROOF_INPUT_FILES" in release_verifier
     assert "attestation_phase" in release_verifier
+    assert "post_verify_completed_run" in release_verifier
+    assert "attested_workflow" in release_verifier
     assert "proof_input_digest" in release_verifier
     assert "GitHubActionsClient" in remote_verifier
     assert "get_workflow_run" in remote_verifier
     assert "get_workflow_run_artifact" in remote_verifier
     assert "download_artifact_zip" in remote_verifier
     assert "proof-input.tar" in remote_verifier
+    assert "unexpected proof input archive path" in remote_verifier
+    assert "expected_artifact_url" in remote_verifier
     assert "artifact_digest" in remote_verifier
     assert "proof_input_digest" in remote_verifier
     assert "REMOTE_OK" in remote_verifier
     assert "adn-release-proof-v1" in schema
-    assert "workflow_dispatch" in release_workflow
-    assert "ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX" in release_workflow
-    assert "verify-input:" in release_workflow
-    assert "attest-release:" in release_workflow
-    assert "--input-only" in release_workflow
-    assert "steps.upload-proof-input.outputs.artifact-id" in release_workflow
-    assert "steps.upload-proof-input.outputs.artifact-url" in release_workflow
-    assert "steps.upload-proof-input.outputs.artifact-digest" in release_workflow
-    assert "adn-release-ci-attestation" in release_workflow
-    assert 'artifact_id": int(os.environ["GITHUB_RUN_ID"])' not in release_workflow
-    assert 'workflow_conclusion": "success"' in release_workflow
-    assert "python scripts/verify_release.py proof/release" in release_workflow
-    assert "python scripts/verify_release_remote.py proof/release" in release_workflow
-    assert "actions/upload-artifact" in release_workflow
+    assert "name: Release Proof Input" in release_input_workflow
+    assert "workflow_dispatch" in release_input_workflow
+    assert "ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX" in release_input_workflow
+    assert "verify-input:" in release_input_workflow
+    assert "--input-only" in release_input_workflow
+    assert "actions/upload-artifact" in release_input_workflow
+    assert "name: Release Proof Attest" in release_attest_workflow
+    assert "workflow_run:" in release_attest_workflow
+    assert "Release Proof Input" in release_attest_workflow
+    assert "types: [completed]" in release_attest_workflow
+    assert "github.event.workflow_run.conclusion == 'success'" in release_attest_workflow
+    assert "github.event.workflow_run.head_sha" in release_attest_workflow
+    assert "post_verify_completed_run" in release_attest_workflow
+    assert "attested_workflow" in release_attest_workflow
+    assert "python scripts/verify_release.py proof/release" in release_attest_workflow
+    assert "python scripts/verify_release_remote.py proof/release" in release_attest_workflow
+    assert "adn-release-ci-attestation" in release_attest_workflow
+    assert 'workflow_conclusion": "success"' not in release_attest_workflow
+    assert 'workflow_conclusion": os.environ["INPUT_RUN_CONCLUSION"]' in release_attest_workflow
+    assert "actions/upload-artifact" in release_attest_workflow
+    assert "test_release_remote_verifier.py" in workflow
     assert "python scripts/release_gate.py" in workflow

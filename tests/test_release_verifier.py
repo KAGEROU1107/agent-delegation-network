@@ -92,8 +92,9 @@ def build_valid_release_fixture(proof_dir: Path, monkeypatch):
     sign_manifest(proof_dir, manifest_body, private_key, public_key_hex)
     write_json(proof_dir / "ci_release_sha.json", {
         "evidence_source": "github_actions",
-        "generated_by": ".github/workflows/release-proof.yml",
-        "attestation_phase": "post_verify",
+        "generated_by": ".github/workflows/release-proof-attest.yml",
+        "attested_workflow": ".github/workflows/release-proof-input.yml",
+        "attestation_phase": "post_verify_completed_run",
         "repository": "KAGEROU1107/agent-delegation-network",
         "sha": "abc1234",
         "workflow_run_id": "12345",

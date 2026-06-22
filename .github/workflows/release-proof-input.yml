@@ -1,4 +1,4 @@
-name: Release Proof
+name: Release Proof Input
 
 on:
   workflow_dispatch:
@@ -11,12 +11,6 @@ jobs:
   verify-input:
     runs-on: ubuntu-latest
     environment: release-proof
-    outputs:
-      artifact_digest: ${{ steps.upload-proof-input.outputs.artifact-digest }}
-      artifact_id: ${{ steps.upload-proof-input.outputs.artifact-id }}
-      artifact_name: ${{ steps.artifact-name.outputs.artifact_name }}
-      artifact_url: ${{ steps.upload-proof-input.outputs.artifact-url }}
-      proof_input_digest: ${{ steps.verify-input.outputs.proof_input_digest }}
 
     steps:
       - uses: actions/checkout@v4
@@ -29,9 +23,11 @@ jobs:
       - name: Install verifier dependencies
         run: pip install cryptography
 
-      - name: Define proof input artifact name
+      - name: Define proof input artifact names
         id: artifact-name
-        run: echo "artifact_name=adn-release-proof-input-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "artifact_name=adn-release-proof-input-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "metadata_name=adn-release-proof-input-metadata-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Check retained release proof inputs
         run: |
@@ -75,7 +71,6 @@ jobs:
             proof/release/replay_restart_proof.json
 
       - name: Upload verified proof input archive
-        id: upload-proof-input
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.artifact-name.outputs.artifact_name }}
@@ -83,29 +78,7 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
-  attest-release:
-    runs-on: ubuntu-latest
-    needs: verify-input
-    environment: release-proof
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install verifier dependencies
-        run: pip install cryptography
-
-      - name: Generate post-verify GitHub Actions CI attestation
-        env:
-          ARTIFACT_DIGEST: ${{ needs.verify-input.outputs.artifact_digest }}
-          ARTIFACT_ID: ${{ needs.verify-input.outputs.artifact_id }}
-          ARTIFACT_NAME: ${{ needs.verify-input.outputs.artifact_name }}
-          ARTIFACT_URL: ${{ needs.verify-input.outputs.artifact_url }}
-          PROOF_INPUT_DIGEST: ${{ needs.verify-input.outputs.proof_input_digest }}
+      - name: Write preliminary proof input metadata
         run: |
           python - <<'PY'
           import json
@@ -117,43 +90,29 @@ jobs:
 
           payload = {
               "evidence_source": "github_actions",
-              "generated_by": ".github/workflows/release-proof.yml",
-              "attestation_phase": "post_verify",
+              "generated_by": ".github/workflows/release-proof-input.yml",
+              "phase": "input_verified",
               "repository": os.environ["GITHUB_REPOSITORY"],
               "sha": os.environ["GITHUB_SHA"],
               "workflow_run_id": os.environ["GITHUB_RUN_ID"],
               "workflow_run_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
-              "workflow_conclusion": "success",
-              "artifact_id": os.environ["ARTIFACT_ID"],
               "artifact_name": os.environ["ARTIFACT_NAME"],
-              "artifact_url": os.environ["ARTIFACT_URL"],
-              "artifact_digest": os.environ["ARTIFACT_DIGEST"],
               "proof_input_digest": os.environ["PROOF_INPUT_DIGEST"],
               "proof_input_files": PROOF_INPUT_FILES,
               "retrieved_at": datetime.now(timezone.utc).isoformat(),
           }
-          Path("proof/release/ci_release_sha.json").write_text(
+          Path(os.environ["RUNNER_TEMP"], "proof-input-metadata.json").write_text(
               json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
               encoding="utf-8",
           )
           PY
-
-      - name: Verify release proof bundle with CI attestation
         env:
-          ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX: ${{ secrets.ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX }}
-          ADN_RELEASE_REPOSITORY: ${{ github.repository }}
-        run: python scripts/verify_release.py proof/release
+          ARTIFACT_NAME: ${{ steps.artifact-name.outputs.artifact_name }}
+          PROOF_INPUT_DIGEST: ${{ steps.verify-input.outputs.proof_input_digest }}
 
-      - name: Remote-verify GitHub proof input artifact
-        env:
-          ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX: ${{ secrets.ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX }}
-          ADN_RELEASE_REPOSITORY: ${{ github.repository }}
-          GITHUB_TOKEN: ${{ github.token }}
-        run: python scripts/verify_release_remote.py proof/release --github-token "$GITHUB_TOKEN" --repository "$GITHUB_REPOSITORY"
-
-      - name: Upload CI attestation
+      - name: Upload preliminary proof input metadata
         uses: actions/upload-artifact@v4
         with:
-          name: adn-release-ci-attestation-${{ github.sha }}
-          path: proof/release/ci_release_sha.json
+          name: ${{ steps.artifact-name.outputs.metadata_name }}
+          path: ${{ runner.temp }}/proof-input-metadata.json
           if-no-files-found: error

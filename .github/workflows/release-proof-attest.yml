@@ -11,14 +11,14 @@ permissions:
 
 jobs:
   attest-release:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main' }}
     runs-on: ubuntu-latest
     environment: release-proof
 
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.repository.default_branch }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -29,6 +29,7 @@ jobs:
         run: pip install cryptography
 
       - name: Generate final CI attestation from completed input workflow
+        id: attest
         env:
           ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX: ${{ secrets.ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX }}
           ADN_RELEASE_REPOSITORY: ${{ github.repository }}
@@ -37,35 +38,29 @@ jobs:
           INPUT_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           INPUT_RUN_ID: ${{ github.event.workflow_run.id }}
           INPUT_RUN_URL: ${{ github.event.workflow_run.html_url }}
+          PROOF_DIR: ${{ runner.temp }}/release-proof
         run: |
           python - <<'PY'
           import json
           import os
-          import urllib.request
           from datetime import datetime, timezone
           from pathlib import Path
 
-          from scripts.verify_release import PROOF_INPUT_FILES, verify_release_inputs
-          from scripts.verify_release_remote import normalize_digest
+          from scripts.verify_release import PROOF_INPUT_FILES, digest_hex, verify_release_inputs
+          from scripts.verify_release_remote import (
+              GitHubActionsClient,
+              materialize_proof_inputs_from_artifact_zip,
+              normalize_digest,
+          )
 
           repository = os.environ["GITHUB_REPOSITORY"]
           input_sha = os.environ["INPUT_HEAD_SHA"]
           input_run_id = os.environ["INPUT_RUN_ID"]
           artifact_name = f"adn-release-proof-input-{input_sha}"
-          result = verify_release_inputs(Path("proof/release"))
+          proof_dir = Path(os.environ["PROOF_DIR"])
 
-          request = urllib.request.Request(
-              f"https://api.github.com/repos/{repository}/actions/runs/{input_run_id}/artifacts?per_page=100",
-              headers={
-                  "Accept": "application/vnd.github+json",
-                  "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
-                  "User-Agent": "adn-release-proof-attest",
-                  "X-GitHub-Api-Version": "2022-11-28",
-              },
-              method="GET",
-          )
-          with urllib.request.urlopen(request, timeout=30) as response:
-              artifacts = json.loads(response.read().decode("utf-8")).get("artifacts", [])
+          client = GitHubActionsClient(token=os.environ["GITHUB_TOKEN"])
+          artifacts = client.list_workflow_run_artifacts(repository, input_run_id)
 
           matches = [artifact for artifact in artifacts if artifact.get("name") == artifact_name]
           if len(matches) != 1:
@@ -75,6 +70,17 @@ jobs:
               raise RuntimeError(f"proof input artifact {artifact_name} has expired")
 
           artifact_id = str(artifact["id"])
+          artifact_zip = client.download_artifact_zip(artifact)
+          artifact_digest = normalize_digest(artifact.get("digest"))
+          downloaded_digest = digest_hex(artifact_zip)
+          if downloaded_digest != artifact_digest:
+              raise RuntimeError("downloaded proof input artifact digest does not match GitHub metadata")
+
+          materialized = materialize_proof_inputs_from_artifact_zip(proof_dir, artifact_zip)
+          result = verify_release_inputs(proof_dir)
+          if result["proof_input_digest"] != materialized["proof_input_digest"]:
+              raise RuntimeError("materialized proof input digest mismatch")
+
           payload = {
               "evidence_source": "github_actions",
               "generated_by": ".github/workflows/release-proof-attest.yml",
@@ -88,33 +94,35 @@ jobs:
               "artifact_id": artifact_id,
               "artifact_name": artifact_name,
               "artifact_url": f"https://github.com/{repository}/actions/runs/{input_run_id}/artifacts/{artifact_id}",
-              "artifact_digest": normalize_digest(artifact.get("digest")),
+              "artifact_digest": artifact_digest,
               "proof_input_digest": result["proof_input_digest"],
               "proof_input_files": PROOF_INPUT_FILES,
               "retrieved_at": datetime.now(timezone.utc).isoformat(),
           }
-          Path("proof/release/ci_release_sha.json").write_text(
+          (proof_dir / "ci_release_sha.json").write_text(
               json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
               encoding="utf-8",
           )
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              output.write(f"proof_dir={proof_dir}\n")
           PY
 
       - name: Verify release proof bundle with completed-run CI attestation
         env:
           ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX: ${{ secrets.ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX }}
           ADN_RELEASE_REPOSITORY: ${{ github.repository }}
-        run: python scripts/verify_release.py proof/release
+        run: python scripts/verify_release.py "${{ steps.attest.outputs.proof_dir }}"
 
       - name: Remote-verify GitHub proof input artifact
         env:
           ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX: ${{ secrets.ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX }}
           ADN_RELEASE_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ github.token }}
-        run: python scripts/verify_release_remote.py proof/release --github-token "$GITHUB_TOKEN" --repository "$GITHUB_REPOSITORY"
+        run: python scripts/verify_release_remote.py "${{ steps.attest.outputs.proof_dir }}" --github-token "$GITHUB_TOKEN" --repository "$GITHUB_REPOSITORY"
 
       - name: Upload CI attestation
         uses: actions/upload-artifact@v4
         with:
           name: adn-release-ci-attestation-${{ github.event.workflow_run.head_sha }}
-          path: proof/release/ci_release_sha.json
+          path: ${{ steps.attest.outputs.proof_dir }}/ci_release_sha.json
           if-no-files-found: error

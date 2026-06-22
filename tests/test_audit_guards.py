@@ -300,11 +300,16 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "Release Proof Input" in release_attest_workflow
     assert "types: [completed]" in release_attest_workflow
     assert "github.event.workflow_run.conclusion == 'success'" in release_attest_workflow
+    assert "github.event.workflow_run.head_repository.full_name == github.repository" in release_attest_workflow
+    assert "github.event.workflow_run.head_branch == 'main'" in release_attest_workflow
     assert "github.event.workflow_run.head_sha" in release_attest_workflow
+    assert "ref: ${{ github.event.workflow_run.head_sha }}" not in release_attest_workflow
+    assert "materialize_proof_inputs_from_artifact_zip" in release_attest_workflow
+    assert "${{ runner.temp }}/release-proof" in release_attest_workflow
     assert "post_verify_completed_run" in release_attest_workflow
     assert "attested_workflow" in release_attest_workflow
-    assert "python scripts/verify_release.py proof/release" in release_attest_workflow
-    assert "python scripts/verify_release_remote.py proof/release" in release_attest_workflow
+    assert "python scripts/verify_release.py \"${{ steps.attest.outputs.proof_dir }}\"" in release_attest_workflow
+    assert "python scripts/verify_release_remote.py \"${{ steps.attest.outputs.proof_dir }}\"" in release_attest_workflow
     assert "adn-release-ci-attestation" in release_attest_workflow
     assert 'workflow_conclusion": "success"' not in release_attest_workflow
     assert 'workflow_conclusion": os.environ["INPUT_RUN_CONCLUSION"]' in release_attest_workflow

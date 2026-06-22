@@ -83,6 +83,25 @@ class GitHubActionsClient:
             raise RuntimeError("GitHub artifact does not belong to the declared workflow run")
         return artifact
 
+    def list_workflow_run_artifacts(self, repository: str, run_id: str) -> list[dict[str, Any]]:
+        owner, repo = parse_repository(repository)
+        artifacts: list[dict[str, Any]] = []
+        page = 1
+        total_count: int | None = None
+        while total_count is None or len(artifacts) < total_count:
+            payload = self._json(
+                f"/repos/{owner}/{repo}/actions/runs/{run_id}/artifacts?per_page=100&page={page}"
+            )
+            total_count = int(payload.get("total_count", 0))
+            page_artifacts = payload.get("artifacts", [])
+            if not isinstance(page_artifacts, list):
+                raise RuntimeError("GitHub artifacts response is malformed")
+            artifacts.extend(page_artifacts)
+            if not page_artifacts:
+                break
+            page += 1
+        return artifacts
+
     def download_artifact_zip(self, artifact: dict[str, Any]) -> bytes:
         download_url = str(artifact.get("archive_download_url", "")).strip()
         if not download_url:
@@ -164,6 +183,21 @@ def extract_proof_input_tar(artifact_zip_bytes: bytes) -> dict[str, bytes]:
     except tarfile.TarError as exc:
         raise RuntimeError(f"{PROOF_INPUT_TAR} is not a valid tar archive") from exc
     return extracted
+
+
+def materialize_proof_inputs_from_artifact_zip(output_dir: Path | str, artifact_zip_bytes: bytes) -> dict[str, Any]:
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    extracted = extract_proof_input_tar(artifact_zip_bytes)
+    for name, payload in extracted.items():
+        target = output_path / name
+        if target.exists() or target.is_symlink():
+            raise RuntimeError(f"refusing to overwrite materialized proof input: {name}")
+        target.write_bytes(payload)
+    return {
+        "proof_input_digest": proof_input_digest_from_bytes(extracted),
+        "proof_input_files": verify_release.PROOF_INPUT_FILES,
+    }
 
 
 def verify_archive_contents(proof_dir: Path, artifact_zip_bytes: bytes, expected_proof_input_digest: str) -> None:

@@ -193,6 +193,31 @@ def make_client(proof_dir: Path, *, run_overrides: dict | None = None, artifact_
     return FakeGitHubClient(run, artifact, artifact_zip)
 
 
+def test_github_client_lists_workflow_run_artifacts_across_pages():
+    class PagingClient(verify_release_remote.GitHubActionsClient):
+        def __init__(self):
+            super().__init__(token="", api_url="https://api.github.local")
+            self.paths = []
+
+        def _json(self, path: str) -> dict:
+            self.paths.append(path)
+            if path.endswith("page=1"):
+                return {"total_count": 3, "artifacts": [{"id": 1}, {"id": 2}]}
+            if path.endswith("page=2"):
+                return {"total_count": 3, "artifacts": [{"id": 3}]}
+            raise AssertionError(f"unexpected path: {path}")
+
+    client = PagingClient()
+
+    artifacts = client.list_workflow_run_artifacts("KAGEROU1107/agent-delegation-network", "12345")
+
+    assert [artifact["id"] for artifact in artifacts] == [1, 2, 3]
+    assert client.paths == [
+        "/repos/KAGEROU1107/agent-delegation-network/actions/runs/12345/artifacts?per_page=100&page=1",
+        "/repos/KAGEROU1107/agent-delegation-network/actions/runs/12345/artifacts?per_page=100&page=2",
+    ]
+
+
 def test_remote_verifier_accepts_matching_github_run_and_artifact(tmp_path, monkeypatch):
     proof_dir = tmp_path / "proof"
     build_valid_release_fixture(proof_dir, monkeypatch)
@@ -302,3 +327,31 @@ def test_remote_verifier_rejects_archive_path_traversal_entries(tmp_path, monkey
 
     with pytest.raises(RuntimeError, match="unexpected proof input archive path"):
         verify_release_remote.verify_release_remote(proof_dir, client=client)
+
+
+def test_materialize_proof_inputs_from_artifact_zip_writes_verified_inputs(tmp_path, monkeypatch):
+    source_dir = tmp_path / "source"
+    output_dir = tmp_path / "materialized"
+    build_valid_release_fixture(source_dir, monkeypatch)
+    artifact_zip = build_artifact_zip(source_dir)
+
+    result = verify_release_remote.materialize_proof_inputs_from_artifact_zip(output_dir, artifact_zip)
+
+    assert result["proof_input_digest"] == verify_release.compute_proof_input_digest(output_dir)
+    assert result["proof_input_files"] == verify_release.PROOF_INPUT_FILES
+    for name in verify_release.PROOF_INPUT_FILES:
+        assert (output_dir / name).read_bytes() == (source_dir / name).read_bytes()
+
+
+def test_materialize_proof_inputs_refuses_to_overwrite_existing_file(tmp_path, monkeypatch):
+    source_dir = tmp_path / "source"
+    output_dir = tmp_path / "materialized"
+    build_valid_release_fixture(source_dir, monkeypatch)
+    output_dir.mkdir()
+    (output_dir / "deployment_manifest.json").write_text("preexisting", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="refusing to overwrite materialized proof input"):
+        verify_release_remote.materialize_proof_inputs_from_artifact_zip(
+            output_dir,
+            build_artifact_zip(source_dir),
+        )

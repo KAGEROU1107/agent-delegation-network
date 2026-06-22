@@ -11,8 +11,10 @@ gate below has evidence in the repository.
 - live proof artifact must include the exact pinned deployment run.
 - `python scripts/verify_release.py <proof-dir>` must pass for the proof bundle.
 - visible CI success must be attached to the release commit.
-- `.github/workflows/release-proof.yml` must generate `ci_release_sha.json`
-  from GitHub Actions context and run `python scripts/verify_release.py proof/release`.
+- `.github/workflows/release-proof.yml` must first run
+  `python scripts/verify_release.py proof/release --input-only`, upload the
+  verified proof-input archive, then generate `ci_release_sha.json` from
+  GitHub Actions upload outputs before running `python scripts/verify_release.py proof/release`.
 
 ## Claim Labels
 
@@ -47,8 +49,9 @@ The release proof verifier expects:
 
 The verifier checks manifest schema, manifest digest, operator signature,
 registration response digest, first invocation digest, T3N evidence digest,
-release SHA, GitHub Actions evidence fields, artifact digest metadata, build
-configuration, and snake_case replay restart proof booleans.
+release SHA, GitHub Actions evidence fields, actual upload-artifact ID/URL/digest
+metadata, recomputed `proof_input_digest`, build configuration, and snake_case
+replay restart proof booleans.
 
 Persistent auction, vault, KYC, DAO, bond, and reputation systems cannot be
 claimed until state-capable contract or executor storage semantics are designed,

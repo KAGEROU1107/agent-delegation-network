@@ -63,20 +63,6 @@ def build_valid_release_fixture(proof_dir: Path, monkeypatch):
     write_json(proof_dir / "invocation_receipt.json", invocation_receipt)
     write_json(proof_dir / "t3n_evidence.json", invocation_receipt)
     write_json(proof_dir / "replay_restart_proof.json", replay_restart_proof)
-    write_json(proof_dir / "ci_release_sha.json", {
-        "evidence_source": "github_actions",
-        "generated_by": ".github/workflows/release-proof.yml",
-        "repository": "KAGEROU1107/agent-delegation-network",
-        "sha": "abc1234",
-        "workflow_run_id": 12345,
-        "workflow_run_url": "https://github.com/KAGEROU1107/agent-delegation-network/actions/runs/12345",
-        "workflow_conclusion": "success",
-        "artifact_id": 67890,
-        "artifact_name": "adn-release-proof-abc1234",
-        "artifact_digest": "d" * 64,
-        "retrieved_at": "2026-06-23T00:00:00Z",
-    })
-
     manifest_body = {
         "schema_version": "adn-release-proof-v1",
         "contract_tail": "adn-processor",
@@ -104,6 +90,23 @@ def build_valid_release_fixture(proof_dir: Path, monkeypatch):
         "operator_public_key": public_key_hex,
     }
     sign_manifest(proof_dir, manifest_body, private_key, public_key_hex)
+    write_json(proof_dir / "ci_release_sha.json", {
+        "evidence_source": "github_actions",
+        "generated_by": ".github/workflows/release-proof.yml",
+        "attestation_phase": "post_verify",
+        "repository": "KAGEROU1107/agent-delegation-network",
+        "sha": "abc1234",
+        "workflow_run_id": "12345",
+        "workflow_run_url": "https://github.com/KAGEROU1107/agent-delegation-network/actions/runs/12345",
+        "workflow_conclusion": "success",
+        "artifact_id": "67890",
+        "artifact_name": "adn-release-proof-input-abc1234",
+        "artifact_url": "https://github.com/KAGEROU1107/agent-delegation-network/actions/runs/12345/artifacts/67890",
+        "artifact_digest": "d" * 64,
+        "proof_input_digest": verify_release.compute_proof_input_digest(proof_dir),
+        "proof_input_files": verify_release.PROOF_INPUT_FILES,
+        "retrieved_at": "2026-06-23T00:00:00Z",
+    })
     return {
         "private_key": private_key,
         "public_key_hex": public_key_hex,
@@ -116,6 +119,17 @@ def test_verify_release_accepts_complete_signed_fixture(tmp_path, monkeypatch):
     build_valid_release_fixture(proof_dir, monkeypatch)
 
     verify_release.verify_release_dir(proof_dir)
+
+
+def test_verify_release_inputs_accepts_bundle_without_ci_attestation(tmp_path, monkeypatch):
+    proof_dir = tmp_path / "proof"
+    build_valid_release_fixture(proof_dir, monkeypatch)
+    (proof_dir / "ci_release_sha.json").unlink()
+
+    result = verify_release.verify_release_inputs(proof_dir)
+
+    assert result["status"] == "INPUT_OK"
+    assert result["proof_input_digest"] == verify_release.compute_proof_input_digest(proof_dir)
 
 
 def test_verify_release_rejects_tampered_registration_response(tmp_path, monkeypatch):
@@ -154,6 +168,17 @@ def test_verify_release_rejects_self_authored_ci_without_github_evidence(tmp_pat
     })
 
     with pytest.raises(RuntimeError, match="CI release evidence"):
+        verify_release.verify_release_dir(proof_dir)
+
+
+def test_verify_release_rejects_ci_attestation_with_wrong_proof_input_digest(tmp_path, monkeypatch):
+    proof_dir = tmp_path / "proof"
+    build_valid_release_fixture(proof_dir, monkeypatch)
+    ci_evidence = json.loads((proof_dir / "ci_release_sha.json").read_text(encoding="utf-8"))
+    ci_evidence["proof_input_digest"] = "0" * 64
+    write_json(proof_dir / "ci_release_sha.json", ci_evidence)
+
+    with pytest.raises(RuntimeError, match="proof input digest"):
         verify_release.verify_release_dir(proof_dir)
 
 

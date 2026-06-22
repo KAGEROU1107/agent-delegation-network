@@ -269,9 +269,22 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "github_actions" in release_verifier
     assert "workflow_run_url" in release_verifier
     assert "artifact_digest" in release_verifier
+    assert "compute_proof_input_digest" in release_verifier
+    assert "PROOF_INPUT_FILES" in release_verifier
+    assert "attestation_phase" in release_verifier
+    assert "proof_input_digest" in release_verifier
     assert "adn-release-proof-v1" in schema
     assert "workflow_dispatch" in release_workflow
     assert "ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX" in release_workflow
+    assert "verify-input:" in release_workflow
+    assert "attest-release:" in release_workflow
+    assert "--input-only" in release_workflow
+    assert "steps.upload-proof-input.outputs.artifact-id" in release_workflow
+    assert "steps.upload-proof-input.outputs.artifact-url" in release_workflow
+    assert "steps.upload-proof-input.outputs.artifact-digest" in release_workflow
+    assert "adn-release-ci-attestation" in release_workflow
+    assert 'artifact_id": int(os.environ["GITHUB_RUN_ID"])' not in release_workflow
+    assert 'workflow_conclusion": "success"' in release_workflow
     assert "python scripts/verify_release.py proof/release" in release_workflow
     assert "actions/upload-artifact" in release_workflow
     assert "python scripts/release_gate.py" in workflow

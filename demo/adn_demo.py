@@ -238,20 +238,36 @@ def setup_demo_environment():
     coordinator.policy_engine.policy.add_delegation_rule(coord_id, "VALIDATE_QUALITY")
     coordinator.policy_engine.policy.add_delegation_rule(coord_id, "AGGREGATE_RESULTS")
 
+    # Register worker capabilities in coordinator's policy engine so it can verify
+    # that the target agents are capable of performing the delegated actions.
+    coordinator.policy_engine.policy.add_delegation_rule(w1_id, "PROCESS_DATA")
+    coordinator.policy_engine.policy.add_delegation_rule(w2_id, "FORMAT_CONVERSION")
+    coordinator.policy_engine.policy.add_delegation_rule(val_id, "VALIDATE_QUALITY")
+    coordinator.policy_engine.policy.add_delegation_rule(coord_id, "AGGREGATE_RESULTS")
+
     # Trust relationships (coord → workers, workers → coord for callbacks)
     coordinator.policy_engine.policy.add_trust_relationship(coord_id, w1_id)
     coordinator.policy_engine.policy.add_trust_relationship(coord_id, w2_id)
     coordinator.policy_engine.policy.add_trust_relationship(coord_id, val_id)
     coordinator.policy_engine.policy.add_trust_relationship(coord_id, coord_id)  # self-delegation
 
+    # Worker 1: can perform PROCESS_DATA; accepts delegations from coordinator
     worker1.policy_engine.policy.add_delegation_rule(w1_id, "PROCESS_DATA")
     worker1.policy_engine.policy.add_trust_relationship(w1_id, coord_id)
+    worker1.policy_engine.policy.add_delegation_rule(coord_id, "PROCESS_DATA")
+    worker1.policy_engine.policy.add_trust_relationship(coord_id, w1_id)
 
+    # Worker 2: can perform FORMAT_CONVERSION; accepts delegations from coordinator
     worker2.policy_engine.policy.add_delegation_rule(w2_id, "FORMAT_CONVERSION")
     worker2.policy_engine.policy.add_trust_relationship(w2_id, coord_id)
+    worker2.policy_engine.policy.add_delegation_rule(coord_id, "FORMAT_CONVERSION")
+    worker2.policy_engine.policy.add_trust_relationship(coord_id, w2_id)
 
+    # Validator: can perform VALIDATE_QUALITY; accepts delegations from coordinator
     validator.policy_engine.policy.add_delegation_rule(val_id, "VALIDATE_QUALITY")
     validator.policy_engine.policy.add_trust_relationship(val_id, coord_id)
+    validator.policy_engine.policy.add_delegation_rule(coord_id, "VALIDATE_QUALITY")
+    validator.policy_engine.policy.add_trust_relationship(coord_id, val_id)
 
     print("   [+] Policies configured for all agents")
     

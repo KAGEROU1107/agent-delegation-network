@@ -287,6 +287,10 @@ def verify_release_dir(proof_dir: Path | str) -> dict[str, Any]:
             "workflow_run_id",
             "workflow_run_url",
             "workflow_conclusion",
+            "tests_workflow_run_id",
+            "tests_workflow_run_url",
+            "tests_workflow_conclusion",
+            "tests_workflow_head_sha",
             "artifact_id",
             "artifact_name",
             "artifact_url",
@@ -326,6 +330,16 @@ def verify_release_dir(proof_dir: Path | str) -> dict[str, Any]:
         raise RuntimeError("CI status is not successful for release SHA")
     if ci_release.get("sha") != manifest.get("build_commit"):
         raise RuntimeError("release SHA does not match manifest build_commit")
+    if not str(ci_release.get("tests_workflow_run_url", "")).startswith(expected_run_url_prefix):
+        raise RuntimeError("Tests workflow URL does not match expected repository")
+    if not str(ci_release.get("tests_workflow_run_id", "")).isdigit():
+        raise RuntimeError("Tests workflow run ID must be the uploaded GitHub workflow run ID")
+    if ci_release.get("tests_workflow_conclusion") != "success":
+        raise RuntimeError("Tests workflow conclusion is not successful for release SHA")
+    if ci_release.get("tests_workflow_head_sha") != manifest.get("build_commit"):
+        raise RuntimeError("Tests workflow SHA does not match manifest build_commit")
+    if ci_release.get("tests_workflow_head_sha") != ci_release.get("sha"):
+        raise RuntimeError("Tests workflow SHA does not match release SHA")
 
     return {
         "status": "OK",

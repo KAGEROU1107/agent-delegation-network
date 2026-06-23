@@ -49,6 +49,7 @@ jobs:
           from scripts.verify_release import PROOF_INPUT_FILES, digest_hex, verify_release_inputs
           from scripts.verify_release_remote import (
               GitHubActionsClient,
+              find_successful_tests_workflow_run,
               materialize_proof_inputs_from_artifact_zip,
               normalize_digest,
           )
@@ -81,6 +82,13 @@ jobs:
           if result["proof_input_digest"] != materialized["proof_input_digest"]:
               raise RuntimeError("materialized proof input digest mismatch")
 
+          tests_runs = client.list_workflow_runs_for_head(repository, input_sha)
+          tests_run = find_successful_tests_workflow_run(
+              tests_runs,
+              repository=repository,
+              head_sha=input_sha,
+          )
+
           payload = {
               "evidence_source": "github_actions",
               "generated_by": ".github/workflows/release-proof-attest.yml",
@@ -91,6 +99,10 @@ jobs:
               "workflow_run_id": input_run_id,
               "workflow_run_url": os.environ["INPUT_RUN_URL"],
               "workflow_conclusion": os.environ["INPUT_RUN_CONCLUSION"],
+              "tests_workflow_run_id": str(tests_run["id"]),
+              "tests_workflow_run_url": tests_run["html_url"],
+              "tests_workflow_conclusion": tests_run["conclusion"],
+              "tests_workflow_head_sha": tests_run["head_sha"],
               "artifact_id": artifact_id,
               "artifact_name": artifact_name,
               "artifact_url": f"https://github.com/{repository}/actions/runs/{input_run_id}/artifacts/{artifact_id}",

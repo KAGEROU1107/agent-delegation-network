@@ -282,6 +282,9 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "github_actions" in release_verifier
     assert "workflow_run_url" in release_verifier
     assert "artifact_digest" in release_verifier
+    assert "tests_workflow_run_id" in release_verifier
+    assert "tests_workflow_conclusion" in release_verifier
+    assert "tests_workflow_head_sha" in release_verifier
     assert "compute_proof_input_digest" in release_verifier
     assert "PROOF_INPUT_FILES" in release_verifier
     assert "attestation_phase" in release_verifier
@@ -291,6 +294,9 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "GitHubActionsClient" in remote_verifier
     assert "get_workflow_run" in remote_verifier
     assert "get_workflow_run_artifact" in remote_verifier
+    assert "list_workflow_runs_for_head" in remote_verifier
+    assert "find_successful_tests_workflow_run" in remote_verifier
+    assert "verify_tests_run" in remote_verifier
     assert "download_artifact_zip" in remote_verifier
     assert "proof-input.tar" in remote_verifier
     assert "unexpected proof input archive path" in remote_verifier
@@ -315,6 +321,11 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "github.event.workflow_run.head_sha" in release_attest_workflow
     assert "ref: ${{ github.event.workflow_run.head_sha }}" not in release_attest_workflow
     assert "materialize_proof_inputs_from_artifact_zip" in release_attest_workflow
+    assert "list_workflow_runs_for_head" in release_attest_workflow
+    assert "find_successful_tests_workflow_run" in release_attest_workflow
+    assert "tests_workflow_run_id" in release_attest_workflow
+    assert "tests_workflow_conclusion" in release_attest_workflow
+    assert "tests_workflow_head_sha" in release_attest_workflow
     assert "${{ runner.temp }}/release-proof" in release_attest_workflow
     assert "post_verify_completed_run" in release_attest_workflow
     assert "attested_workflow" in release_attest_workflow

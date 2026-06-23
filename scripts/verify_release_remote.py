@@ -17,6 +17,7 @@ import posixpath
 import re
 import tarfile
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -101,6 +102,26 @@ class GitHubActionsClient:
                 break
             page += 1
         return artifacts
+
+    def list_workflow_runs_for_head(self, repository: str, head_sha: str) -> list[dict[str, Any]]:
+        owner, repo = parse_repository(repository)
+        runs: list[dict[str, Any]] = []
+        page = 1
+        total_count: int | None = None
+        encoded_sha = urllib.parse.quote(head_sha, safe="")
+        while total_count is None or len(runs) < total_count:
+            payload = self._json(
+                f"/repos/{owner}/{repo}/actions/runs?per_page=100&page={page}&head_sha={encoded_sha}&status=completed"
+            )
+            total_count = int(payload.get("total_count", 0))
+            page_runs = payload.get("workflow_runs", [])
+            if not isinstance(page_runs, list):
+                raise RuntimeError("GitHub workflow runs response is malformed")
+            runs.extend(page_runs)
+            if not page_runs:
+                break
+            page += 1
+        return runs
 
     def download_artifact_zip(self, artifact: dict[str, Any]) -> bytes:
         download_url = str(artifact.get("archive_download_url", "")).strip()
@@ -224,6 +245,38 @@ def verify_run(ci_release: dict[str, Any], run: dict[str, Any], expected_reposit
         raise RuntimeError("workflow run repository does not match expected repository")
 
 
+def find_successful_tests_workflow_run(
+    runs: list[dict[str, Any]],
+    *,
+    repository: str,
+    head_sha: str,
+) -> dict[str, Any]:
+    matches = [
+        run
+        for run in runs
+        if run.get("name") == "Tests"
+        and run.get("conclusion") == "success"
+        and str(run.get("head_sha", "")) == head_sha
+        and (run.get("repository") or {}).get("full_name") == repository
+    ]
+    if not matches:
+        raise RuntimeError("no successful Tests workflow run found for release SHA")
+    return sorted(matches, key=lambda run: str(run.get("run_started_at") or run.get("created_at") or ""), reverse=True)[0]
+
+
+def verify_tests_run(ci_release: dict[str, Any], run: dict[str, Any], expected_repository: str) -> None:
+    require_equal("Tests workflow run id", run.get("id"), ci_release.get("tests_workflow_run_id"))
+    require_equal("Tests workflow head_sha", run.get("head_sha"), ci_release.get("tests_workflow_head_sha"))
+    require_equal("Tests workflow conclusion", run.get("conclusion"), "success")
+    if run.get("html_url") != ci_release.get("tests_workflow_run_url"):
+        raise RuntimeError("Tests workflow URL does not match CI attestation")
+    if run.get("name") != "Tests":
+        raise RuntimeError("Tests workflow run name does not match required workflow")
+    repository = run.get("repository") or {}
+    if repository.get("full_name") != expected_repository:
+        raise RuntimeError("Tests workflow repository does not match expected repository")
+
+
 def expected_artifact_url(repository: str, run_id: str, artifact_id: str) -> str:
     return f"https://github.com/{repository}/actions/runs/{run_id}/artifacts/{artifact_id}"
 
@@ -269,6 +322,10 @@ def verify_release_remote(
     run = api_client.get_workflow_run(repository, run_id)
     verify_run(ci_release, run, repository)
 
+    tests_run_id = str(ci_release.get("tests_workflow_run_id", ""))
+    tests_run = api_client.get_workflow_run(repository, tests_run_id)
+    verify_tests_run(ci_release, tests_run, repository)
+
     artifact = api_client.get_workflow_run_artifact(repository, run_id, artifact_id)
     attested_artifact_digest = verify_artifact(ci_release, artifact, repository, run_id)
     artifact_zip = api_client.download_artifact_zip(artifact)
@@ -282,6 +339,7 @@ def verify_release_remote(
         "build_commit": local_result.get("build_commit"),
         "build_config_id": local_result.get("build_config_id"),
         "workflow_run_id": run_id,
+        "tests_workflow_run_id": tests_run_id,
         "artifact_id": artifact_id,
         "artifact_digest": downloaded_digest,
         "proof_input_digest": local_result.get("proof_input_digest"),

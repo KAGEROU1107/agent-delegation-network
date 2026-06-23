@@ -100,6 +100,10 @@ def build_valid_release_fixture(proof_dir: Path, monkeypatch):
         "workflow_run_id": "12345",
         "workflow_run_url": "https://github.com/KAGEROU1107/agent-delegation-network/actions/runs/12345",
         "workflow_conclusion": "success",
+        "tests_workflow_run_id": "54321",
+        "tests_workflow_run_url": "https://github.com/KAGEROU1107/agent-delegation-network/actions/runs/54321",
+        "tests_workflow_conclusion": "success",
+        "tests_workflow_head_sha": "abc1234",
         "artifact_id": "67890",
         "artifact_name": "adn-release-proof-input-abc1234",
         "artifact_url": "https://github.com/KAGEROU1107/agent-delegation-network/actions/runs/12345/artifacts/67890",
@@ -147,14 +151,17 @@ def build_artifact_zip(
 
 
 class FakeGitHubClient:
-    def __init__(self, run: dict, artifact: dict, artifact_zip: bytes):
+    def __init__(self, run: dict, artifact: dict, artifact_zip: bytes, tests_run: dict):
         self.run = run
         self.artifact = artifact
         self.artifact_zip = artifact_zip
+        self.tests_run = tests_run
 
     def get_workflow_run(self, repository: str, run_id: str) -> dict:
         assert repository == "KAGEROU1107/agent-delegation-network"
-        assert run_id == "12345"
+        assert run_id in {"12345", "54321"}
+        if run_id == "54321":
+            return self.tests_run
         return self.run
 
     def get_workflow_run_artifact(self, repository: str, run_id: str, artifact_id: str) -> dict:
@@ -168,7 +175,13 @@ class FakeGitHubClient:
         return self.artifact_zip
 
 
-def make_client(proof_dir: Path, *, run_overrides: dict | None = None, artifact_zip: bytes | None = None):
+def make_client(
+    proof_dir: Path,
+    *,
+    run_overrides: dict | None = None,
+    tests_run_overrides: dict | None = None,
+    artifact_zip: bytes | None = None,
+):
     artifact_zip = artifact_zip if artifact_zip is not None else build_artifact_zip(proof_dir)
     artifact_digest = verify_release.digest_hex(artifact_zip)
     ci_evidence = json.loads((proof_dir / "ci_release_sha.json").read_text(encoding="utf-8"))
@@ -179,8 +192,18 @@ def make_client(proof_dir: Path, *, run_overrides: dict | None = None, artifact_
         "head_sha": "abc1234",
         "conclusion": "success",
         "html_url": "https://github.com/KAGEROU1107/agent-delegation-network/actions/runs/12345",
+        "name": "Release Proof Input",
         "repository": {"full_name": "KAGEROU1107/agent-delegation-network"},
         **(run_overrides or {}),
+    }
+    tests_run = {
+        "id": 54321,
+        "head_sha": "abc1234",
+        "conclusion": "success",
+        "html_url": "https://github.com/KAGEROU1107/agent-delegation-network/actions/runs/54321",
+        "name": "Tests",
+        "repository": {"full_name": "KAGEROU1107/agent-delegation-network"},
+        **(tests_run_overrides or {}),
     }
     artifact = {
         "id": 67890,
@@ -190,7 +213,7 @@ def make_client(proof_dir: Path, *, run_overrides: dict | None = None, artifact_
         "archive_download_url": "https://api.github.local/artifacts/67890/zip",
         "workflow_run": {"id": 12345},
     }
-    return FakeGitHubClient(run, artifact, artifact_zip)
+    return FakeGitHubClient(run, artifact, artifact_zip, tests_run)
 
 
 def test_github_client_lists_workflow_run_artifacts_across_pages():
@@ -218,6 +241,74 @@ def test_github_client_lists_workflow_run_artifacts_across_pages():
     ]
 
 
+def test_github_client_lists_workflow_runs_for_head_across_pages():
+    class PagingClient(verify_release_remote.GitHubActionsClient):
+        def __init__(self):
+            super().__init__(token="", api_url="https://api.github.local")
+            self.paths = []
+
+        def _json(self, path: str) -> dict:
+            self.paths.append(path)
+            if path.endswith("page=1&head_sha=abc1234&status=completed"):
+                return {"total_count": 2, "workflow_runs": [{"id": 1}]}
+            if path.endswith("page=2&head_sha=abc1234&status=completed"):
+                return {"total_count": 2, "workflow_runs": [{"id": 2}]}
+            raise AssertionError(f"unexpected path: {path}")
+
+    client = PagingClient()
+
+    runs = client.list_workflow_runs_for_head("KAGEROU1107/agent-delegation-network", "abc1234")
+
+    assert [run["id"] for run in runs] == [1, 2]
+    assert client.paths == [
+        "/repos/KAGEROU1107/agent-delegation-network/actions/runs?per_page=100&page=1&head_sha=abc1234&status=completed",
+        "/repos/KAGEROU1107/agent-delegation-network/actions/runs?per_page=100&page=2&head_sha=abc1234&status=completed",
+    ]
+
+
+def test_find_successful_tests_workflow_run_selects_matching_success():
+    run = verify_release_remote.find_successful_tests_workflow_run(
+        [
+            {
+                "id": 1,
+                "name": "Tests",
+                "conclusion": "failure",
+                "head_sha": "abc1234",
+                "repository": {"full_name": "KAGEROU1107/agent-delegation-network"},
+            },
+            {
+                "id": 2,
+                "name": "Tests",
+                "conclusion": "success",
+                "head_sha": "abc1234",
+                "run_started_at": "2026-06-23T00:00:00Z",
+                "repository": {"full_name": "KAGEROU1107/agent-delegation-network"},
+            },
+        ],
+        repository="KAGEROU1107/agent-delegation-network",
+        head_sha="abc1234",
+    )
+
+    assert run["id"] == 2
+
+
+def test_find_successful_tests_workflow_run_rejects_absent_success():
+    with pytest.raises(RuntimeError, match="no successful Tests workflow"):
+        verify_release_remote.find_successful_tests_workflow_run(
+            [
+                {
+                    "id": 1,
+                    "name": "Tests",
+                    "conclusion": "failure",
+                    "head_sha": "abc1234",
+                    "repository": {"full_name": "KAGEROU1107/agent-delegation-network"},
+                }
+            ],
+            repository="KAGEROU1107/agent-delegation-network",
+            head_sha="abc1234",
+        )
+
+
 def test_remote_verifier_accepts_matching_github_run_and_artifact(tmp_path, monkeypatch):
     proof_dir = tmp_path / "proof"
     build_valid_release_fixture(proof_dir, monkeypatch)
@@ -228,6 +319,7 @@ def test_remote_verifier_accepts_matching_github_run_and_artifact(tmp_path, monk
     assert result["status"] == "REMOTE_OK"
     assert result["artifact_id"] == "67890"
     assert result["workflow_run_id"] == "12345"
+    assert result["tests_workflow_run_id"] == "54321"
 
 
 def test_remote_verifier_rejects_workflow_sha_mismatch(tmp_path, monkeypatch):
@@ -236,6 +328,24 @@ def test_remote_verifier_rejects_workflow_sha_mismatch(tmp_path, monkeypatch):
     client = make_client(proof_dir, run_overrides={"head_sha": "different-sha"})
 
     with pytest.raises(RuntimeError, match="workflow run head_sha"):
+        verify_release_remote.verify_release_remote(proof_dir, client=client)
+
+
+def test_remote_verifier_rejects_tests_workflow_sha_mismatch(tmp_path, monkeypatch):
+    proof_dir = tmp_path / "proof"
+    build_valid_release_fixture(proof_dir, monkeypatch)
+    client = make_client(proof_dir, tests_run_overrides={"head_sha": "different-sha"})
+
+    with pytest.raises(RuntimeError, match="Tests workflow head_sha"):
+        verify_release_remote.verify_release_remote(proof_dir, client=client)
+
+
+def test_remote_verifier_rejects_failed_tests_workflow(tmp_path, monkeypatch):
+    proof_dir = tmp_path / "proof"
+    build_valid_release_fixture(proof_dir, monkeypatch)
+    client = make_client(proof_dir, tests_run_overrides={"conclusion": "failure"})
+
+    with pytest.raises(RuntimeError, match="Tests workflow conclusion"):
         verify_release_remote.verify_release_remote(proof_dir, client=client)
 
 

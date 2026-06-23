@@ -1,3 +1,5 @@
+import json
+import re
 from pathlib import Path
 
 
@@ -241,6 +243,7 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     workflow = read(".github/workflows/ci.yml")
     release_input_workflow = read(".github/workflows/release-proof-input.yml")
     release_attest_workflow = read(".github/workflows/release-proof-attest.yml")
+    actions_lock = read(".github/actions-lock.json")
 
     for content in (criteria, claim_matrix):
         assert "source-hardened / live-proof pending" in content
@@ -260,6 +263,9 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "schemas/adn-release-proof-v1.schema.json" in release_gate
     assert ".github/workflows/release-proof-input.yml" in release_gate
     assert ".github/workflows/release-proof-attest.yml" in release_gate
+    assert ".github/actions-lock.json" in release_gate
+    assert "MUTABLE_WORKFLOW_REF_PATTERNS" in release_gate
+    assert "assert_workflow_actions_are_pinned" in release_gate
     assert "REQUIRED_PROOF_FILES" in release_verifier
     assert "deployment_manifest.sig" in release_verifier
     assert "registration_response.json" in release_verifier
@@ -316,3 +322,40 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "actions/upload-artifact" in release_attest_workflow
     assert "test_release_remote_verifier.py" in workflow
     assert "python scripts/release_gate.py" in workflow
+    assert "actions/checkout" in actions_lock
+    assert "actions/setup-python" in actions_lock
+    assert "actions/setup-node" in actions_lock
+    assert "actions/upload-artifact" in actions_lock
+    assert "dtolnay/rust-toolchain" in actions_lock
+
+
+def test_workflow_actions_are_pinned_to_reviewed_commits():
+    lock = json.loads(read(".github/actions-lock.json"))
+    locked_actions = {entry["action"]: entry for entry in lock["actions"]}
+    workflow_paths = [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release-proof-input.yml",
+        ".github/workflows/release-proof-attest.yml",
+    ]
+    mutable_ref_pattern = re.compile(r"uses:\s+[^@\s]+@(v\d+|stable)\b")
+
+    assert lock["schema_version"] == "adn-actions-lock-v1"
+    assert set(locked_actions) == {
+        "actions/checkout",
+        "actions/setup-python",
+        "actions/setup-node",
+        "actions/upload-artifact",
+        "dtolnay/rust-toolchain",
+    }
+    for entry in locked_actions.values():
+        assert re.fullmatch(r"[0-9a-f]{40}", entry["commit_sha"])
+        assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", entry["review_date"])
+        assert entry["approved_version"]
+        assert entry["update_owner"]
+
+    for path in workflow_paths:
+        content = read(path)
+        assert mutable_ref_pattern.search(content) is None, path
+        for action, entry in locked_actions.items():
+            if action in content:
+                assert f"{action}@{entry['commit_sha']}" in content

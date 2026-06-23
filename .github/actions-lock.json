@@ -1,0 +1,46 @@
+{
+  "schema_version": "adn-actions-lock-v1",
+  "review_date": "2026-06-24",
+  "actions": [
+    {
+      "action": "actions/checkout",
+      "approved_version": "v4",
+      "commit_sha": "34e114876b0b11c390a56381ad16ebd13914f8d5",
+      "review_date": "2026-06-24",
+      "source": "https://github.com/actions/checkout",
+      "update_owner": "release-engineering"
+    },
+    {
+      "action": "actions/setup-python",
+      "approved_version": "v5",
+      "commit_sha": "a26af69be951a213d495a4c3e4e4022e16d87065",
+      "review_date": "2026-06-24",
+      "source": "https://github.com/actions/setup-python",
+      "update_owner": "release-engineering"
+    },
+    {
+      "action": "actions/setup-node",
+      "approved_version": "v4",
+      "commit_sha": "49933ea5288caeca8642d1e84afbd3f7d6820020",
+      "review_date": "2026-06-24",
+      "source": "https://github.com/actions/setup-node",
+      "update_owner": "release-engineering"
+    },
+    {
+      "action": "actions/upload-artifact",
+      "approved_version": "v4",
+      "commit_sha": "ea165f8d65b6e75b540449e92b4886f43607fa02",
+      "review_date": "2026-06-24",
+      "source": "https://github.com/actions/upload-artifact",
+      "update_owner": "release-engineering"
+    },
+    {
+      "action": "dtolnay/rust-toolchain",
+      "approved_version": "stable",
+      "commit_sha": "29eef336d9b2848a0b548edc03f92a220660cdb8",
+      "review_date": "2026-06-24",
+      "source": "https://github.com/dtolnay/rust-toolchain",
+      "update_owner": "release-engineering"
+    }
+  ]
+}

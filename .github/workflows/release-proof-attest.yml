@@ -6,7 +6,7 @@ on:
     types: [completed]
 
 permissions:
-  contents: read
+  contents: write
   actions: read
 
 jobs:
@@ -132,7 +132,121 @@ jobs:
           ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX: ${{ secrets.ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX }}
           ADN_RELEASE_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ github.token }}
-        run: python scripts/verify_release_remote.py "${{ steps.attest.outputs.proof_dir }}" --github-token "$GITHUB_TOKEN" --repository "$GITHUB_REPOSITORY"
+        run: |
+          set -o pipefail
+          python scripts/verify_release_remote.py "${{ steps.attest.outputs.proof_dir }}" --github-token "$GITHUB_TOKEN" --repository "$GITHUB_REPOSITORY" | tee "$RUNNER_TEMP/remote_verification_result.json"
+
+      - name: Create durable release proof assets
+        env:
+          INPUT_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_RUN_ID: ${{ github.event.workflow_run.id }}
+          INPUT_RUN_URL: ${{ github.event.workflow_run.html_url }}
+          PROOF_DIR: ${{ steps.attest.outputs.proof_dir }}
+          RELEASE_ASSET_DIR: ${{ runner.temp }}/release-proof-assets
+          REMOTE_VERIFICATION_RESULT: ${{ runner.temp }}/remote_verification_result.json
+        run: |
+          mkdir -p "$RELEASE_ASSET_DIR"
+          tar --sort=name \
+            --mtime='UTC 1970-01-01' \
+            --owner=0 \
+            --group=0 \
+            --numeric-owner \
+            -cf "$RELEASE_ASSET_DIR/proof-input.tar" \
+            -C "$PROOF_DIR" \
+            deployment_manifest.json \
+            deployment_manifest.sig \
+            registration_response.json \
+            invocation_receipt.json \
+            t3n_evidence.json \
+            replay_restart_proof.json
+          cp "$PROOF_DIR/ci_release_sha.json" "$RELEASE_ASSET_DIR/ci_release_sha.json"
+          cp "$REMOTE_VERIFICATION_RESULT" "$RELEASE_ASSET_DIR/remote_verification_result.json"
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          from scripts.verify_release import digest_hex
+
+          asset_dir = Path(os.environ["RELEASE_ASSET_DIR"])
+          ci_attestation = json.loads((asset_dir / "ci_release_sha.json").read_text(encoding="utf-8"))
+          remote_result = json.loads((asset_dir / "remote_verification_result.json").read_text(encoding="utf-8"))
+          payload = {
+              "evidence_source": "github_actions_release_asset",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "sha": os.environ["INPUT_HEAD_SHA"],
+              "attest_workflow_run_id": os.environ["GITHUB_RUN_ID"],
+              "attest_workflow_run_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              "attest_workflow_run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
+              "input_workflow_run_id": os.environ["INPUT_RUN_ID"],
+              "input_workflow_run_url": os.environ["INPUT_RUN_URL"],
+              "tests_workflow_run_id": ci_attestation["tests_workflow_run_id"],
+              "tests_workflow_run_url": ci_attestation["tests_workflow_run_url"],
+              "proof_input_digest": ci_attestation["proof_input_digest"],
+              "remote_verification_status": remote_result["status"],
+              "durable_asset_files": [
+                  "proof-input.tar",
+                  "ci_release_sha.json",
+                  "remote_verification_result.json",
+                  "workflow_metadata.json",
+              ],
+              "proof_input_archive_sha256": digest_hex((asset_dir / "proof-input.tar").read_bytes()),
+              "ci_attestation_sha256": digest_hex((asset_dir / "ci_release_sha.json").read_bytes()),
+              "remote_verification_result_sha256": digest_hex((asset_dir / "remote_verification_result.json").read_bytes()),
+              "created_at": datetime.now(timezone.utc).isoformat(),
+          }
+          (asset_dir / "workflow_metadata.json").write_text(
+              json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          tar --sort=name \
+            --mtime='UTC 1970-01-01' \
+            --owner=0 \
+            --group=0 \
+            --numeric-owner \
+            -cf "$RUNNER_TEMP/adn-release-proof-${INPUT_HEAD_SHA}.tar" \
+            -C "$RELEASE_ASSET_DIR" \
+            ci_release_sha.json \
+            proof-input.tar \
+            remote_verification_result.json \
+            workflow_metadata.json
+
+      - name: Publish durable release proof assets
+        env:
+          ADN_RELEASE_ASSET_TAG: adn-release-proof-${{ github.event.workflow_run.head_sha }}
+          ADN_RELEASE_ASSET_TITLE: ADN release proof ${{ github.event.workflow_run.head_sha }}
+          GH_TOKEN: ${{ github.token }}
+          INPUT_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RELEASE_ASSET_DIR: ${{ runner.temp }}/release-proof-assets
+        run: |
+          set -euo pipefail
+          notes_file="$RUNNER_TEMP/adn-release-proof-notes.md"
+          cat > "$notes_file" <<EOF
+          Verified ADN release proof bundle for ${INPUT_HEAD_SHA}.
+
+          The release assets include the proof-input archive, final CI attestation,
+          remote verifier output, and workflow metadata. The project remains
+          source-hardened / live-proof pending unless a pinned live deployment proof
+          is present in the bundle.
+          EOF
+          if ! gh release view "$ADN_RELEASE_ASSET_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$ADN_RELEASE_ASSET_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$INPUT_HEAD_SHA" \
+              --title "$ADN_RELEASE_ASSET_TITLE" \
+              --notes-file "$notes_file" \
+              --latest=false
+          fi
+          gh release upload "$ADN_RELEASE_ASSET_TAG" \
+            "$RELEASE_ASSET_DIR/proof-input.tar" \
+            "$RELEASE_ASSET_DIR/ci_release_sha.json" \
+            "$RELEASE_ASSET_DIR/remote_verification_result.json" \
+            "$RELEASE_ASSET_DIR/workflow_metadata.json" \
+            "$RUNNER_TEMP/adn-release-proof-${INPUT_HEAD_SHA}.tar" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
 
       - name: Upload CI attestation
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -140,3 +254,4 @@ jobs:
           name: adn-release-ci-attestation-${{ github.event.workflow_run.head_sha }}
           path: ${{ steps.attest.outputs.proof_dir }}/ci_release_sha.json
           if-no-files-found: error
+          retention-days: 90

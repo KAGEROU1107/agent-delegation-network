@@ -268,6 +268,7 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert ".github/actions-lock.json" in release_gate
     assert "MUTABLE_WORKFLOW_REF_PATTERNS" in release_gate
     assert "assert_workflow_actions_are_pinned" in release_gate
+    assert "assert_release_proof_retention_is_durable" in release_gate
     assert "PYTHON_REQUIREMENT_LOCKS" in release_gate
     assert "assert_python_dependencies_are_hash_locked" in release_gate
     assert "REQUIRED_PROOF_FILES" in release_verifier
@@ -313,8 +314,10 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "verify-input:" in release_input_workflow
     assert "--input-only" in release_input_workflow
     assert "actions/upload-artifact" in release_input_workflow
+    assert "retention-days: 90" in release_input_workflow
     assert "name: Release Proof Attest" in release_attest_workflow
     assert "workflow_run:" in release_attest_workflow
+    assert "contents: write" in release_attest_workflow
     assert "Release Proof Input" in release_attest_workflow
     assert "types: [completed]" in release_attest_workflow
     assert "github.event.workflow_run.conclusion == 'success'" in release_attest_workflow
@@ -336,6 +339,14 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "python scripts/verify_release.py \"${{ steps.attest.outputs.proof_dir }}\"" in release_attest_workflow
     assert "python scripts/verify_release_remote.py \"${{ steps.attest.outputs.proof_dir }}\"" in release_attest_workflow
     assert "adn-release-ci-attestation" in release_attest_workflow
+    assert "retention-days: 90" in release_attest_workflow
+    assert "remote_verification_result.json" in release_attest_workflow
+    assert "workflow_metadata.json" in release_attest_workflow
+    assert "ADN_RELEASE_ASSET_TAG" in release_attest_workflow
+    assert "gh release create" in release_attest_workflow
+    assert "gh release upload" in release_attest_workflow
+    assert "proof-input.tar" in release_attest_workflow
+    assert "ci_release_sha.json" in release_attest_workflow
     assert 'workflow_conclusion": "success"' not in release_attest_workflow
     assert 'workflow_conclusion": os.environ["INPUT_RUN_CONCLUSION"]' in release_attest_workflow
     assert "actions/upload-artifact" in release_attest_workflow
@@ -438,6 +449,69 @@ def test_release_gate_allows_local_workflow_actions_without_lock(monkeypatch):
     monkeypatch.setattr(release_gate, "read", fake_read)
 
     assert release_gate.assert_workflow_actions_are_pinned() == []
+
+
+def test_release_gate_rejects_missing_release_artifact_retention(monkeypatch):
+    from scripts import release_gate
+
+    workflow_without_retention = """
+steps:
+  - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+    with:
+      name: proof
+      path: proof-input.tar
+"""
+
+    def fake_read(path: str) -> str:
+        if path in {
+            ".github/workflows/release-proof-input.yml",
+            ".github/workflows/release-proof-attest.yml",
+        }:
+            return workflow_without_retention
+        raise AssertionError(f"unexpected read path: {path}")
+
+    monkeypatch.setattr(release_gate, "read", fake_read)
+
+    errors = release_gate.assert_release_proof_retention_is_durable()
+
+    assert any("retention-days: 90" in error for error in errors)
+
+
+def test_release_gate_rejects_missing_durable_release_asset_publication(monkeypatch):
+    from scripts import release_gate
+
+    release_input = """
+steps:
+  - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+    with:
+      name: proof
+      path: proof-input.tar
+      retention-days: 90
+"""
+    release_attest_without_assets = """
+permissions:
+  contents: read
+steps:
+  - name: Upload CI attestation
+    uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+    with:
+      name: attestation
+      path: ci_release_sha.json
+      retention-days: 90
+"""
+
+    def fake_read(path: str) -> str:
+        if path == ".github/workflows/release-proof-input.yml":
+            return release_input
+        if path == ".github/workflows/release-proof-attest.yml":
+            return release_attest_without_assets
+        raise AssertionError(f"unexpected read path: {path}")
+
+    monkeypatch.setattr(release_gate, "read", fake_read)
+
+    errors = release_gate.assert_release_proof_retention_is_durable()
+
+    assert any("durable release asset" in error for error in errors)
 
 
 def test_python_requirement_locks_pin_every_package_with_hashes():

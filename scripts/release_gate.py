@@ -34,6 +34,21 @@ MUTABLE_WORKFLOW_REF_PATTERNS = [
     re.compile(r"uses:\s+[^@\s]+@stable\b"),
 ]
 LOCAL_WORKFLOW_ACTION_PREFIX = "./.github/actions/"
+RELEASE_PROOF_WORKFLOW_FILES = [
+    ".github/workflows/release-proof-input.yml",
+    ".github/workflows/release-proof-attest.yml",
+]
+RELEASE_ARTIFACT_RETENTION = "retention-days: 90"
+RELEASE_ASSET_TERMS = [
+    "contents: write",
+    "remote_verification_result.json",
+    "workflow_metadata.json",
+    "ADN_RELEASE_ASSET_TAG",
+    "gh release create",
+    "gh release upload",
+    "proof-input.tar",
+    "ci_release_sha.json",
+]
 
 PYTHON_REQUIREMENT_LOCKS = [
     "requirements-ci.lock",
@@ -169,6 +184,28 @@ def assert_python_dependencies_are_hash_locked() -> list[str]:
     return errors
 
 
+def assert_release_proof_retention_is_durable() -> list[str]:
+    errors: list[str] = []
+    for workflow in RELEASE_PROOF_WORKFLOW_FILES:
+        content = read(workflow)
+        upload_count = content.count("actions/upload-artifact@")
+        retention_count = content.count(RELEASE_ARTIFACT_RETENTION)
+        if upload_count and retention_count < upload_count:
+            errors.append(
+                f"release gate workflow {workflow} must set {RELEASE_ARTIFACT_RETENTION} "
+                "for every uploaded proof artifact"
+            )
+
+    attest_workflow = read(".github/workflows/release-proof-attest.yml")
+    for term in RELEASE_ASSET_TERMS:
+        if term not in attest_workflow:
+            errors.append(
+                "release gate durable release asset publication missing required term: "
+                f"{term}"
+            )
+    return errors
+
+
 def main() -> int:
     missing = [path for path in REQUIRED_FILES if not (ROOT / path).exists()]
     if missing:
@@ -190,6 +227,9 @@ def main() -> int:
         print(error, file=sys.stderr)
         failed = True
     for error in assert_python_dependencies_are_hash_locked():
+        print(error, file=sys.stderr)
+        failed = True
+    for error in assert_release_proof_retention_is_durable():
         print(error, file=sys.stderr)
         failed = True
 

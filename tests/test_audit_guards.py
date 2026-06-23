@@ -244,6 +244,8 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     release_input_workflow = read(".github/workflows/release-proof-input.yml")
     release_attest_workflow = read(".github/workflows/release-proof-attest.yml")
     actions_lock = read(".github/actions-lock.json")
+    requirements_ci_lock = read("requirements-ci.lock")
+    requirements_release_lock = read("requirements-release.lock")
 
     for content in (criteria, claim_matrix):
         assert "source-hardened / live-proof pending" in content
@@ -266,6 +268,8 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert ".github/actions-lock.json" in release_gate
     assert "MUTABLE_WORKFLOW_REF_PATTERNS" in release_gate
     assert "assert_workflow_actions_are_pinned" in release_gate
+    assert "PYTHON_REQUIREMENT_LOCKS" in release_gate
+    assert "assert_python_dependencies_are_hash_locked" in release_gate
     assert "REQUIRED_PROOF_FILES" in release_verifier
     assert "deployment_manifest.sig" in release_verifier
     assert "registration_response.json" in release_verifier
@@ -322,6 +326,19 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "actions/upload-artifact" in release_attest_workflow
     assert "test_release_remote_verifier.py" in workflow
     assert "python scripts/release_gate.py" in workflow
+    assert "python -m pip install --require-hashes -r requirements-ci.lock" in workflow
+    assert "python -m pip install --require-hashes -r requirements-release.lock" in release_input_workflow
+    assert "python -m pip install --require-hashes -r requirements-release.lock" in release_attest_workflow
+    assert re.search(r"pip install (pytest|cryptography)\b", "\n".join([
+        workflow,
+        release_input_workflow,
+        release_attest_workflow,
+    ])) is None
+    assert "pytest==" in requirements_ci_lock
+    assert "cryptography==" in requirements_ci_lock
+    assert "cryptography==" in requirements_release_lock
+    assert "--hash=sha256:" in requirements_ci_lock
+    assert "--hash=sha256:" in requirements_release_lock
     assert "actions/checkout" in actions_lock
     assert "actions/setup-python" in actions_lock
     assert "actions/setup-node" in actions_lock
@@ -359,3 +376,20 @@ def test_workflow_actions_are_pinned_to_reviewed_commits():
         for action, entry in locked_actions.items():
             if action in content:
                 assert f"{action}@{entry['commit_sha']}" in content
+
+
+def test_python_requirement_locks_pin_every_package_with_hashes():
+    lock_paths = ["requirements-ci.lock", "requirements-release.lock"]
+    requirement_line = re.compile(r"^[a-zA-Z0-9_.-]+==[^\s\\]+")
+
+    for path in lock_paths:
+        content = read(path)
+        assert "--require-hashes" not in content
+        assert "-r " not in content
+        blocks = [block for block in content.split("\n\n") if requirement_line.search(block)]
+        assert blocks, path
+        for block in blocks:
+            lines = [line.rstrip() for line in block.splitlines() if line.strip() and not line.startswith("#")]
+            assert requirement_line.match(lines[0]), f"{path}: {lines[0]}"
+            assert any("--hash=sha256:" in line for line in lines), f"{path}: {lines[0]}"
+            assert not lines[0].startswith(("-e", "git+", "http://", "https://"))

@@ -4,6 +4,7 @@ The core system that enables secure agent delegation using Terminal 3's Agent Au
 """
 
 import json
+import os
 import time
 import uuid
 import logging
@@ -29,6 +30,16 @@ from src.replay_ledger import configured_integrity_key, derive_integrity_key
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _tee_required() -> bool:
+    """Return True when process configuration demands TEE authorization on every request.
+
+    The decision comes from the trusted process environment (ADN_RUNTIME_MODE),
+    never from the incoming request payload, so a caller cannot self-exempt by
+    omitting the tee_authorization field.
+    """
+    return os.environ.get("ADN_RUNTIME_MODE", "").strip().lower() == "live"
 
 
 def _delegation_request_replay_expires_at(delegation_request: DelegationRequest) -> float:
@@ -288,13 +299,20 @@ class AgentDelegationNetwork:
             if delegation_request.to_agent_id != self.identity.agent_id:
                 raise ValueError(f"Delegation request not for this agent")
             
-            # Verify Ed25519 signature, expiry, audience, and payload hash integrity
+            # Verify Ed25519 signature, expiry, audience, and payload hash integrity.
+            # require_tee_authorization is derived from trusted process configuration only —
+            # either ADN_RUNTIME_MODE=live, or the caller provisioned a gateway public key
+            # (meaning the worker is running in bridge mode). The request payload cannot
+            # disable this requirement by omitting tee_authorization.
+            gateway_key_hex = expected_gateway_public_key_hex or ""
+            tee_required = _tee_required() or bool(gateway_key_hex)
             is_valid, error_msg, replay_key = DelegationProtocol.validate_delegation_request(
                 signed_request,
                 self.identity.agent_id,
-                expected_gateway_public_key_hex or "",
+                gateway_key_hex,
                 expected_gateway_key_id or "",
                 expected_build_config_id or "",
+                require_tee_authorization=tee_required,
             )
             if not is_valid:
                 raise ValueError(f"Invalid delegation request: {error_msg}")

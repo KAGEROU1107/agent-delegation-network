@@ -292,6 +292,7 @@ class DelegationProtocol:
         expected_gateway_public_key_hex: str,
         expected_gateway_key_id: str,
         expected_build_config_id: str,
+        require_tee_authorization: bool = False,
     ) -> Tuple[bool, str, Optional[str]]:
         """
         Validate a signed delegation request received over the wire.
@@ -299,9 +300,12 @@ class DelegationProtocol:
         Args:
             signed_request: The raw signed dict from to_action_request()
             receiver_agent_id: The agent_id of the agent receiving this request
+            require_tee_authorization: If True, reject requests that lack a TEE
+                authorization receipt. Must be set from trusted process configuration
+                (e.g. ADN_RUNTIME_MODE), never from the request payload itself.
 
         Returns:
-            Tuple of (is_valid, error_message)
+            Tuple of (is_valid, error_message, replay_key)
         """
         from src.terminal3_agent_auth_adapter import verify_action_request, _sha256, _canonical
         from src.tee_authorization import verify_tee_authorization_receipt
@@ -330,9 +334,14 @@ class DelegationProtocol:
                 f"(expected {receiver_agent_id}, got {request.to_agent_id})"
             ), None
 
-        # TEE authorization is only required in live bridge mode (TypeScript + WASM path).
-        # Pure Python-to-Python delegation (no gateway) skips TEE auth verification.
-        if request.tee_authorization:
+        # TEE authorization check — requirement driven by trusted process config, not request payload.
+        # Live bridge mode (require_tee_authorization=True): receipt is mandatory.
+        # Demo/test mode (require_tee_authorization=False): receipt is optional but verified if present.
+        has_receipt = bool(request.tee_authorization)
+        if require_tee_authorization and not has_receipt:
+            return False, "TEE authorization receipt required before worker execution", None
+
+        if has_receipt:
             if not expected_gateway_public_key_hex:
                 return False, "Expected gateway public key is required", None
             if not expected_gateway_key_id:

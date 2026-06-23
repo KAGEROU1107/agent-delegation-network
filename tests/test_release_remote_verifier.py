@@ -104,6 +104,8 @@ def build_valid_release_fixture(proof_dir: Path, monkeypatch):
         "tests_workflow_run_url": "https://github.com/KAGEROU1107/agent-delegation-network/actions/runs/54321",
         "tests_workflow_conclusion": "success",
         "tests_workflow_head_sha": "abc1234",
+        "tests_workflow_event": "push",
+        "tests_workflow_head_branch": "main",
         "artifact_id": "67890",
         "artifact_name": "adn-release-proof-input-abc1234",
         "artifact_url": "https://github.com/KAGEROU1107/agent-delegation-network/actions/runs/12345/artifacts/67890",
@@ -202,6 +204,8 @@ def make_client(
         "conclusion": "success",
         "html_url": "https://github.com/KAGEROU1107/agent-delegation-network/actions/runs/54321",
         "name": "Tests",
+        "event": "push",
+        "head_branch": "main",
         "repository": {"full_name": "KAGEROU1107/agent-delegation-network"},
         **(tests_run_overrides or {}),
     }
@@ -281,6 +285,18 @@ def test_find_successful_tests_workflow_run_selects_matching_success():
                 "name": "Tests",
                 "conclusion": "success",
                 "head_sha": "abc1234",
+                "event": "pull_request",
+                "head_branch": "feature/audit",
+                "run_started_at": "2026-06-24T00:00:00Z",
+                "repository": {"full_name": "KAGEROU1107/agent-delegation-network"},
+            },
+            {
+                "id": 3,
+                "name": "Tests",
+                "conclusion": "success",
+                "head_sha": "abc1234",
+                "event": "push",
+                "head_branch": "main",
                 "run_started_at": "2026-06-23T00:00:00Z",
                 "repository": {"full_name": "KAGEROU1107/agent-delegation-network"},
             },
@@ -289,7 +305,7 @@ def test_find_successful_tests_workflow_run_selects_matching_success():
         head_sha="abc1234",
     )
 
-    assert run["id"] == 2
+    assert run["id"] == 3
 
 
 def test_find_successful_tests_workflow_run_rejects_absent_success():
@@ -301,6 +317,44 @@ def test_find_successful_tests_workflow_run_rejects_absent_success():
                     "name": "Tests",
                     "conclusion": "failure",
                     "head_sha": "abc1234",
+                    "repository": {"full_name": "KAGEROU1107/agent-delegation-network"},
+                }
+            ],
+            repository="KAGEROU1107/agent-delegation-network",
+            head_sha="abc1234",
+        )
+
+
+def test_find_successful_tests_workflow_run_rejects_pr_only_success():
+    with pytest.raises(RuntimeError, match="no successful Tests workflow"):
+        verify_release_remote.find_successful_tests_workflow_run(
+            [
+                {
+                    "id": 1,
+                    "name": "Tests",
+                    "conclusion": "success",
+                    "head_sha": "abc1234",
+                    "event": "pull_request",
+                    "head_branch": "feature/audit",
+                    "repository": {"full_name": "KAGEROU1107/agent-delegation-network"},
+                }
+            ],
+            repository="KAGEROU1107/agent-delegation-network",
+            head_sha="abc1234",
+        )
+
+
+def test_find_successful_tests_workflow_run_rejects_non_main_push_success():
+    with pytest.raises(RuntimeError, match="no successful Tests workflow"):
+        verify_release_remote.find_successful_tests_workflow_run(
+            [
+                {
+                    "id": 1,
+                    "name": "Tests",
+                    "conclusion": "success",
+                    "head_sha": "abc1234",
+                    "event": "push",
+                    "head_branch": "feature/audit",
                     "repository": {"full_name": "KAGEROU1107/agent-delegation-network"},
                 }
             ],
@@ -346,6 +400,27 @@ def test_remote_verifier_rejects_failed_tests_workflow(tmp_path, monkeypatch):
     client = make_client(proof_dir, tests_run_overrides={"conclusion": "failure"})
 
     with pytest.raises(RuntimeError, match="Tests workflow conclusion"):
+        verify_release_remote.verify_release_remote(proof_dir, client=client)
+
+
+def test_remote_verifier_rejects_tests_workflow_pr_event(tmp_path, monkeypatch):
+    proof_dir = tmp_path / "proof"
+    build_valid_release_fixture(proof_dir, monkeypatch)
+    client = make_client(
+        proof_dir,
+        tests_run_overrides={"event": "pull_request", "head_branch": "feature/audit"},
+    )
+
+    with pytest.raises(RuntimeError, match="Tests workflow event"):
+        verify_release_remote.verify_release_remote(proof_dir, client=client)
+
+
+def test_remote_verifier_rejects_tests_workflow_non_main_branch(tmp_path, monkeypatch):
+    proof_dir = tmp_path / "proof"
+    build_valid_release_fixture(proof_dir, monkeypatch)
+    client = make_client(proof_dir, tests_run_overrides={"head_branch": "feature/audit"})
+
+    with pytest.raises(RuntimeError, match="Tests workflow head_branch"):
         verify_release_remote.verify_release_remote(proof_dir, client=client)
 
 

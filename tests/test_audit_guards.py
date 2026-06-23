@@ -285,6 +285,8 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "tests_workflow_run_id" in release_verifier
     assert "tests_workflow_conclusion" in release_verifier
     assert "tests_workflow_head_sha" in release_verifier
+    assert "tests_workflow_event" in release_verifier
+    assert "tests_workflow_head_branch" in release_verifier
     assert "compute_proof_input_digest" in release_verifier
     assert "PROOF_INPUT_FILES" in release_verifier
     assert "attestation_phase" in release_verifier
@@ -326,6 +328,8 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "tests_workflow_run_id" in release_attest_workflow
     assert "tests_workflow_conclusion" in release_attest_workflow
     assert "tests_workflow_head_sha" in release_attest_workflow
+    assert "tests_workflow_event" in release_attest_workflow
+    assert "tests_workflow_head_branch" in release_attest_workflow
     assert "${{ runner.temp }}/release-proof" in release_attest_workflow
     assert "post_verify_completed_run" in release_attest_workflow
     assert "attested_workflow" in release_attest_workflow
@@ -387,6 +391,53 @@ def test_workflow_actions_are_pinned_to_reviewed_commits():
         for action, entry in locked_actions.items():
             if action in content:
                 assert f"{action}@{entry['commit_sha']}" in content
+
+
+def test_release_gate_rejects_unlocked_external_workflow_actions(monkeypatch):
+    from scripts import release_gate
+
+    lock = {
+        "schema_version": "adn-actions-lock-v1",
+        "actions": [
+            {
+                "action": "actions/checkout",
+                "commit_sha": "34e114876b0b11c390a56381ad16ebd13914f8d5",
+                "approved_version": "fixture",
+                "review_date": "2026-06-23",
+                "update_owner": "release",
+            }
+        ],
+    }
+
+    def fake_read(path: str) -> str:
+        if path == ".github/actions-lock.json":
+            return json.dumps(lock)
+        if path == ".github/workflows/ci.yml":
+            return "steps:\n  - uses: unreviewed/action@0123456789abcdef0123456789abcdef01234567\n"
+        raise AssertionError(f"unexpected read path: {path}")
+
+    monkeypatch.setattr(release_gate, "WORKFLOW_FILES", [".github/workflows/ci.yml"])
+    monkeypatch.setattr(release_gate, "read", fake_read)
+
+    errors = release_gate.assert_workflow_actions_are_pinned()
+
+    assert any("unreviewed/action" in error and "not listed" in error for error in errors)
+
+
+def test_release_gate_allows_local_workflow_actions_without_lock(monkeypatch):
+    from scripts import release_gate
+
+    def fake_read(path: str) -> str:
+        if path == ".github/actions-lock.json":
+            return json.dumps({"schema_version": "adn-actions-lock-v1", "actions": []})
+        if path == ".github/workflows/ci.yml":
+            return "steps:\n  - uses: ./.github/actions/prepare-proof\n"
+        raise AssertionError(f"unexpected read path: {path}")
+
+    monkeypatch.setattr(release_gate, "WORKFLOW_FILES", [".github/workflows/ci.yml"])
+    monkeypatch.setattr(release_gate, "read", fake_read)
+
+    assert release_gate.assert_workflow_actions_are_pinned() == []
 
 
 def test_python_requirement_locks_pin_every_package_with_hashes():

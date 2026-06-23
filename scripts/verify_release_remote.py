@@ -256,6 +256,8 @@ def find_successful_tests_workflow_run(
         for run in runs
         if run.get("name") == "Tests"
         and run.get("conclusion") == "success"
+        and run.get("event") == "push"
+        and run.get("head_branch") == "main"
         and str(run.get("head_sha", "")) == head_sha
         and (run.get("repository") or {}).get("full_name") == repository
     ]
@@ -268,10 +270,16 @@ def verify_tests_run(ci_release: dict[str, Any], run: dict[str, Any], expected_r
     require_equal("Tests workflow run id", run.get("id"), ci_release.get("tests_workflow_run_id"))
     require_equal("Tests workflow head_sha", run.get("head_sha"), ci_release.get("tests_workflow_head_sha"))
     require_equal("Tests workflow conclusion", run.get("conclusion"), "success")
+    require_equal("Tests workflow event", run.get("event"), ci_release.get("tests_workflow_event"))
+    require_equal("Tests workflow head_branch", run.get("head_branch"), ci_release.get("tests_workflow_head_branch"))
     if run.get("html_url") != ci_release.get("tests_workflow_run_url"):
         raise RuntimeError("Tests workflow URL does not match CI attestation")
     if run.get("name") != "Tests":
         raise RuntimeError("Tests workflow run name does not match required workflow")
+    if run.get("event") != "push":
+        raise RuntimeError("Tests workflow event must be push")
+    if run.get("head_branch") != "main":
+        raise RuntimeError("Tests workflow head_branch must be main")
     repository = run.get("repository") or {}
     if repository.get("full_name") != expected_repository:
         raise RuntimeError("Tests workflow repository does not match expected repository")

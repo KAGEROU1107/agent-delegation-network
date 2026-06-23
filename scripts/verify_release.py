@@ -291,6 +291,8 @@ def verify_release_dir(proof_dir: Path | str) -> dict[str, Any]:
             "tests_workflow_run_url",
             "tests_workflow_conclusion",
             "tests_workflow_head_sha",
+            "tests_workflow_event",
+            "tests_workflow_head_branch",
             "artifact_id",
             "artifact_name",
             "artifact_url",
@@ -340,6 +342,10 @@ def verify_release_dir(proof_dir: Path | str) -> dict[str, Any]:
         raise RuntimeError("Tests workflow SHA does not match manifest build_commit")
     if ci_release.get("tests_workflow_head_sha") != ci_release.get("sha"):
         raise RuntimeError("Tests workflow SHA does not match release SHA")
+    if ci_release.get("tests_workflow_event") != "push":
+        raise RuntimeError("Tests workflow event must be push")
+    if ci_release.get("tests_workflow_head_branch") != "main":
+        raise RuntimeError("Tests workflow head_branch must be main")
 
     return {
         "status": "OK",

@@ -33,6 +33,7 @@ MUTABLE_WORKFLOW_REF_PATTERNS = [
     re.compile(r"uses:\s+[^@\s]+@v\d+\b"),
     re.compile(r"uses:\s+[^@\s]+@stable\b"),
 ]
+LOCAL_WORKFLOW_ACTION_PREFIX = "./.github/actions/"
 
 PYTHON_REQUIREMENT_LOCKS = [
     "requirements-ci.lock",
@@ -100,12 +101,18 @@ def assert_workflow_actions_are_pinned() -> list[str]:
                 errors.append(f"release gate mutable workflow action reference present in {workflow}")
         for match in re.finditer(r"uses:\s+([^\s#]+)", content):
             action_ref = match.group(1)
+            if action_ref.startswith(LOCAL_WORKFLOW_ACTION_PREFIX):
+                continue
             if "@" not in action_ref:
                 errors.append(f"release gate workflow action reference missing @ in {workflow}: {action_ref}")
                 continue
             action, ref = action_ref.rsplit("@", 1)
             locked_commit = locked_actions.get(action)
             if locked_commit is None:
+                errors.append(
+                    f"release gate workflow {workflow} uses external action not listed in "
+                    f".github/actions-lock.json: {action}"
+                )
                 continue
             if ref != locked_commit:
                 errors.append(f"release gate workflow {workflow} uses {action}@{ref}, expected {locked_commit}")

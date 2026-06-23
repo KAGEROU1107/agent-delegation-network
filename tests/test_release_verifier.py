@@ -104,6 +104,8 @@ def build_valid_release_fixture(proof_dir: Path, monkeypatch):
         "tests_workflow_run_url": "https://github.com/KAGEROU1107/agent-delegation-network/actions/runs/54321",
         "tests_workflow_conclusion": "success",
         "tests_workflow_head_sha": "abc1234",
+        "tests_workflow_event": "push",
+        "tests_workflow_head_branch": "main",
         "artifact_id": "67890",
         "artifact_name": "adn-release-proof-input-abc1234",
         "artifact_url": "https://github.com/KAGEROU1107/agent-delegation-network/actions/runs/12345/artifacts/67890",
@@ -206,6 +208,28 @@ def test_verify_release_rejects_tests_workflow_sha_mismatch(tmp_path, monkeypatc
     write_json(proof_dir / "ci_release_sha.json", ci_evidence)
 
     with pytest.raises(RuntimeError, match="Tests workflow SHA"):
+        verify_release.verify_release_dir(proof_dir)
+
+
+def test_verify_release_rejects_tests_workflow_pr_event(tmp_path, monkeypatch):
+    proof_dir = tmp_path / "proof"
+    build_valid_release_fixture(proof_dir, monkeypatch)
+    ci_evidence = json.loads((proof_dir / "ci_release_sha.json").read_text(encoding="utf-8"))
+    ci_evidence["tests_workflow_event"] = "pull_request"
+    write_json(proof_dir / "ci_release_sha.json", ci_evidence)
+
+    with pytest.raises(RuntimeError, match="Tests workflow event"):
+        verify_release.verify_release_dir(proof_dir)
+
+
+def test_verify_release_rejects_tests_workflow_non_main_branch(tmp_path, monkeypatch):
+    proof_dir = tmp_path / "proof"
+    build_valid_release_fixture(proof_dir, monkeypatch)
+    ci_evidence = json.loads((proof_dir / "ci_release_sha.json").read_text(encoding="utf-8"))
+    ci_evidence["tests_workflow_head_branch"] = "feature/audit"
+    write_json(proof_dir / "ci_release_sha.json", ci_evidence)
+
+    with pytest.raises(RuntimeError, match="Tests workflow head_branch"):
         verify_release.verify_release_dir(proof_dir)
 
 

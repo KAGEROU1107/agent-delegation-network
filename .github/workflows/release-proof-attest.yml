@@ -103,6 +103,8 @@ jobs:
               "tests_workflow_run_url": tests_run["html_url"],
               "tests_workflow_conclusion": tests_run["conclusion"],
               "tests_workflow_head_sha": tests_run["head_sha"],
+              "tests_workflow_event": tests_run["event"],
+              "tests_workflow_head_branch": tests_run["head_branch"],
               "artifact_id": artifact_id,
               "artifact_name": artifact_name,
               "artifact_url": f"https://github.com/{repository}/actions/runs/{input_run_id}/artifacts/{artifact_id}",

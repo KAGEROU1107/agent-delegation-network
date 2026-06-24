@@ -48,6 +48,10 @@ RELEASE_ASSET_TERMS = [
     "gh release upload",
     "proof-input.tar",
     "ci_release_sha.json",
+    "refusing to overwrite durable proof assets",
+]
+RELEASE_ASSET_FORBIDDEN_TERMS = [
+    "--clobber",
 ]
 
 PYTHON_REQUIREMENT_LOCKS = [
@@ -202,6 +206,12 @@ def assert_release_proof_retention_is_durable() -> list[str]:
             errors.append(
                 "release gate durable release asset publication missing required term: "
                 f"{term}"
+            )
+    for term in RELEASE_ASSET_FORBIDDEN_TERMS:
+        if term in attest_workflow:
+            errors.append(
+                "release gate durable release asset publication must not overwrite "
+                f"existing assets: {term}"
             )
     return errors
 

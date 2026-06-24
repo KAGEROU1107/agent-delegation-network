@@ -353,6 +353,8 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "gh release upload" in release_attest_workflow
     assert "proof-input.tar" in release_attest_workflow
     assert "ci_release_sha.json" in release_attest_workflow
+    assert "--clobber" not in release_attest_workflow
+    assert "refusing to overwrite durable proof assets" in release_attest_workflow
     assert 'workflow_conclusion": "success"' not in release_attest_workflow
     assert 'workflow_conclusion": os.environ["INPUT_RUN_CONCLUSION"]' in release_attest_workflow
     assert "actions/upload-artifact" in release_attest_workflow
@@ -518,6 +520,47 @@ steps:
     errors = release_gate.assert_release_proof_retention_is_durable()
 
     assert any("durable release asset" in error for error in errors)
+
+
+def test_release_gate_rejects_clobbering_durable_release_assets(monkeypatch):
+    from scripts import release_gate
+
+    release_input = """
+steps:
+  - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+    with:
+      name: proof
+      path: proof-input.tar
+      retention-days: 90
+"""
+    release_attest_with_clobber = """
+permissions:
+  contents: write
+steps:
+  - name: Upload CI attestation
+    uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+    with:
+      name: attestation
+      path: ci_release_sha.json
+      retention-days: 90
+  - name: Publish durable release proof assets
+    run: |
+      gh release create "$ADN_RELEASE_ASSET_TAG"
+      gh release upload "$ADN_RELEASE_ASSET_TAG" proof-input.tar ci_release_sha.json remote_verification_result.json workflow_metadata.json --repo "$GITHUB_REPOSITORY" --clobber
+"""
+
+    def fake_read(path: str) -> str:
+        if path == ".github/workflows/release-proof-input.yml":
+            return release_input
+        if path == ".github/workflows/release-proof-attest.yml":
+            return release_attest_with_clobber
+        raise AssertionError(f"unexpected read path: {path}")
+
+    monkeypatch.setattr(release_gate, "read", fake_read)
+
+    errors = release_gate.assert_release_proof_retention_is_durable()
+
+    assert any("--clobber" in error for error in errors)
 
 
 def test_python_requirement_locks_pin_every_package_with_hashes():

@@ -231,22 +231,23 @@ jobs:
           source-hardened / live-proof pending unless a pinned live deployment proof
           is present in the bundle.
           EOF
-          if ! gh release view "$ADN_RELEASE_ASSET_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$ADN_RELEASE_ASSET_TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --target "$INPUT_HEAD_SHA" \
-              --title "$ADN_RELEASE_ASSET_TITLE" \
-              --notes-file "$notes_file" \
-              --latest=false
+          if gh release view "$ADN_RELEASE_ASSET_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "refusing to overwrite durable proof assets: $ADN_RELEASE_ASSET_TAG" >&2
+            exit 1
           fi
+          gh release create "$ADN_RELEASE_ASSET_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$INPUT_HEAD_SHA" \
+            --title "$ADN_RELEASE_ASSET_TITLE" \
+            --notes-file "$notes_file" \
+            --latest=false
           gh release upload "$ADN_RELEASE_ASSET_TAG" \
             "$RELEASE_ASSET_DIR/proof-input.tar" \
             "$RELEASE_ASSET_DIR/ci_release_sha.json" \
             "$RELEASE_ASSET_DIR/remote_verification_result.json" \
             "$RELEASE_ASSET_DIR/workflow_metadata.json" \
             "$RUNNER_TEMP/adn-release-proof-${INPUT_HEAD_SHA}.tar" \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
+            --repo "$GITHUB_REPOSITORY"
 
       - name: Upload CI attestation
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

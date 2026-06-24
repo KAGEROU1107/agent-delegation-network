@@ -25,6 +25,7 @@ from src.terminal3_agent_auth_adapter import sign_action_request, verify_action_
 from src.tee_authorization import receipt_fingerprint
 from src.execution_receipt import build_receipt, verify_receipt
 from src.replay_ledger import configured_integrity_key, derive_integrity_key
+from src.runtime_security import WorkerAuthorizationContext, gateway_context_configured, resolve_runtime_mode
 
 
 # Set up logging
@@ -56,7 +57,7 @@ def _request_replay_integrity_key(identity: AgentIdentity) -> Optional[str]:
 
 
 def _runtime_requires_tee_authorization() -> bool:
-    return os.environ.get("ADN_RUNTIME_MODE", "live").strip().lower() == "live"
+    return resolve_runtime_mode() == "live"
 
 
 def _gateway_context_configured(
@@ -64,7 +65,11 @@ def _gateway_context_configured(
     expected_gateway_key_id: Optional[str],
     expected_build_config_id: Optional[str],
 ) -> bool:
-    return bool(expected_gateway_public_key_hex or expected_gateway_key_id or expected_build_config_id)
+    return gateway_context_configured(
+        expected_gateway_public_key_hex,
+        expected_gateway_key_id,
+        expected_build_config_id,
+    )
 
 
 def _trusted_tee_authorization_requirement(
@@ -73,15 +78,12 @@ def _trusted_tee_authorization_requirement(
     expected_gateway_key_id: Optional[str],
     expected_build_config_id: Optional[str],
 ) -> bool:
-    if _runtime_requires_tee_authorization() or _gateway_context_configured(
-        expected_gateway_public_key_hex,
-        expected_gateway_key_id,
-        expected_build_config_id,
-    ):
-        return True
-    if require_tee_authorization is not None:
-        return bool(require_tee_authorization)
-    return False
+    return WorkerAuthorizationContext.from_trusted_config(
+        expected_gateway_public_key_hex=expected_gateway_public_key_hex,
+        expected_gateway_key_id=expected_gateway_key_id,
+        expected_build_config_id=expected_build_config_id,
+        require_tee_authorization=require_tee_authorization,
+    ).require_tee_authorization
 
 
 def _start_request_replay_heartbeat(
@@ -320,19 +322,19 @@ class AgentDelegationNetwork:
                 raise ValueError(f"Delegation request not for this agent")
             
             # Verify Ed25519 signature, expiry, audience, and payload hash integrity
-            trusted_require_tee_authorization = _trusted_tee_authorization_requirement(
-                require_tee_authorization,
-                expected_gateway_public_key_hex,
-                expected_gateway_key_id,
-                expected_build_config_id,
+            auth_context = WorkerAuthorizationContext.from_trusted_config(
+                expected_gateway_public_key_hex=expected_gateway_public_key_hex,
+                expected_gateway_key_id=expected_gateway_key_id,
+                expected_build_config_id=expected_build_config_id,
+                require_tee_authorization=require_tee_authorization,
             )
             is_valid, error_msg, replay_key = DelegationProtocol.validate_delegation_request(
                 signed_request,
                 self.identity.agent_id,
-                expected_gateway_public_key_hex or "",
-                expected_gateway_key_id or "",
-                expected_build_config_id or "",
-                trusted_require_tee_authorization,
+                auth_context.expected_gateway_public_key_hex,
+                auth_context.expected_gateway_key_id,
+                auth_context.expected_build_config_id,
+                auth_context.require_tee_authorization,
             )
             if not is_valid:
                 raise ValueError(f"Invalid delegation request: {error_msg}")

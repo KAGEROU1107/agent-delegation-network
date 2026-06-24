@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+from src.runtime_security import resolve_runtime_mode
+
 
 REQUEST_KIND = "request"
 RESULT_KIND = "result"
@@ -173,7 +175,7 @@ def _validate_live_integrity_key_file(key_file: Path) -> None:
 def _configured_integrity_secret_hex() -> Optional[str]:
     raw_env_secret = os.environ.get("ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX", "").strip()
     key_file = os.environ.get("ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE", "").strip()
-    runtime_mode = os.environ.get("ADN_RUNTIME_MODE", "").strip().lower()
+    runtime_mode = resolve_runtime_mode()
     if runtime_mode == "live" and raw_env_secret:
         raise RuntimeError("ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX is not accepted in live mode")
     if runtime_mode == "live" and not key_file:

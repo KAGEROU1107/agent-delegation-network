@@ -109,6 +109,7 @@ def test_python_adn_runner_requires_real_t3n_bundle_and_pinned_gateway():
     runner = read("t3n-bridge/src/adn_runner.ts")
     network = read("src/agent_delegation_network.py")
     protocol = read("src/delegation_protocol.py")
+    runtime_security = read("src/runtime_security.py")
     receipt = read("src/tee_authorization.py")
     index = read("t3n-bridge/src/index.ts")
 
@@ -126,11 +127,16 @@ def test_python_adn_runner_requires_real_t3n_bundle_and_pinned_gateway():
     assert "T3N_API_KEY: apiKey" not in runner
     assert "expected_gateway_public_key_hex=trusted_gateway_public_key_hex" in runner
     assert "expected_gateway_key_id=trusted_gateway_key_id" in runner
+    assert "from src.runtime_security import resolve_runtime_mode" in runner
+    assert "runtime_mode = resolve_runtime_mode()" in runner
     assert "expected_gateway_pubkey_hex=signed_request.get(\"public_key_hex\", \"\")" not in protocol
     assert "expected_gateway_key_id: str" in protocol
     assert "require_tee_authorization: bool" in protocol
     assert "_trusted_tee_authorization_requirement" in network
-    assert "ADN_RUNTIME_MODE" in network
+    assert "resolve_runtime_mode" in network
+    assert "WorkerAuthorizationContext" in network
+    assert "ADN_RUNTIME_MODE must be live, demo, or test" in runtime_security
+    assert "Literal[\"live\", \"demo\", \"test\"]" in runtime_security
     assert "request.require_tee_authorization" not in protocol
     assert "delegation_data.get(\"require_tee_authorization\"" not in protocol
     assert "ADN_GATEWAY_PRIVATE_KEY_HEX" in index

@@ -90,14 +90,16 @@ from pathlib import Path
 ADN_ROOT = os.environ['ADN_ROOT']
 tenant_did = os.environ['DID']
 mode = os.environ.get('ADN_RUN_MODE', 'execute')
-runtime_mode = os.environ.get('ADN_RUNTIME_MODE', 'live').lower()
 
 sys.path.insert(0, ADN_ROOT)
 logging.disable(9999)
 
 from src.agent_delegation_network import create_agent
 from src.result_verifier import verify_worker_result
+from src.runtime_security import resolve_runtime_mode
 from src.tee_authorization import build_tee_authorization_receipt
+
+runtime_mode = resolve_runtime_mode()
 
 
 def write_output(payload):

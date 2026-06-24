@@ -17,6 +17,7 @@ os.environ["T3_MOCK"] = "false"
 from src.agent_delegation_network import create_agent
 import src.delegation_protocol as delegation_protocol
 import src.replay_ledger as replay_ledger
+from src.runtime_security import WorkerAuthorizationContext, resolve_runtime_mode
 from src.tee_authorization import build_tee_authorization_receipt
 import src.result_verifier as result_verifier
 
@@ -33,6 +34,7 @@ def _mk(name):
 
 @pytest.fixture
 def verifier_context(monkeypatch, tmp_path):
+    monkeypatch.setenv("ADN_RUNTIME_MODE", "demo")
     monkeypatch.setenv("ADN_REPLAY_LEDGER_DIR", str(tmp_path / "replay-ledger"))
     monkeypatch.setenv("ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX", "11" * 32)
     result_verifier._seen.clear()
@@ -660,6 +662,47 @@ def test_demo_mode_without_gateway_accepts_delegation_without_tee_authorization(
     assert result["result_data"]["result"]["processed_data"] == {"x": 1}
 
 
+def test_invalid_runtime_mode_rejects_before_optional_tee_path(verifier_context, monkeypatch):
+    monkeypatch.setenv("ADN_RUNTIME_MODE", "prod")
+    delegation_id = verifier_context.coordinator.delegate_task(
+        verifier_context.worker_id,
+        "PROCESS_DATA",
+        "d",
+        {},
+    )
+    action_request = verifier_context.coordinator._delegations[delegation_id].to_action_request(
+        verifier_context.coordinator.identity
+    )
+
+    result = verifier_context.worker.process_delegation_request(action_request)
+
+    assert result["result_data"]["status"] == "FAILED"
+    assert "ADN_RUNTIME_MODE must be live, demo, or test" in result["result_data"]["error"]
+
+
+def test_runtime_mode_resolver_accepts_only_known_modes(monkeypatch):
+    monkeypatch.setenv("ADN_RUNTIME_MODE", " TEST ")
+    assert resolve_runtime_mode() == "test"
+
+    monkeypatch.setenv("ADN_RUNTIME_MODE", "production")
+    with pytest.raises(RuntimeError, match="ADN_RUNTIME_MODE must be live, demo, or test"):
+        resolve_runtime_mode()
+
+
+def test_worker_authorization_context_derives_trusted_requirement(monkeypatch):
+    monkeypatch.setenv("ADN_RUNTIME_MODE", "demo")
+    assert WorkerAuthorizationContext.from_trusted_config().require_tee_authorization is False
+
+    assert WorkerAuthorizationContext.from_trusted_config(
+        expected_gateway_public_key_hex="aa",
+    ).require_tee_authorization is True
+
+    monkeypatch.setenv("ADN_RUNTIME_MODE", "live")
+    assert WorkerAuthorizationContext.from_trusted_config(
+        require_tee_authorization=False,
+    ).require_tee_authorization is True
+
+
 def test_demo_mode_rejects_malformed_present_tee_authorization(verifier_context, monkeypatch):
     monkeypatch.setenv("ADN_RUNTIME_MODE", "demo")
     delegation_id = verifier_context.coordinator.delegate_task(
@@ -896,6 +939,14 @@ def test_live_integrity_key_file_must_be_absolute(monkeypatch):
     monkeypatch.setenv("ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE", "relative-replay.key")
 
     with pytest.raises(RuntimeError, match="must be absolute"):
+        replay_ledger.configured_integrity_key("request")
+
+
+def test_replay_ledger_rejects_invalid_runtime_mode(monkeypatch):
+    monkeypatch.setenv("ADN_RUNTIME_MODE", "production")
+    monkeypatch.setenv("ADN_REPLAY_LEDGER_INTEGRITY_KEY_HEX", "11" * 32)
+
+    with pytest.raises(RuntimeError, match="ADN_RUNTIME_MODE must be live, demo, or test"):
         replay_ledger.configured_integrity_key("request")
 
 

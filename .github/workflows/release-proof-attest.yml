@@ -138,6 +138,9 @@ jobs:
 
       - name: Create durable release proof assets
         env:
+          ADN_RELEASE_ASSET_TAG: adn-release-proof-${{ github.event.workflow_run.head_sha }}
+          ADN_RELEASE_OPERATOR_PRIVATE_KEY_HEX: ${{ secrets.ADN_RELEASE_OPERATOR_PRIVATE_KEY_HEX }}
+          ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX: ${{ secrets.ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX }}
           INPUT_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           INPUT_RUN_ID: ${{ github.event.workflow_run.id }}
           INPUT_RUN_URL: ${{ github.event.workflow_run.html_url }}
@@ -164,18 +167,34 @@ jobs:
           python - <<'PY'
           import json
           import os
+          import re
           from datetime import datetime, timezone
           from pathlib import Path
 
-          from scripts.verify_release import digest_hex
+          from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+          from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+          from scripts.verify_release import canonical_json, digest_hex
 
           asset_dir = Path(os.environ["RELEASE_ASSET_DIR"])
           ci_attestation = json.loads((asset_dir / "ci_release_sha.json").read_text(encoding="utf-8"))
           remote_result = json.loads((asset_dir / "remote_verification_result.json").read_text(encoding="utf-8"))
+          payload_files = [
+              "proof-input.tar",
+              "ci_release_sha.json",
+              "remote_verification_result.json",
+              "workflow_metadata.json",
+          ]
+          durable_files = [
+              *payload_files,
+              "release_asset_manifest.json",
+              "release_asset_manifest.sig",
+          ]
           payload = {
               "evidence_source": "github_actions_release_asset",
               "repository": os.environ["GITHUB_REPOSITORY"],
               "sha": os.environ["INPUT_HEAD_SHA"],
+              "release_tag": os.environ["ADN_RELEASE_ASSET_TAG"],
               "attest_workflow_run_id": os.environ["GITHUB_RUN_ID"],
               "attest_workflow_run_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
               "attest_workflow_run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
@@ -185,12 +204,7 @@ jobs:
               "tests_workflow_run_url": ci_attestation["tests_workflow_run_url"],
               "proof_input_digest": ci_attestation["proof_input_digest"],
               "remote_verification_status": remote_result["status"],
-              "durable_asset_files": [
-                  "proof-input.tar",
-                  "ci_release_sha.json",
-                  "remote_verification_result.json",
-                  "workflow_metadata.json",
-              ],
+              "durable_asset_files": durable_files,
               "proof_input_archive_sha256": digest_hex((asset_dir / "proof-input.tar").read_bytes()),
               "ci_attestation_sha256": digest_hex((asset_dir / "ci_release_sha.json").read_bytes()),
               "remote_verification_result_sha256": digest_hex((asset_dir / "remote_verification_result.json").read_bytes()),
@@ -200,18 +214,57 @@ jobs:
               json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
               encoding="utf-8",
           )
+
+          seed_hex = os.environ["ADN_RELEASE_OPERATOR_PRIVATE_KEY_HEX"].strip().removeprefix("0x").lower()
+          if re.fullmatch(r"[0-9a-f]{64}", seed_hex) is None:
+              raise RuntimeError("ADN_RELEASE_OPERATOR_PRIVATE_KEY_HEX must be a 32-byte Ed25519 seed hex string")
+          private_key = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(seed_hex))
+          public_key_hex = private_key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex()
+          pinned_public_key = os.environ["ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX"].strip().removeprefix("0x").lower()
+          if public_key_hex != pinned_public_key:
+              raise RuntimeError("ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX does not match ADN_RELEASE_OPERATOR_PRIVATE_KEY_HEX")
+
+          manifest_body = {
+              "schema_version": "adn-release-asset-manifest-v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "sha": os.environ["INPUT_HEAD_SHA"],
+              "release_tag": os.environ["ADN_RELEASE_ASSET_TAG"],
+              "operator_public_key": public_key_hex,
+              "proof_input_digest": ci_attestation["proof_input_digest"],
+              "remote_verification_status": remote_result["status"],
+              "files": [
+                  {
+                      "path": name,
+                      "sha256": digest_hex((asset_dir / name).read_bytes()),
+                  }
+                  for name in payload_files
+              ],
+              "created_at": datetime.now(timezone.utc).isoformat(),
+          }
+          signed_body = canonical_json(manifest_body).encode("utf-8")
+          release_asset_manifest = {
+              **manifest_body,
+              "manifest_digest": digest_hex(signed_body),
+          }
+          (asset_dir / "release_asset_manifest.json").write_text(
+              json.dumps(release_asset_manifest, sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
+          (asset_dir / "release_asset_manifest.sig").write_text(
+              json.dumps({
+                  "algorithm": "ed25519",
+                  "public_key_hex": public_key_hex,
+                  "signature_hex": private_key.sign(signed_body).hex(),
+              }, sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
           PY
-          tar --sort=name \
-            --mtime='UTC 1970-01-01' \
-            --owner=0 \
-            --group=0 \
-            --numeric-owner \
-            -cf "$RUNNER_TEMP/adn-release-proof-${INPUT_HEAD_SHA}.tar" \
-            -C "$RELEASE_ASSET_DIR" \
-            ci_release_sha.json \
-            proof-input.tar \
-            remote_verification_result.json \
-            workflow_metadata.json
+
+      - name: Verify durable release proof assets
+        env:
+          ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX: ${{ secrets.ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX }}
+          RELEASE_ASSET_DIR: ${{ runner.temp }}/release-proof-assets
+        run: python scripts/verify_release_asset.py "$RELEASE_ASSET_DIR"
 
       - name: Publish durable release proof assets
         env:
@@ -227,9 +280,9 @@ jobs:
           Verified ADN release proof bundle for ${INPUT_HEAD_SHA}.
 
           The release assets include the proof-input archive, final CI attestation,
-          remote verifier output, and workflow metadata. The project remains
-          source-hardened / live-proof pending unless a pinned live deployment proof
-          is present in the bundle.
+          remote verifier output, workflow metadata, and a signed release asset
+          manifest. The project remains source-hardened / live-proof pending
+          unless a pinned live deployment proof is present in the bundle.
           EOF
           if gh release view "$ADN_RELEASE_ASSET_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "refusing to overwrite durable proof assets: $ADN_RELEASE_ASSET_TAG" >&2
@@ -246,7 +299,8 @@ jobs:
             "$RELEASE_ASSET_DIR/ci_release_sha.json" \
             "$RELEASE_ASSET_DIR/remote_verification_result.json" \
             "$RELEASE_ASSET_DIR/workflow_metadata.json" \
-            "$RUNNER_TEMP/adn-release-proof-${INPUT_HEAD_SHA}.tar" \
+            "$RELEASE_ASSET_DIR/release_asset_manifest.json" \
+            "$RELEASE_ASSET_DIR/release_asset_manifest.sig" \
             --repo "$GITHUB_REPOSITORY"
 
       - name: Upload CI attestation

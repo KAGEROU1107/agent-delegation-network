@@ -15,6 +15,7 @@ REQUIRED_FILES = [
     "docs/security/claim-matrix.md",
     "docs/architecture/security-invariants.md",
     "scripts/verify_release.py",
+    "scripts/verify_release_asset.py",
     "schemas/adn-release-proof-v1.schema.json",
     ".github/workflows/release-proof-input.yml",
     ".github/workflows/release-proof-attest.yml",
@@ -48,6 +49,10 @@ RELEASE_ASSET_TERMS = [
     "gh release upload",
     "proof-input.tar",
     "ci_release_sha.json",
+    "release_asset_manifest.json",
+    "release_asset_manifest.sig",
+    "ADN_RELEASE_OPERATOR_PRIVATE_KEY_HEX",
+    "python scripts/verify_release_asset.py",
     "refusing to overwrite durable proof assets",
 ]
 RELEASE_ASSET_FORBIDDEN_TERMS = [

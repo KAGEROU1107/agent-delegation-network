@@ -23,6 +23,11 @@ gate below has evidence in the repository.
   declared GitHub workflow run exists, completed successfully for the manifest
   commit, owns the declared artifact, and that the downloaded artifact contains
   the exact retained proof inputs.
+- `python scripts/verify_release_asset.py <release-asset-dir>` must verify the
+  published GitHub Release proof assets after download, including the signed
+  `release_asset_manifest.json`, `release_asset_manifest.sig`, per-file SHA-256
+  hashes, proof-input archive contents, CI attestation, remote verifier output,
+  and workflow metadata.
 
 ## Claim Labels
 
@@ -67,6 +72,13 @@ Actions API evidence to fetch the declared workflow run and uploaded proof-input
 artifact, compares GitHub's artifact digest with the attestation, downloads the
 artifact ZIP, reads `proof-input.tar`, rejects unexpected archive paths, and
 recomputes the retained proof-input file digests.
+
+Durable release asset provenance is checked by
+`scripts/verify_release_asset.py` after downloading the GitHub Release assets.
+It verifies the operator-signed release asset manifest, hashes every published
+payload file, re-materializes `proof-input.tar`, reruns the local release proof
+checks against that archive plus `ci_release_sha.json`, and rejects unexpected
+release asset files.
 
 Persistent auction, vault, KYC, DAO, bond, and reputation systems cannot be
 claimed until state-capable contract or executor storage semantics are designed,

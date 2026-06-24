@@ -596,6 +596,155 @@ def test_worker_requires_expected_gateway_context(verifier_context):
     assert "gateway public key" in result["result_data"]["error"]
 
 
+def test_live_mode_rejects_delegation_without_tee_authorization(verifier_context, monkeypatch):
+    monkeypatch.setenv("ADN_RUNTIME_MODE", "live")
+    delegation_id = verifier_context.coordinator.delegate_task(
+        verifier_context.worker_id,
+        "PROCESS_DATA",
+        "d",
+        {},
+    )
+    action_request = verifier_context.coordinator._delegations[delegation_id].to_action_request(
+        verifier_context.coordinator.identity
+    )
+
+    result = verifier_context.worker.process_delegation_request(
+        action_request,
+        expected_gateway_public_key_hex=verifier_context.gateway_pubkey,
+        expected_gateway_key_id=verifier_context.gateway_key_id,
+        expected_build_config_id=BUILD_CONFIG_ID,
+    )
+
+    assert result["result_data"]["status"] == "FAILED"
+    assert "TEE authorization receipt required" in result["result_data"]["error"]
+
+
+def test_gateway_configured_rejects_delegation_without_tee_authorization(verifier_context, monkeypatch):
+    monkeypatch.setenv("ADN_RUNTIME_MODE", "demo")
+    delegation_id = verifier_context.coordinator.delegate_task(
+        verifier_context.worker_id,
+        "PROCESS_DATA",
+        "d",
+        {},
+    )
+    action_request = verifier_context.coordinator._delegations[delegation_id].to_action_request(
+        verifier_context.coordinator.identity
+    )
+
+    result = verifier_context.worker.process_delegation_request(
+        action_request,
+        expected_gateway_public_key_hex=verifier_context.gateway_pubkey,
+        expected_gateway_key_id=verifier_context.gateway_key_id,
+        expected_build_config_id=BUILD_CONFIG_ID,
+    )
+
+    assert result["result_data"]["status"] == "FAILED"
+    assert "TEE authorization receipt required" in result["result_data"]["error"]
+
+
+def test_demo_mode_without_gateway_accepts_delegation_without_tee_authorization(verifier_context, monkeypatch):
+    monkeypatch.setenv("ADN_RUNTIME_MODE", "demo")
+    delegation_id = verifier_context.coordinator.delegate_task(
+        verifier_context.worker_id,
+        "PROCESS_DATA",
+        "d",
+        {},
+    )
+    action_request = verifier_context.coordinator._delegations[delegation_id].to_action_request(
+        verifier_context.coordinator.identity
+    )
+
+    result = verifier_context.worker.process_delegation_request(action_request)
+
+    assert result["result_data"]["status"] == "COMPLETED"
+    assert result["result_data"]["result"]["processed_data"] == {"x": 1}
+
+
+def test_demo_mode_rejects_malformed_present_tee_authorization(verifier_context, monkeypatch):
+    monkeypatch.setenv("ADN_RUNTIME_MODE", "demo")
+    delegation_id = verifier_context.coordinator.delegate_task(
+        verifier_context.worker_id,
+        "PROCESS_DATA",
+        "d",
+        {},
+        tee_authorization={"delegation_id": "attacker-supplied"},
+    )
+    action_request = verifier_context.coordinator._delegations[delegation_id].to_action_request(
+        verifier_context.coordinator.identity
+    )
+
+    result = verifier_context.worker.process_delegation_request(action_request)
+
+    assert result["result_data"]["status"] == "FAILED"
+    assert "TEE authorization" in result["result_data"]["error"]
+
+
+def test_payload_cannot_downgrade_live_tee_authorization_requirement(verifier_context, monkeypatch):
+    monkeypatch.setenv("ADN_RUNTIME_MODE", "live")
+    delegation_id = verifier_context.coordinator.delegate_task(
+        verifier_context.worker_id,
+        "PROCESS_DATA",
+        "d",
+        {
+            "require_tee_authorization": False,
+            "runtime_mode": "demo",
+        },
+    )
+    action_request = verifier_context.coordinator._delegations[delegation_id].to_action_request(
+        verifier_context.coordinator.identity
+    )
+
+    result = verifier_context.worker.process_delegation_request(action_request)
+
+    assert result["result_data"]["status"] == "FAILED"
+    assert "TEE authorization receipt required" in result["result_data"]["error"]
+
+
+def test_explicit_false_cannot_downgrade_live_tee_authorization_requirement(verifier_context, monkeypatch):
+    monkeypatch.setenv("ADN_RUNTIME_MODE", "live")
+    delegation_id = verifier_context.coordinator.delegate_task(
+        verifier_context.worker_id,
+        "PROCESS_DATA",
+        "d",
+        {},
+    )
+    action_request = verifier_context.coordinator._delegations[delegation_id].to_action_request(
+        verifier_context.coordinator.identity
+    )
+
+    result = verifier_context.worker.process_delegation_request(
+        action_request,
+        require_tee_authorization=False,
+    )
+
+    assert result["result_data"]["status"] == "FAILED"
+    assert "TEE authorization receipt required" in result["result_data"]["error"]
+
+
+def test_explicit_false_cannot_downgrade_gateway_configured_tee_requirement(verifier_context, monkeypatch):
+    monkeypatch.setenv("ADN_RUNTIME_MODE", "demo")
+    delegation_id = verifier_context.coordinator.delegate_task(
+        verifier_context.worker_id,
+        "PROCESS_DATA",
+        "d",
+        {},
+    )
+    action_request = verifier_context.coordinator._delegations[delegation_id].to_action_request(
+        verifier_context.coordinator.identity
+    )
+
+    result = verifier_context.worker.process_delegation_request(
+        action_request,
+        expected_gateway_public_key_hex=verifier_context.gateway_pubkey,
+        expected_gateway_key_id=verifier_context.gateway_key_id,
+        expected_build_config_id=BUILD_CONFIG_ID,
+        require_tee_authorization=False,
+    )
+
+    assert result["result_data"]["status"] == "FAILED"
+    assert "TEE authorization receipt required" in result["result_data"]["error"]
+
+
 def test_worker_rejects_receipt_without_credential_enforcement(verifier_context):
     receipt = verifier_context.receipt_for(
         "tee-del-unenforced",

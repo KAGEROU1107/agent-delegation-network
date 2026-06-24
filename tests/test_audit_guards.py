@@ -107,6 +107,7 @@ def test_ci_runs_pinned_contract_configuration():
 
 def test_python_adn_runner_requires_real_t3n_bundle_and_pinned_gateway():
     runner = read("t3n-bridge/src/adn_runner.ts")
+    network = read("src/agent_delegation_network.py")
     protocol = read("src/delegation_protocol.py")
     receipt = read("src/tee_authorization.py")
     index = read("t3n-bridge/src/index.ts")
@@ -127,6 +128,11 @@ def test_python_adn_runner_requires_real_t3n_bundle_and_pinned_gateway():
     assert "expected_gateway_key_id=trusted_gateway_key_id" in runner
     assert "expected_gateway_pubkey_hex=signed_request.get(\"public_key_hex\", \"\")" not in protocol
     assert "expected_gateway_key_id: str" in protocol
+    assert "require_tee_authorization: bool" in protocol
+    assert "_trusted_tee_authorization_requirement" in network
+    assert "ADN_RUNTIME_MODE" in network
+    assert "request.require_tee_authorization" not in protocol
+    assert "delegation_data.get(\"require_tee_authorization\"" not in protocol
     assert "ADN_GATEWAY_PRIVATE_KEY_HEX" in index
     assert "ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX" in index
     assert "credential_enforced" in receipt

@@ -4,6 +4,7 @@ The core system that enables secure agent delegation using Terminal 3's Agent Au
 """
 
 import json
+import os
 import time
 import uuid
 import logging
@@ -52,6 +53,35 @@ def _request_replay_integrity_key(identity: AgentIdentity) -> Optional[str]:
     if configured:
         return configured
     return derive_integrity_key(identity.private_key_hex, "request")
+
+
+def _runtime_requires_tee_authorization() -> bool:
+    return os.environ.get("ADN_RUNTIME_MODE", "live").strip().lower() == "live"
+
+
+def _gateway_context_configured(
+    expected_gateway_public_key_hex: Optional[str],
+    expected_gateway_key_id: Optional[str],
+    expected_build_config_id: Optional[str],
+) -> bool:
+    return bool(expected_gateway_public_key_hex or expected_gateway_key_id or expected_build_config_id)
+
+
+def _trusted_tee_authorization_requirement(
+    require_tee_authorization: Optional[bool],
+    expected_gateway_public_key_hex: Optional[str],
+    expected_gateway_key_id: Optional[str],
+    expected_build_config_id: Optional[str],
+) -> bool:
+    if _runtime_requires_tee_authorization() or _gateway_context_configured(
+        expected_gateway_public_key_hex,
+        expected_gateway_key_id,
+        expected_build_config_id,
+    ):
+        return True
+    if require_tee_authorization is not None:
+        return bool(require_tee_authorization)
+    return False
 
 
 def _start_request_replay_heartbeat(
@@ -260,6 +290,7 @@ class AgentDelegationNetwork:
         expected_gateway_public_key_hex: Optional[str] = None,
         expected_gateway_key_id: Optional[str] = None,
         expected_build_config_id: Optional[str] = None,
+        require_tee_authorization: Optional[bool] = None,
     ) -> Dict:
         """
         Process an incoming delegation request from another agent.
@@ -289,12 +320,19 @@ class AgentDelegationNetwork:
                 raise ValueError(f"Delegation request not for this agent")
             
             # Verify Ed25519 signature, expiry, audience, and payload hash integrity
+            trusted_require_tee_authorization = _trusted_tee_authorization_requirement(
+                require_tee_authorization,
+                expected_gateway_public_key_hex,
+                expected_gateway_key_id,
+                expected_build_config_id,
+            )
             is_valid, error_msg, replay_key = DelegationProtocol.validate_delegation_request(
                 signed_request,
                 self.identity.agent_id,
                 expected_gateway_public_key_hex or "",
                 expected_gateway_key_id or "",
                 expected_build_config_id or "",
+                trusted_require_tee_authorization,
             )
             if not is_valid:
                 raise ValueError(f"Invalid delegation request: {error_msg}")

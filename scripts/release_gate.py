@@ -16,6 +16,7 @@ REQUIRED_FILES = [
     "docs/architecture/security-invariants.md",
     "scripts/verify_release.py",
     "scripts/verify_release_asset.py",
+    "scripts/verify_release_asset_remote.py",
     "schemas/adn-release-proof-v1.schema.json",
     ".github/workflows/release-proof-input.yml",
     ".github/workflows/release-proof-attest.yml",
@@ -53,6 +54,7 @@ RELEASE_ASSET_TERMS = [
     "release_asset_manifest.sig",
     "ADN_RELEASE_OPERATOR_PRIVATE_KEY_HEX",
     "python scripts/verify_release_asset.py",
+    "python scripts/verify_release_asset_remote.py",
     "refusing to overwrite durable proof assets",
 ]
 RELEASE_ASSET_FORBIDDEN_TERMS = [

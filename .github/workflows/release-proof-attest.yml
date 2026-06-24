@@ -303,6 +303,19 @@ jobs:
             "$RELEASE_ASSET_DIR/release_asset_manifest.sig" \
             --repo "$GITHUB_REPOSITORY"
 
+      - name: Remote-verify published durable release assets
+        env:
+          ADN_RELEASE_ASSET_TAG: adn-release-proof-${{ github.event.workflow_run.head_sha }}
+          ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX: ${{ secrets.ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX }}
+          GH_TOKEN: ${{ github.token }}
+          INPUT_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          python scripts/verify_release_asset_remote.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --tag "$ADN_RELEASE_ASSET_TAG" \
+            --sha "$INPUT_HEAD_SHA" \
+            --github-token "$GH_TOKEN"
+
       - name: Upload CI attestation
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

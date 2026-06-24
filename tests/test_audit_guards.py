@@ -252,6 +252,7 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     release_verifier = read("scripts/verify_release.py")
     remote_verifier = read("scripts/verify_release_remote.py")
     release_asset_verifier = read("scripts/verify_release_asset.py")
+    release_asset_remote_verifier = read("scripts/verify_release_asset_remote.py")
     schema = read("schemas/adn-release-proof-v1.schema.json")
     workflow = read(".github/workflows/ci.yml")
     release_input_workflow = read(".github/workflows/release-proof-input.yml")
@@ -275,6 +276,7 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "docs/security/claim-matrix.md" in release_gate
     assert "docs/release/criteria.md" in release_gate
     assert "verify_release.py" in release_gate
+    assert "verify_release_asset_remote.py" in release_gate
     assert "schemas/adn-release-proof-v1.schema.json" in release_gate
     assert ".github/workflows/release-proof-input.yml" in release_gate
     assert ".github/workflows/release-proof-attest.yml" in release_gate
@@ -324,6 +326,10 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "release_asset_manifest.json" in release_asset_verifier
     assert "release_asset_manifest.sig" in release_asset_verifier
     assert "verify_release_asset_dir" in release_asset_verifier
+    assert "REMOTE_RELEASE_ASSET_OK" in release_asset_remote_verifier
+    assert "get_release_by_tag" in release_asset_remote_verifier
+    assert "download_release_asset" in release_asset_remote_verifier
+    assert "verify_release_asset_dir" in release_asset_remote_verifier
     assert "adn-release-proof-v1" in schema
     assert "name: Release Proof Input" in release_input_workflow
     assert "workflow_dispatch" in release_input_workflow
@@ -368,12 +374,15 @@ def test_release_guardrails_and_claim_matrix_are_source_controlled():
     assert "release_asset_manifest.sig" in release_attest_workflow
     assert "ADN_RELEASE_OPERATOR_PRIVATE_KEY_HEX" in release_attest_workflow
     assert "python scripts/verify_release_asset.py" in release_attest_workflow
+    assert "python scripts/verify_release_asset_remote.py" in release_attest_workflow
     assert "--clobber" not in release_attest_workflow
     assert "refusing to overwrite durable proof assets" in release_attest_workflow
     assert 'workflow_conclusion": "success"' not in release_attest_workflow
     assert 'workflow_conclusion": os.environ["INPUT_RUN_CONCLUSION"]' in release_attest_workflow
     assert "actions/upload-artifact" in release_attest_workflow
     assert "test_release_remote_verifier.py" in workflow
+    assert "test_release_asset_verifier.py" in workflow
+    assert "test_release_asset_remote_verifier.py" in workflow
     assert "python scripts/release_gate.py" in workflow
     assert "python -m pip install --require-hashes -r requirements-ci.lock" in workflow
     assert "python -m pip install --require-hashes -r requirements-release.lock" in release_input_workflow

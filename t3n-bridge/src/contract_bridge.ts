@@ -251,6 +251,19 @@ export async function registerAdnContract(
   } catch (err) {
     const msg = (err as Error).message ?? "";
     if (msg.includes("not higher") || msg.includes("already enabled")) {
+      // Contract already registered at T3N. Verify local artifact matches persisted proof.
+      if (existsSync(REGISTRATION_RESPONSE_PATH)) {
+        const existingResponse = JSON.parse(readFileSync(REGISTRATION_RESPONSE_PATH, "utf-8"));
+        const existingContractId = extractContractId(existingResponse);
+        const existingManifest = existsSync(DEPLOYMENT_MANIFEST_PATH)
+          ? (JSON.parse(readFileSync(DEPLOYMENT_MANIFEST_PATH, "utf-8")) as DeploymentManifest)
+          : null;
+        if (existingManifest?.local_wasm_sha256 === localWasmSha256) {
+          console.log(`  [+] Contract ${CONTRACT_TAIL}@${CONTRACT_VERSION} already registered (contract_id=${existingContractId}); WASM SHA-256 verified match.`);
+          const finalManifest = finalizeDeploymentManifest(deploymentManifest, existingResponse, existingContractId);
+          return { tail: CONTRACT_TAIL, version: CONTRACT_VERSION, tenantDid, contractId: existingContractId, localWasmSha256, deploymentManifest: finalManifest };
+        }
+      }
       throw new Error(
         `Contract ${CONTRACT_TAIL}@${CONTRACT_VERSION} already exists remotely; ` +
         `refusing to continue without remote artifact identity verification. ` +

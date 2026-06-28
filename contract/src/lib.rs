@@ -14,6 +14,10 @@ mod crypto;
 
 struct Component;
 
+// Only emit the Wasm component-model ABI trampolines when targeting wasm32.
+// On native (cargo test), the cabi_post_* symbol names contain `:` which is
+// invalid in GNU-ld version-script syntax and causes rust-lld to fail.
+#[cfg(target_arch = "wasm32")]
 export!(Component);
 
 // ── Shared helper ─────────────────────────────────────────────────────────────

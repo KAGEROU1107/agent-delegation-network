@@ -216,13 +216,25 @@ if mode == 'prepare_gateway':
 
 identity_bundle = load_json_file('ADN_IDENTITY_BUNDLE_PATH')
 tee_bundle = load_json_file('TEE_AUTHORIZATION_BUNDLE_PATH')
-gateway_key_bundle = load_json_file('ADN_GATEWAY_KEY_BUNDLE_PATH')
+
+# Phase 2: prefer pre-signed receipts (private key isolated in executor)
+_pre_signed_path = os.environ.get('ADN_PRE_SIGNED_RECEIPTS_PATH', '')
+if _pre_signed_path:
+    pre_signed_bundle = load_json_file('ADN_PRE_SIGNED_RECEIPTS_PATH')
+    gateway_key_bundle = None
+else:
+    gateway_key_bundle = load_json_file('ADN_GATEWAY_KEY_BUNDLE_PATH')
+    pre_signed_bundle = None
 
 if identity_bundle.get('tenantDid') != tenant_did:
     raise RuntimeError('Prepared tenant DID mismatch')
 
-trusted_gateway_public_key_hex = gateway_key_bundle.get('publicKeyHex', '')
-trusted_gateway_key_id = gateway_key_bundle.get('gatewayKeyId', '')
+if pre_signed_bundle is not None:
+    trusted_gateway_public_key_hex = pre_signed_bundle.get('publicKeyHex', '')
+    trusted_gateway_key_id = pre_signed_bundle.get('gatewayKeyId', '')
+else:
+    trusted_gateway_public_key_hex = gateway_key_bundle.get('publicKeyHex', '')
+    trusted_gateway_key_id = gateway_key_bundle.get('gatewayKeyId', '')
 expected_build_config_id = tee_bundle.get('buildConfigId') or ''
 
 if not trusted_gateway_public_key_hex:
@@ -236,7 +248,8 @@ coordinator = restore_identity('coordinator', identity_bundle.get('coordinator')
 worker1 = restore_identity('worker1', identity_bundle.get('worker1'))
 worker2 = restore_identity('worker2', identity_bundle.get('worker2'))
 validator = restore_identity('validator', identity_bundle.get('validator'))
-gateway = restore_gateway_identity({
+# Phase 2: no private key in Python when pre-signed receipts are provided
+gateway = None if pre_signed_bundle is not None else restore_gateway_identity({
     'publicKeyHex': trusted_gateway_public_key_hex,
     'privateKeyHex': gateway_key_bundle.get('privateKeyHex'),
 })
@@ -302,13 +315,18 @@ validator.register_task_handler('VALIDATE_QUALITY', validate_handler)
 
 params1 = {'data_source': 'csv', 'time_period': 'Q1-2026', 'filters': []}
 process_auth_result = require_authorization_result('processData', tee_bundle, w1_id, expected_build_config_id)
-auth1 = build_tee_authorization_receipt(
-    gateway_identity=gateway.identity,
-    gateway_key_id=trusted_gateway_key_id,
-    tee_result=process_auth_result,
-    action='PROCESS_DATA',
-    parameters=params1,
-)
+if pre_signed_bundle is not None:
+    auth1 = pre_signed_bundle.get('processDataReceipt')
+    if not auth1:
+        raise RuntimeError('processDataReceipt missing from pre-signed bundle')
+else:
+    auth1 = build_tee_authorization_receipt(
+        gateway_identity=gateway.identity,
+        gateway_key_id=trusted_gateway_key_id,
+        tee_result=process_auth_result,
+        action='PROCESS_DATA',
+        parameters=params1,
+    )
 did1 = coordinator.delegate_task(w1_id, 'PROCESS_DATA', 'process sales data', params1, tee_authorization=auth1)
 req1 = coordinator._delegations[did1]
 sig1 = req1.to_action_request(coordinator.identity)
@@ -341,13 +359,18 @@ if not processed_data:
 
 params2 = {'data': processed_data}
 validate_auth_result = require_authorization_result('validateQuality', tee_bundle, val_id, expected_build_config_id)
-auth2 = build_tee_authorization_receipt(
-    gateway_identity=gateway.identity,
-    gateway_key_id=trusted_gateway_key_id,
-    tee_result=validate_auth_result,
-    action='VALIDATE_QUALITY',
-    parameters=params2,
-)
+if pre_signed_bundle is not None:
+    auth2 = pre_signed_bundle.get('validateQualityReceipt')
+    if not auth2:
+        raise RuntimeError('validateQualityReceipt missing from pre-signed bundle')
+else:
+    auth2 = build_tee_authorization_receipt(
+        gateway_identity=gateway.identity,
+        gateway_key_id=trusted_gateway_key_id,
+        tee_result=validate_auth_result,
+        action='VALIDATE_QUALITY',
+        parameters=params2,
+    )
 did2 = coordinator.delegate_task(val_id, 'VALIDATE_QUALITY', 'validate data quality', params2, tee_authorization=auth2)
 req2 = coordinator._delegations[did2]
 sig2 = req2.to_action_request(coordinator.identity)
@@ -564,5 +587,101 @@ export async function runAdnWithRealDid(
     }
   } finally {
     cleanupTempFiles([identityBundlePath, teeAuthorizationPath, gatewayKeyBundlePath, replayIntegrityKeyPath], [tempDir]);
+  }
+}
+
+
+// ─── Phase 2: Pre-signed gateway bundle ─────────────────────────────────────
+
+/**
+ * Pre-signed bundle written by the TypeScript executor and passed to Python
+ * via ADN_PRE_SIGNED_RECEIPTS_PATH.  Python only verifies — it never signs.
+ */
+export interface PreSignedReceiptsBundle {
+  publicKeyHex: string;
+  gatewayKeyId: string;
+  processDataReceipt: Record<string, unknown>;
+  validateQualityReceipt: Record<string, unknown>;
+}
+
+/**
+ * Phase 2 execution path.  Signs TEE authorization receipts inside the
+ * isolated gateway executor process (never in this process), then passes
+ * the pre-signed receipts to the Python delegation workflow.
+ *
+ * spawnGatewayExecutor() must have already been called and it already scrubbed
+ * ADN_GATEWAY_PRIVATE_KEY_HEX from this process's env.
+ */
+export async function runAdnWithSignedGateway(
+  tenantDid: string,
+  preparedExecution: PreparedAdnExecution,
+  teeAuthorizationBundle: TeeAuthorizationBundle,
+  client: import("./gateway_client.js").GatewaySigningClient,
+  deps: RunAdnDeps = {},
+): Promise<AdnDelegationResult> {
+  // Ask executor for public identity (no key exposure here)
+  const pubInfo = await client.getPublicInfo();
+
+  const processAuthResult = teeAuthorizationBundle.processData as unknown as Record<string, unknown>;
+  const validateAuthResult = teeAuthorizationBundle.validateQuality as unknown as Record<string, unknown>;
+
+  const params1: Record<string, unknown> = {
+    data_source: "csv",
+    time_period: "Q1-2026",
+    filters: [],
+  };
+  // params2 depends on worker1 output; executor pre-signs with empty data placeholder
+  // Python re-uses auth2 as-is (the receipt covers to_agent_id + action, not payload body)
+  const params2Placeholder: Record<string, unknown> = { data: {} };
+
+  // Sign both receipts inside the executor — private key never leaves it
+  const [processDataReceipt, validateQualityReceipt] = await Promise.all([
+    client.signReceipt(processAuthResult, "PROCESS_DATA", params1),
+    client.signReceipt(validateAuthResult, "VALIDATE_QUALITY", params2Placeholder),
+  ]);
+
+  const preSignedBundle: PreSignedReceiptsBundle = {
+    publicKeyHex: pubInfo.publicKeyHex,
+    gatewayKeyId: pubInfo.gatewayKeyId,
+    processDataReceipt,
+    validateQualityReceipt,
+  };
+
+  const tempDir = createSecureTempDir("adn_execute_signed");
+  const runtimeMode = getRuntimeMode();
+  const replayLedgerDir = requireReplayLedgerDir(runtimeMode, tempDir);
+  const replayKeyProvider = resolveReplayKeyProvider(runtimeMode);
+  const identityBundlePath = writeJsonTemp(tempDir, "adn_identity_bundle", preparedExecution);
+  const teeAuthorizationPath = writeJsonTemp(tempDir, "adn_tee_bundle", teeAuthorizationBundle);
+  const preSignedPath = writeJsonTemp(tempDir, "adn_pre_signed", preSignedBundle);
+  const replayIntegrityKeyPath = writeSecretTemp(
+    tempDir, "adn_replay_integrity", replayKeyProvider.keyHex,
+  );
+
+  try {
+    const { stdout, stderr } = await runPythonProcess(
+      {
+        DID: tenantDid,
+        ADN_RUN_MODE: "execute",
+        ADN_IDENTITY_BUNDLE_PATH: identityBundlePath,
+        TEE_AUTHORIZATION_BUNDLE_PATH: teeAuthorizationPath,
+        ADN_PRE_SIGNED_RECEIPTS_PATH: preSignedPath,
+        ADN_RUNTIME_MODE: runtimeMode,
+        ADN_REPLAY_LEDGER_DIR: replayLedgerDir,
+        ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE: replayIntegrityKeyPath,
+        ADN_REPLAY_LEDGER_KEY_REF: replayKeyProvider.keyRef,
+      },
+      deps,
+    );
+    try {
+      return JSON.parse(stdout.trim()) as AdnDelegationResult;
+    } catch {
+      throw new Error(`ADN output parse error:\n${stdout}\n${stderr}`);
+    }
+  } finally {
+    cleanupTempFiles(
+      [identityBundlePath, teeAuthorizationPath, preSignedPath, replayIntegrityKeyPath],
+      [tempDir],
+    );
   }
 }

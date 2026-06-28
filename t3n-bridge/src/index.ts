@@ -1,7 +1,7 @@
 /**
  * Terminal 3 Agent Delegation Network — ADK Bridge
  *
- * Full integration demo:
+ * Full live bridge run:
  * 1. Authenticate with Terminal 3 testnet (real T3nClient.handshake + authenticate)
  * 2. Obtain real DID from authenticated session (NOT hardcoded)
  * 3. Spawn Python ADN with real DID passed as session context
@@ -9,16 +9,16 @@
  * 5. [Optional] Register and invoke TEE contract if WASM available
  *
  * Usage:
- *   T3N_API_KEY=0x<key> ADN_BUILD_COMMIT=<commit> ADN_RUSTC_VERSION="<rustc --version>" ADN_TRUSTED_ISSUER=<issuer> ADN_TENANT_DID=<tenant-did> ADN_GATEWAY_PRIVATE_KEY_HEX=<ed25519-seed-hex> ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX=<ed25519-pubkey-hex> [ADN_GATEWAY_KEY_ID=<key-id>] node --loader ts-node/esm src/index.ts
+ *   T3N_API_KEY=0x<key> ADN_RUNTIME_MODE=live ADN_BUILD_COMMIT=<commit> ADN_RUSTC_VERSION="<rustc --version>" ADN_TRUSTED_ISSUER=<issuer> ADN_TENANT_DID=<tenant-did> ADN_GATEWAY_PRIVATE_KEY_HEX=<ed25519-seed-hex> ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX=<ed25519-pubkey-hex> [ADN_GATEWAY_KEY_ID=<key-id>] npm run live
  */
 
 import { createT3nSession } from "./t3n_auth.js";
 import {
   prepareAdnExecution,
-  requireConfiguredGatewayKeyBundleFromEnv,
-  runAdnWithRealDid,
+  runAdnWithSignedGateway,
   type TeeAuthorizationResult,
 } from "./adn_runner.js";
+import { spawnGatewayExecutor } from "./gateway_client.js";
 import {
   registerAdnContract,
   recordFirstInvocationDigest,
@@ -107,18 +107,6 @@ function requirePinnedRuntimeConfig(authenticatedAddress: string, authenticatedT
 
   console.log(`  [+] Pinned issuer matches authenticated T3N issuer: 0x${normalizedPinned}`);
   console.log(`  [+] Pinned tenant DID matches authenticated T3N tenant: ${authenticatedTenantDid}`);
-}
-
-function requireGatewayRuntimeConfig() {
-  try {
-    return requireConfiguredGatewayKeyBundleFromEnv();
-  } catch (err) {
-    throw new Error(
-      "ADN_GATEWAY_PRIVATE_KEY_HEX and ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX are required " +
-      "for the pinned Python gateway signer. " +
-      ((err as Error).message || String(err))
-    );
-  }
 }
 
 function parseSaleAmounts(): number[] {
@@ -218,11 +206,17 @@ async function main() {
       );
     }
 
-    const gatewayKeyBundle = requireGatewayRuntimeConfig();
+    // Phase 2: spawn isolated executor — reads and scrubs ADN_GATEWAY_PRIVATE_KEY_HEX from THIS process
+    console.log("  [+] Spawning gateway executor (Phase 2 security boundary)...");
+    const gatewayClient = await spawnGatewayExecutor();
+    const gatewayPubInfo = await gatewayClient.getPublicInfo();
+    console.log(`  [+] Executor ready — gateway key id: ${gatewayPubInfo.gatewayKeyId}`);
+    console.log(`  [+] ADN_GATEWAY_PRIVATE_KEY_HEX scrubbed from bridge process env`);
+
     const preparedExecution = await prepareAdnExecution(tenantDid);
     console.log(`  [+] Prepared worker target for PROCESS_DATA: ${preparedExecution.worker1.agentId}`);
     console.log(`  [+] Prepared worker target for VALIDATE_QUALITY: ${preparedExecution.validator.agentId}`);
-    console.log(`  [+] Trusted gateway key id: ${gatewayKeyBundle.gatewayKeyId}`);
+    console.log(`  [+] Trusted gateway key id: ${gatewayPubInfo.gatewayKeyId}`);
 
     const expectedBuildConfigId = preRegisteredContract.deploymentManifest.build_config_id;
 
@@ -282,7 +276,11 @@ async function main() {
     };
 
     console.log("  [+] Real T3N authorization bundle acquired for prepared Python workers.");
-    adnResult = await runAdnWithRealDid(tenantDid, preparedExecution, teeAuthorizationBundle, gatewayKeyBundle);
+    try {
+      adnResult = await runAdnWithSignedGateway(tenantDid, preparedExecution, teeAuthorizationBundle, gatewayClient);
+    } finally {
+      gatewayClient.close();
+    }
     console.log(`  [+] Unique cryptographic identities: ${adnResult.uniqueIdentities}/4`);
     console.log(`  [+] Records processed: ${adnResult.recordsProcessed}`);
     console.log(`  [+] Total revenue: $${adnResult.totalRevenue}`);

@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "test": "node --loader ts-node/esm test/release_proof.integration.mjs && node --loader ts-node/esm test/adn_runner.integration.mjs && node test/replay_restart.integration.mjs && node --loader ts-node/esm test/gateway_executor.test.ts && node --loader ts-node/esm test/receipt_binding.integration.mjs && node scripts/audit_legacy_imports.mjs && node --loader ts-node/esm test/legacy_guard.test.mjs && node --loader ts-node/esm test/t3n_evidence.test.mjs",
+    "test": "node --loader ts-node/esm test/release_proof.integration.mjs && node --loader ts-node/esm test/adn_runner.integration.mjs && node test/replay_restart.integration.mjs && node --loader ts-node/esm test/gateway_executor.test.ts && node --loader ts-node/esm test/receipt_binding.integration.mjs && node scripts/audit_legacy_imports.mjs && node --loader ts-node/esm test/legacy_guard.test.mjs && node --loader ts-node/esm test/t3n_evidence.test.mjs && node --loader ts-node/esm test/t3n_evidence_v2.test.mjs",
     "doctor": "node --loader ts-node/esm src/doctor.ts",
     "live": "node --loader ts-node/esm src/index.ts",
     "demo": "npm run live",

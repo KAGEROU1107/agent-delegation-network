@@ -44,7 +44,15 @@ import { existsSync, readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
-export { T3nAttestedEvidenceVerifier, type T3nInvocationEvidence, type EvidenceVerificationResult, type EvidenceMode } from "./t3n_evidence.js";
+export {
+  T3nAttestedEvidenceVerifier,
+  buildEvidenceFromReceipt,
+  type T3nInvocationEvidence,
+  type T3nPlatformReceipt,
+  type EvidenceVerificationResult,
+  type EvidenceMode,
+} from "./t3n_evidence.js";
+export { verifyPlatformSignature, type T3nTrustAnchor } from "./t3n_evidence_crypto.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WASM_PATH = join(__dirname, "../../contract/target/wasm32-wasip2/release/adn_processor.wasm");

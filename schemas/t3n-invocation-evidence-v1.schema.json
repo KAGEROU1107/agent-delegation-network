@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "t3n-invocation-evidence-v1",
+  "description": "T3N platform invocation evidence. In live mode all required fields must be present and non-empty. Cryptographic signature verification requires T3N to publish a verifier key or trust anchor.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "tenant_did",
+    "contract_tail",
+    "contract_version",
+    "invocation_id",
+    "worker_did",
+    "action",
+    "request_digest",
+    "result_digest",
+    "issued_at",
+    "raw_platform_receipt",
+    "platform_credential_fingerprint",
+    "platform_credential_enforced",
+    "evidence_mode"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "t3n-invocation-evidence-v1"
+    },
+    "tenant_did": {
+      "type": "string",
+      "minLength": 1
+    },
+    "contract_tail": {
+      "type": "string",
+      "minLength": 1
+    },
+    "contract_version": {
+      "type": "string"
+    },
+    "invocation_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique invocation identifier — equals delegation_id from T3N platform receipt"
+    },
+    "worker_did": {
+      "type": "string"
+    },
+    "action": {
+      "type": "string"
+    },
+    "request_digest": {
+      "type": "string",
+      "description": "SHA-256 hex of the canonical request parameters"
+    },
+    "result_digest": {
+      "type": "string",
+      "description": "SHA-256 hex of the canonical result (e.g. raw invocation receipt bytes)"
+    },
+    "issued_at": {
+      "type": "string",
+      "description": "ISO 8601 timestamp — sourced from authorization_expires_at in T3N receipt"
+    },
+    "raw_platform_receipt": {
+      "type": "object",
+      "description": "Unmodified T3N API response object — must not be transformed or filtered"
+    },
+    "platform_credential_fingerprint": {
+      "type": "string",
+      "minLength": 1,
+      "description": "credential_fingerprint from T3N receipt — proves a real credential was enforced"
+    },
+    "platform_credential_enforced": {
+      "type": "boolean",
+      "description": "credential_enforced flag from T3N receipt — must be true in live mode"
+    },
+    "evidence_mode": {
+      "type": "string",
+      "enum": ["t3n_attested", "gateway_only", "demo"],
+      "description": "t3n_attested: full T3N platform evidence; gateway_only: rejected in live; demo: accepted with NON-ATTESTED warning"
+    },
+    "platform_signature": {
+      "type": "string",
+      "description": "T3N platform signature — required when T3N publishes a signing key (pending trust anchor)"
+    },
+    "platform_signing_key_id": {
+      "type": "string",
+      "description": "T3N signing key identifier — set when platform_signature is present"
+    }
+  }
+}

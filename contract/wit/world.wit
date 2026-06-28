@@ -1,49 +1,52 @@
 package z:adn-processor@0.1.0;
 
 interface contracts {
+  // NOTE: This is a stateless TEE computation. Results are not persisted
+  // across invocations. Persistent storage requires wasi:keyvalue integration
+  // which is not yet implemented.
   record generic-input {
     input:        option<list<u8>>,
     user-profile: option<list<u8>>,
     context:      option<list<u8>>,
   }
 
-  // Phase 1 — Core ADN
+  // Phase 1 — Core ADN (stateless TEE delegation decision)
   process-data:     func(req: generic-input) -> result<list<u8>, string>;
   validate-quality: func(req: generic-input) -> result<list<u8>, string>;
   delegate-task:    func(req: generic-input) -> result<list<u8>, string>;
 
-  // Phase 2 — Blind Multi-Agent Auction
+  // Phase 2 — TEE Auction-Resolution Pattern (stateless: computes winner from caller-supplied bids; no sealed bid store)
   submit-bid:      func(req: generic-input) -> result<list<u8>, string>;
   resolve-auction: func(req: generic-input) -> result<list<u8>, string>;
 
-  // Phase 3 — Agent Reputation Ledger
+  // Phase 3 — TEE Reputation-Score Pattern (stateless: computes score from caller-supplied history; no persistent ledger)
   record-completion: func(req: generic-input) -> result<list<u8>, string>;
   get-reputation:    func(req: generic-input) -> result<list<u8>, string>;
 
-  // Phase 4 — Privacy-Preserving Personalization
+  // Phase 4 — TEE Personalization Pattern (stateless: segmentation over caller-supplied records)
   send-personalized-outreach: func(req: generic-input) -> result<list<u8>, string>;
 
-  // Phase 5 — Temporal Agent Delegation
+  // Phase 5 — TEE Temporal-Grant Pattern (stateless: validates caller-supplied epoch; no persistent grant store)
   issue-time-grant: func(req: generic-input) -> result<list<u8>, string>;
   check-grant:      func(req: generic-input) -> result<list<u8>, string>;
 
-  // Phase 7 — Agentic KYC Pipeline
+  // Phase 7 — TEE KYC-Status Pattern (stateless: computes status from caller-supplied step list; no evidence store)
   kyc-submit-step: func(req: generic-input) -> result<list<u8>, string>;
   kyc-get-status:  func(req: generic-input) -> result<list<u8>, string>;
 
-  // Phase 8 — TEE Secret Vault
+  // Phase 8 — TEE Secret-Vault Interaction Pattern (stateless: validates permission proof; no persistent secret storage)
   store-secret:       func(req: generic-input) -> result<list<u8>, string>;
   invoke-with-secret: func(req: generic-input) -> result<list<u8>, string>;
 
-  // Phase 9 — Autonomous Agent DAO
+  // Phase 9 — TEE Vote-Tally Pattern (stateless: tallies caller-supplied votes; no persistent ballot store)
   cast-vote:   func(req: generic-input) -> result<list<u8>, string>;
   tally-votes: func(req: generic-input) -> result<list<u8>, string>;
 
-  // Phase 10 — Verifiable AI Decision Audit
+  // Phase 10 — TEE Decision-Audit Hash (stateless: deterministic hash over caller-supplied records)
   log-decision:    func(req: generic-input) -> result<list<u8>, string>;
   audit-decisions: func(req: generic-input) -> result<list<u8>, string>;
 
-  // Phase 11 — Agent Performance Bond
+  // Phase 11 — TEE Settlement-Calculation Pattern (stateless: computes payout from caller-supplied bond facts; no escrow)
   lock-bond:         func(req: generic-input) -> result<list<u8>, string>;
   verify-and-settle: func(req: generic-input) -> result<list<u8>, string>;
 }

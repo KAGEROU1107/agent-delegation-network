@@ -275,6 +275,24 @@ Run the local feature-pattern demo: `T3N_API_KEY=0x<key> python demo/features_de
 
 ---
 
+## Contract Capabilities (v3.9.2)
+
+**Current scope — stateless TEE computation:**
+- Delegation decision: verifies tenant DID, gateway authorization receipt, and worker identity
+- Process data: executes worker 1 with authorized parameters
+- Validate quality: verifies worker 2 result against process receipt hash binding
+
+**Not yet implemented (planned):**
+- Persistent nonce tracking (requires wasi:keyvalue)
+- Bond registry
+- KYC vault
+- Reputation ledger
+- DAO governance
+
+Claims about persistent contract state will be updated only after actual wasi:keyvalue integration and corresponding WIT capability imports.
+
+---
+
 ## Security
 
 **What is enforced in the current live v3.8.1 proof:** T3N authentication, SDK-native credential construction, Rust/WASM TEE structural validation of envelope presence, credential domain, TTL, delegated function scope, nonce format (≥8 bytes), and `agent_sig` presence. Delegation envelope is **mandatory** on `delegate-task` in v3.8.1 source. Trust policy requires both action rule AND explicit trust relationship (dual default-deny).

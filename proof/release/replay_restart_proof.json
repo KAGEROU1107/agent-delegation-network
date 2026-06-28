@@ -1,0 +1,25 @@
+{
+  "schema_version": "adn-replay-proof-v1",
+  "build_config_id": "adn-build-977ac2f175ba0f69a10345ba4a13efd2",
+  "build_commit": "265c40d12c40f9c423c1c36728cef35a37a5a284",
+  "request_replay_rejected": true,
+  "result_replay_rejected": true,
+  "ledger_persisted_across_restart": true,
+  "evidence": {
+    "test_suite": "tests/test_result_verifier.py",
+    "tests_run": 105,
+    "tests_passed": 105,
+    "replay_tests_passed": 6,
+    "replay_test_names": [
+      "test_worker_rejects_replayed_signed_request",
+      "test_worker_request_replay_persists_across_restart",
+      "test_result_replay_is_rejected_across_restart",
+      "test_request_replay_reservation_is_atomic_across_processes",
+      "test_result_replay_requires_integrity_key",
+      "test_replay_ledger_rejects_invalid_runtime_mode"
+    ],
+    "runner": "pytest 9.0.2",
+    "platform": "Python 3.14.3 / win32",
+    "generated_at": "2026-06-28T09:46:34Z"
+  }
+}

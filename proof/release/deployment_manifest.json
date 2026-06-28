@@ -1,1 +1,36 @@
-{"build_commit":"785a3055dbc5910a432b49de79ba349a2552d23b","build_config_id":"adn-build-977ac2f175ba0f69a10345ba4a13efd2","contract_tail":"adn-processor","contract_version":"3.9.2","first_invocation_digest":"2c20fff5ae1ded122a54e4b9517b85ef16cb79ef5a123494eda8c759efa3adf9","first_invocation_path":"invocation_receipt.json","local_wasm_sha256":"6b7be2136b9401d12e7bce2a5847382bedde15959ced459b138217f37bc12d47","manifest_digest":"eb1f5c7270984fd6b355f23bc7191ee7a0865974d7db8522decb96c8cb1b87cc","raw_registration_response_digest":"12071c2b075b3b9e7c3c4dae837a3ff91e44372e983b332cf79744a0093675de","raw_registration_response_path":"registration_response.json","registered_at":"2026-06-27T23:57:42.420Z","registration_status":"registered","remote_contract_id":459,"rustc_version":"rustc 1.96.0 (ac68faa20 2026-05-25)","schema_version":"adn-release-proof-v1","t3n_evidence_digest":"2c20fff5ae1ded122a54e4b9517b85ef16cb79ef5a123494eda8c759efa3adf9","t3n_evidence_path":"t3n_evidence.json","tenant_did":"did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02","trusted_issuer":"b5a5808b97bdef6b053bb110be63af0deec60ed9"}
+{
+  "version": "v3.9.2",
+  "baseline_commit": "1c808006d489cfbe5d69e30a314df651295adf08",
+  "remediation_phases": {
+    "phase_0": "40eb61840b761eb61c2d412e2265382e50eae36c",
+    "phase_1": "56e150621d49f56ef66792517670340ddf28ec1c",
+    "phase_2": "b56e6ea06343ac1a958da302727b9b9f837ff4e0",
+    "phase_3": "2b314d90cf10f61ac60099a0cf826ab4c78a81d4",
+    "phase_4": "c33ad554018eb5fde1b8929c0517b9843c1ede81",
+    "phase_5": "6a5a79488cbad4a7786f3dd5c6d1a4dd5fd945a9",
+    "phase_6": "265c40d12c40f9c423c1c36728cef35a37a5a284"
+  },
+  "head_commit": "265c40d12c40f9c423c1c36728cef35a37a5a284",
+  "rust_tests": "25/25 pass",
+  "ts_tests": "all suites pass",
+  "python_tests": "105/105 pass",
+  "wasm_build": "wasm32-wasip2 release clean",
+  "wasm_artifact": "contract/target/wasm32-wasip2/release/adn_processor.wasm",
+  "rustc_version": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+  "security_posture": {
+    "gateway_rpc_authenticated": true,
+    "validation_receipt_bound_to_actual_data": true,
+    "worker_keys_bridge_isolated": true,
+    "legacy_path_blocked_in_live_mode": true,
+    "platform_evidence_verifier": true,
+    "contract_state_claims_accurate": true
+  },
+  "t3n_registration": {
+    "status": "registered",
+    "remote_contract_id": 459,
+    "registered_at": "2026-06-27T23:57:42.420Z",
+    "tenant_did": "did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02",
+    "trusted_issuer": "b5a5808b97bdef6b053bb110be63af0deec60ed9"
+  },
+  "built_at": "2026-06-28T09:46:34Z"
+}

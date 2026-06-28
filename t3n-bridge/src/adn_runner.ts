@@ -313,100 +313,191 @@ def validate_handler(payload):
 worker1.register_task_handler('PROCESS_DATA', process_handler)
 validator.register_task_handler('VALIDATE_QUALITY', validate_handler)
 
-params1 = {'data_source': 'csv', 'time_period': 'Q1-2026', 'filters': []}
-process_auth_result = require_authorization_result('processData', tee_bundle, w1_id, expected_build_config_id)
-if pre_signed_bundle is not None:
+phase = os.environ.get('ADN_EXECUTION_PHASE', 'full')
+
+if phase == 'process':
+    params1 = {'data_source': 'csv', 'time_period': 'Q1-2026', 'filters': []}
+    process_auth_result = require_authorization_result('processData', tee_bundle, w1_id, expected_build_config_id)
     auth1 = pre_signed_bundle.get('processDataReceipt')
     if not auth1:
         raise RuntimeError('processDataReceipt missing from pre-signed bundle')
-else:
-    auth1 = build_tee_authorization_receipt(
-        gateway_identity=gateway.identity,
-        gateway_key_id=trusted_gateway_key_id,
-        tee_result=process_auth_result,
-        action='PROCESS_DATA',
-        parameters=params1,
+    did1 = coordinator.delegate_task(w1_id, 'PROCESS_DATA', 'process sales data', params1, tee_authorization=auth1)
+    req1 = coordinator._delegations[did1]
+    sig1 = req1.to_action_request(coordinator.identity)
+    res1 = worker1.process_delegation_request(
+        sig1,
+        expected_gateway_public_key_hex=trusted_gateway_public_key_hex,
+        expected_gateway_key_id=trusted_gateway_key_id,
+        expected_build_config_id=expected_build_config_id,
     )
-did1 = coordinator.delegate_task(w1_id, 'PROCESS_DATA', 'process sales data', params1, tee_authorization=auth1)
-req1 = coordinator._delegations[did1]
-sig1 = req1.to_action_request(coordinator.identity)
-res1 = worker1.process_delegation_request(
-    sig1,
-    expected_gateway_public_key_hex=trusted_gateway_public_key_hex,
-    expected_gateway_key_id=trusted_gateway_key_id,
-    expected_build_config_id=expected_build_config_id,
-)
-rd1 = verify_worker_result(
-    res1,
-    w1_id,
-    worker1.identity.public_key_hex,
-    did1,
-    coord_id,
-    expected_tee_authorization=auth1,
-    expected_gateway_public_key_hex=trusted_gateway_public_key_hex,
-    expected_gateway_key_id=trusted_gateway_key_id,
-    expected_action='PROCESS_DATA',
-    expected_parameters=params1,
-    expected_build_config_id=expected_build_config_id,
-)
-processed_data = (rd1.get('result') or {}).get('processed_data', {})
-if not processed_data:
-    raise RuntimeError(
-        'worker1 returned no processed_data - status: ' +
-        str(res1['result_data'].get('status')) +
-        ' error: ' + str(res1['result_data'].get('error'))
+    rd1 = verify_worker_result(
+        res1,
+        w1_id,
+        worker1.identity.public_key_hex,
+        did1,
+        coord_id,
+        expected_tee_authorization=auth1,
+        expected_gateway_public_key_hex=trusted_gateway_public_key_hex,
+        expected_gateway_key_id=trusted_gateway_key_id,
+        expected_action='PROCESS_DATA',
+        expected_parameters=params1,
+        expected_build_config_id=expected_build_config_id,
     )
+    processed_data = (rd1.get('result') or {}).get('processed_data', {})
+    if not processed_data:
+        raise RuntimeError(
+            'worker1 returned no processed_data - status: ' +
+            str(res1['result_data'].get('status')) +
+            ' error: ' + str(res1['result_data'].get('error'))
+        )
+    print(json.dumps({
+        'phase': 'process',
+        'process_succeeded': res1['result_data']['status'] == 'COMPLETED',
+        'processed_data': processed_data,
+    }))
 
-params2 = {'data': processed_data}
-validate_auth_result = require_authorization_result('validateQuality', tee_bundle, val_id, expected_build_config_id)
-if pre_signed_bundle is not None:
+elif phase == 'validate':
+    processed_data_path_env = os.environ.get('ADN_PROCESSED_DATA_PATH', '')
+    if not processed_data_path_env:
+        raise RuntimeError('ADN_PROCESSED_DATA_PATH is required for phase=validate')
+    processed_data_obj = json.loads(Path(processed_data_path_env).read_text(encoding='utf-8'))
+    processed_data = processed_data_obj.get('processed_data', {})
+    process_succeeded = processed_data_obj.get('process_succeeded', False)
+    params2 = {'data': processed_data}
+    validate_auth_result = require_authorization_result('validateQuality', tee_bundle, val_id, expected_build_config_id)
     auth2 = pre_signed_bundle.get('validateQualityReceipt')
     if not auth2:
         raise RuntimeError('validateQualityReceipt missing from pre-signed bundle')
-else:
-    auth2 = build_tee_authorization_receipt(
-        gateway_identity=gateway.identity,
-        gateway_key_id=trusted_gateway_key_id,
-        tee_result=validate_auth_result,
-        action='VALIDATE_QUALITY',
-        parameters=params2,
+    did2 = coordinator.delegate_task(val_id, 'VALIDATE_QUALITY', 'validate data quality', params2, tee_authorization=auth2)
+    req2 = coordinator._delegations[did2]
+    sig2 = req2.to_action_request(coordinator.identity)
+    res2 = validator.process_delegation_request(
+        sig2,
+        expected_gateway_public_key_hex=trusted_gateway_public_key_hex,
+        expected_gateway_key_id=trusted_gateway_key_id,
+        expected_build_config_id=expected_build_config_id,
     )
-did2 = coordinator.delegate_task(val_id, 'VALIDATE_QUALITY', 'validate data quality', params2, tee_authorization=auth2)
-req2 = coordinator._delegations[did2]
-sig2 = req2.to_action_request(coordinator.identity)
-res2 = validator.process_delegation_request(
-    sig2,
-    expected_gateway_public_key_hex=trusted_gateway_public_key_hex,
-    expected_gateway_key_id=trusted_gateway_key_id,
-    expected_build_config_id=expected_build_config_id,
-)
-rd2 = verify_worker_result(
-    res2,
-    val_id,
-    validator.identity.public_key_hex,
-    did2,
-    coord_id,
-    expected_tee_authorization=auth2,
-    expected_gateway_public_key_hex=trusted_gateway_public_key_hex,
-    expected_gateway_key_id=trusted_gateway_key_id,
-    expected_action='VALIDATE_QUALITY',
-    expected_parameters=params2,
-    expected_build_config_id=expected_build_config_id,
-)
-validated_data = rd2.get('result') or {}
+    rd2 = verify_worker_result(
+        res2,
+        val_id,
+        validator.identity.public_key_hex,
+        did2,
+        coord_id,
+        expected_tee_authorization=auth2,
+        expected_gateway_public_key_hex=trusted_gateway_public_key_hex,
+        expected_gateway_key_id=trusted_gateway_key_id,
+        expected_action='VALIDATE_QUALITY',
+        expected_parameters=params2,
+        expected_build_config_id=expected_build_config_id,
+    )
+    validated_data = rd2.get('result') or {}
+    print(json.dumps({
+        'success': process_succeeded and res2['result_data']['status'] == 'COMPLETED',
+        'replayMode': 'non-durable-demo' if runtime_mode == 'demo' else ('durable-test' if runtime_mode == 'test' else 'durable-live'),
+        'tenantDid': tenant_did,
+        'coordinatorDid': coordinator.identity.did,
+        'uniqueIdentities': unique_ids,
+        'recordsProcessed': processed_data.get('records_processed', 0),
+        'totalRevenue': processed_data.get('total_revenue', 0),
+        'avgValue': processed_data.get('avg_value', 0),
+        'qualityScore': validated_data.get('quality_score', 0),
+        'qualityPassed': bool(validated_data.get('passed', False)),
+    }))
 
-print(json.dumps({
-    'success': res1['result_data']['status'] == 'COMPLETED' and res2['result_data']['status'] == 'COMPLETED',
-    'replayMode': 'non-durable-demo' if runtime_mode == 'demo' else ('durable-test' if runtime_mode == 'test' else 'durable-live'),
-    'tenantDid': tenant_did,
-    'coordinatorDid': coordinator.identity.did,
-    'uniqueIdentities': unique_ids,
-    'recordsProcessed': processed_data.get('records_processed', 0),
-    'totalRevenue': processed_data.get('total_revenue', 0),
-    'avgValue': processed_data.get('avg_value', 0),
-    'qualityScore': validated_data.get('quality_score', 0),
-    'qualityPassed': bool(validated_data.get('passed', False)),
-}))
+else:
+    # Legacy full path: gateway key signs in Python (used by runAdnWithRealDid)
+    params1 = {'data_source': 'csv', 'time_period': 'Q1-2026', 'filters': []}
+    process_auth_result = require_authorization_result('processData', tee_bundle, w1_id, expected_build_config_id)
+    if pre_signed_bundle is not None:
+        auth1 = pre_signed_bundle.get('processDataReceipt')
+        if not auth1:
+            raise RuntimeError('processDataReceipt missing from pre-signed bundle')
+    else:
+        auth1 = build_tee_authorization_receipt(
+            gateway_identity=gateway.identity,
+            gateway_key_id=trusted_gateway_key_id,
+            tee_result=process_auth_result,
+            action='PROCESS_DATA',
+            parameters=params1,
+        )
+    did1 = coordinator.delegate_task(w1_id, 'PROCESS_DATA', 'process sales data', params1, tee_authorization=auth1)
+    req1 = coordinator._delegations[did1]
+    sig1 = req1.to_action_request(coordinator.identity)
+    res1 = worker1.process_delegation_request(
+        sig1,
+        expected_gateway_public_key_hex=trusted_gateway_public_key_hex,
+        expected_gateway_key_id=trusted_gateway_key_id,
+        expected_build_config_id=expected_build_config_id,
+    )
+    rd1 = verify_worker_result(
+        res1,
+        w1_id,
+        worker1.identity.public_key_hex,
+        did1,
+        coord_id,
+        expected_tee_authorization=auth1,
+        expected_gateway_public_key_hex=trusted_gateway_public_key_hex,
+        expected_gateway_key_id=trusted_gateway_key_id,
+        expected_action='PROCESS_DATA',
+        expected_parameters=params1,
+        expected_build_config_id=expected_build_config_id,
+    )
+    processed_data = (rd1.get('result') or {}).get('processed_data', {})
+    if not processed_data:
+        raise RuntimeError(
+            'worker1 returned no processed_data - status: ' +
+            str(res1['result_data'].get('status')) +
+            ' error: ' + str(res1['result_data'].get('error'))
+        )
+    params2 = {'data': processed_data}
+    validate_auth_result = require_authorization_result('validateQuality', tee_bundle, val_id, expected_build_config_id)
+    if pre_signed_bundle is not None:
+        auth2 = pre_signed_bundle.get('validateQualityReceipt')
+        if not auth2:
+            raise RuntimeError('validateQualityReceipt missing from pre-signed bundle')
+    else:
+        auth2 = build_tee_authorization_receipt(
+            gateway_identity=gateway.identity,
+            gateway_key_id=trusted_gateway_key_id,
+            tee_result=validate_auth_result,
+            action='VALIDATE_QUALITY',
+            parameters=params2,
+        )
+    did2 = coordinator.delegate_task(val_id, 'VALIDATE_QUALITY', 'validate data quality', params2, tee_authorization=auth2)
+    req2 = coordinator._delegations[did2]
+    sig2 = req2.to_action_request(coordinator.identity)
+    res2 = validator.process_delegation_request(
+        sig2,
+        expected_gateway_public_key_hex=trusted_gateway_public_key_hex,
+        expected_gateway_key_id=trusted_gateway_key_id,
+        expected_build_config_id=expected_build_config_id,
+    )
+    rd2 = verify_worker_result(
+        res2,
+        val_id,
+        validator.identity.public_key_hex,
+        did2,
+        coord_id,
+        expected_tee_authorization=auth2,
+        expected_gateway_public_key_hex=trusted_gateway_public_key_hex,
+        expected_gateway_key_id=trusted_gateway_key_id,
+        expected_action='VALIDATE_QUALITY',
+        expected_parameters=params2,
+        expected_build_config_id=expected_build_config_id,
+    )
+    validated_data = rd2.get('result') or {}
+    print(json.dumps({
+        'success': res1['result_data']['status'] == 'COMPLETED' and res2['result_data']['status'] == 'COMPLETED',
+        'replayMode': 'non-durable-demo' if runtime_mode == 'demo' else ('durable-test' if runtime_mode == 'test' else 'durable-live'),
+        'tenantDid': tenant_did,
+        'coordinatorDid': coordinator.identity.did,
+        'uniqueIdentities': unique_ids,
+        'recordsProcessed': processed_data.get('records_processed', 0),
+        'totalRevenue': processed_data.get('total_revenue', 0),
+        'avgValue': processed_data.get('avg_value', 0),
+        'qualityScore': validated_data.get('quality_score', 0),
+        'qualityPassed': bool(validated_data.get('passed', False)),
+    }))
 `;
 
 function createSecureTempDir(prefix: string): string {
@@ -605,11 +696,16 @@ export interface PreSignedReceiptsBundle {
 }
 
 /**
- * Phase 2 execution path.  Signs TEE authorization receipts inside the
- * isolated gateway executor process (never in this process), then passes
- * the pre-signed receipts to the Python delegation workflow.
+ * Phase 2 execution path — two-pass design.
  *
- * spawnGatewayExecutor() must have already been called and it already scrubbed
+ * Pass 1 (phase=process): Python runs worker1, outputs processed_data JSON.
+ * Pass 2 (phase=validate): TypeScript signs the VALIDATE_QUALITY receipt with
+ *   the REAL processed_data, then Python runs the validator with that receipt.
+ *
+ * This eliminates the placeholder `{ data: {} }` receipt that previously caused
+ * a TEE receipt-hash mismatch at runtime.
+ *
+ * spawnGatewayExecutor() must have already been called and scrubbed
  * ADN_GATEWAY_PRIVATE_KEY_HEX from this process's env.
  */
 export async function runAdnWithSignedGateway(
@@ -619,7 +715,6 @@ export async function runAdnWithSignedGateway(
   client: import("./gateway_client.js").GatewaySigningClient,
   deps: RunAdnDeps = {},
 ): Promise<AdnDelegationResult> {
-  // Ask executor for public identity (no key exposure here)
   const pubInfo = await client.getPublicInfo();
 
   const processAuthResult = teeAuthorizationBundle.processData as unknown as Record<string, unknown>;
@@ -630,22 +725,9 @@ export async function runAdnWithSignedGateway(
     time_period: "Q1-2026",
     filters: [],
   };
-  // params2 depends on worker1 output; executor pre-signs with empty data placeholder
-  // Python re-uses auth2 as-is (the receipt covers to_agent_id + action, not payload body)
-  const params2Placeholder: Record<string, unknown> = { data: {} };
 
-  // Sign both receipts inside the executor — private key never leaves it
-  const [processDataReceipt, validateQualityReceipt] = await Promise.all([
-    client.signReceipt(processAuthResult, "PROCESS_DATA", params1),
-    client.signReceipt(validateAuthResult, "VALIDATE_QUALITY", params2Placeholder),
-  ]);
-
-  const preSignedBundle: PreSignedReceiptsBundle = {
-    publicKeyHex: pubInfo.publicKeyHex,
-    gatewayKeyId: pubInfo.gatewayKeyId,
-    processDataReceipt,
-    validateQualityReceipt,
-  };
+  // ── Pass 1 setup ─────────────────────────────────────────────────────────────
+  const processDataReceipt = await client.signReceipt(processAuthResult, "PROCESS_DATA", params1);
 
   const tempDir = createSecureTempDir("adn_execute_signed");
   const runtimeMode = getRuntimeMode();
@@ -653,19 +735,28 @@ export async function runAdnWithSignedGateway(
   const replayKeyProvider = resolveReplayKeyProvider(runtimeMode);
   const identityBundlePath = writeJsonTemp(tempDir, "adn_identity_bundle", preparedExecution);
   const teeAuthorizationPath = writeJsonTemp(tempDir, "adn_tee_bundle", teeAuthorizationBundle);
-  const preSignedPath = writeJsonTemp(tempDir, "adn_pre_signed", preSignedBundle);
-  const replayIntegrityKeyPath = writeSecretTemp(
-    tempDir, "adn_replay_integrity", replayKeyProvider.keyHex,
-  );
+  const replayIntegrityKeyPath = writeSecretTemp(tempDir, "adn_replay_integrity", replayKeyProvider.keyHex);
+
+  const tempFiles = [identityBundlePath, teeAuthorizationPath, replayIntegrityKeyPath];
 
   try {
-    const { stdout, stderr } = await runPythonProcess(
+    const processPreSignedBundle = {
+      publicKeyHex: pubInfo.publicKeyHex,
+      gatewayKeyId: pubInfo.gatewayKeyId,
+      processDataReceipt,
+    };
+    const processPreSignedPath = writeJsonTemp(tempDir, "adn_process_pre_signed", processPreSignedBundle);
+    tempFiles.push(processPreSignedPath);
+
+    // ── Pass 1: run worker1, capture processed_data ───────────────────────────
+    const { stdout: processStdout, stderr: processStderr } = await runPythonProcess(
       {
         DID: tenantDid,
         ADN_RUN_MODE: "execute",
+        ADN_EXECUTION_PHASE: "process",
         ADN_IDENTITY_BUNDLE_PATH: identityBundlePath,
         TEE_AUTHORIZATION_BUNDLE_PATH: teeAuthorizationPath,
-        ADN_PRE_SIGNED_RECEIPTS_PATH: preSignedPath,
+        ADN_PRE_SIGNED_RECEIPTS_PATH: processPreSignedPath,
         ADN_RUNTIME_MODE: runtimeMode,
         ADN_REPLAY_LEDGER_DIR: replayLedgerDir,
         ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE: replayIntegrityKeyPath,
@@ -673,15 +764,58 @@ export async function runAdnWithSignedGateway(
       },
       deps,
     );
+
+    let processPhaseResult: { process_succeeded: boolean; processed_data: Record<string, unknown> };
+    try {
+      processPhaseResult = JSON.parse(processStdout.trim());
+    } catch {
+      throw new Error(`ADN phase=process output parse error:\n${processStdout}\n${processStderr}`);
+    }
+
+    const processedData = processPhaseResult.processed_data;
+    const processSucceeded = processPhaseResult.process_succeeded;
+
+    // ── Sign VALIDATE_QUALITY receipt with REAL processed_data ────────────────
+    const params2: Record<string, unknown> = { data: processedData };
+    const validateQualityReceipt = await client.signReceipt(validateAuthResult, "VALIDATE_QUALITY", params2);
+
+    // ── Pass 2 setup ─────────────────────────────────────────────────────────
+    const validatePreSignedBundle = {
+      publicKeyHex: pubInfo.publicKeyHex,
+      gatewayKeyId: pubInfo.gatewayKeyId,
+      validateQualityReceipt,
+    };
+    const validatePreSignedPath = writeJsonTemp(tempDir, "adn_validate_pre_signed", validatePreSignedBundle);
+    const processedDataPath = writeJsonTemp(tempDir, "adn_processed_data", {
+      processed_data: processedData,
+      process_succeeded: processSucceeded,
+    });
+    tempFiles.push(validatePreSignedPath, processedDataPath);
+
+    // ── Pass 2: run validator with bound receipt ───────────────────────────────
+    const { stdout, stderr } = await runPythonProcess(
+      {
+        DID: tenantDid,
+        ADN_RUN_MODE: "execute",
+        ADN_EXECUTION_PHASE: "validate",
+        ADN_IDENTITY_BUNDLE_PATH: identityBundlePath,
+        TEE_AUTHORIZATION_BUNDLE_PATH: teeAuthorizationPath,
+        ADN_PRE_SIGNED_RECEIPTS_PATH: validatePreSignedPath,
+        ADN_PROCESSED_DATA_PATH: processedDataPath,
+        ADN_RUNTIME_MODE: runtimeMode,
+        ADN_REPLAY_LEDGER_DIR: replayLedgerDir,
+        ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE: replayIntegrityKeyPath,
+        ADN_REPLAY_LEDGER_KEY_REF: replayKeyProvider.keyRef,
+      },
+      deps,
+    );
+
     try {
       return JSON.parse(stdout.trim()) as AdnDelegationResult;
     } catch {
-      throw new Error(`ADN output parse error:\n${stdout}\n${stderr}`);
+      throw new Error(`ADN phase=validate output parse error:\n${stdout}\n${stderr}`);
     }
   } finally {
-    cleanupTempFiles(
-      [identityBundlePath, teeAuthorizationPath, preSignedPath, replayIntegrityKeyPath],
-      [tempDir],
-    );
+    cleanupTempFiles(tempFiles, [tempDir]);
   }
 }

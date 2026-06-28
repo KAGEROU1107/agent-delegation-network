@@ -44,6 +44,8 @@ import { existsSync, readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
+export { T3nAttestedEvidenceVerifier, type T3nInvocationEvidence, type EvidenceVerificationResult, type EvidenceMode } from "./t3n_evidence.js";
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WASM_PATH = join(__dirname, "../../contract/target/wasm32-wasip2/release/adn_processor.wasm");
 

@@ -3,17 +3,21 @@
  *
  * Security model:
  *   1. This module reads ADN_GATEWAY_PRIVATE_KEY_HEX once from the bridge's env.
- *   2. It spawns the gateway_executor child process with the key in the child's env.
- *   3. It immediately deletes the key from the bridge's own process.env.
+ *   2. Before spawning, it generates a 32-byte per-session capability token and
+ *      passes it to the child via GATEWAY_CAPABILITY_TOKEN (env, not TCP).
+ *   3. It immediately deletes the private key from the bridge's own process.env.
  *   4. All subsequent signing happens inside the executor process.
- *   5. The bridge never touches raw Ed25519 key material again.
+ *   5. Every JSON-RPC call over the socket includes the capability token so the
+ *      executor can reject requests from any other local process that guesses the port.
+ *   6. The bridge never touches raw Ed25519 key material again.
  *
- * The executor communicates over a loopback TCP socket (127.0.0.1, random port).
- * Protocol: newline-delimited JSON.
+ * The executor communicates over a Unix-domain socket (non-Windows) or loopback
+ * TCP (Windows). Protocol: newline-delimited JSON.
  */
 
 import * as net from "net";
 import * as cp from "child_process";
+import { randomBytes } from "crypto";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -40,7 +44,7 @@ export interface GatewaySigningClient {
     parameters?: Record<string, unknown>,
   ): Promise<Record<string, unknown>>;
 
-  /** Terminates the executor and closes the TCP socket. */
+  /** Terminates the executor and closes the socket. */
   close(): void;
 }
 
@@ -48,6 +52,9 @@ export interface GatewaySigningClient {
 
 export function spawnGatewayExecutor(): Promise<GatewaySigningClient> {
   return new Promise((resolve, reject) => {
+    // Generate a per-session capability token — passed out-of-band via env, not TCP
+    const capabilityToken = randomBytes(32).toString("hex");
+
     // Read the private key once — immediately scrub from this process's env
     const privateKeyHex = process.env.ADN_GATEWAY_PRIVATE_KEY_HEX;
     const gatewayKeyId = process.env.ADN_GATEWAY_KEY_ID;
@@ -67,6 +74,7 @@ export function spawnGatewayExecutor(): Promise<GatewaySigningClient> {
 
     const executorEnv: Record<string, string> = {
       ADN_GATEWAY_PRIVATE_KEY_HEX: privateKeyHex.trim(),
+      GATEWAY_CAPABILITY_TOKEN: capabilityToken,
     };
     if (gatewayKeyId) executorEnv.ADN_GATEWAY_KEY_ID = gatewayKeyId;
 
@@ -84,11 +92,14 @@ export function spawnGatewayExecutor(): Promise<GatewaySigningClient> {
     child.stdout.on("data", (chunk: Buffer) => {
       stdoutBuf += chunk.toString("utf8");
       if (settled) return;
-      const match = stdoutBuf.match(/GATEWAY_EXECUTOR_READY:(\d+)/);
+      // Ready line is either:
+      //   GATEWAY_EXECUTOR_READY:unix:/tmp/gw-XXXX/gateway.sock
+      //   GATEWAY_EXECUTOR_READY:tcp:12345
+      const match = stdoutBuf.match(/GATEWAY_EXECUTOR_READY:(unix:[^\n]+|tcp:\d+)/);
       if (match) {
         settled = true;
-        const port = parseInt(match[1], 10);
-        resolve(createClient(child, port));
+        const addrSpec = match[1].trim();
+        resolve(createClient(child, addrSpec, capabilityToken));
       }
     });
 
@@ -110,7 +121,7 @@ export function spawnGatewayExecutor(): Promise<GatewaySigningClient> {
       }
     });
 
-    // Hard timeout — executor should start in < 5 s
+    // Hard timeout — executor should start in < 10 s
     setTimeout(() => {
       if (!settled) {
         settled = true;
@@ -125,7 +136,8 @@ export function spawnGatewayExecutor(): Promise<GatewaySigningClient> {
 
 function createClient(
   child: cp.ChildProcess,
-  port: number,
+  addrSpec: string,
+  capabilityToken: string,
 ): GatewaySigningClient {
   let socket: net.Socket | null = null;
   let idCounter = 0;
@@ -166,10 +178,21 @@ function createClient(
   function ensureConnected(): Promise<net.Socket> {
     if (socket && !socket.destroyed) return Promise.resolve(socket);
     return new Promise((res, rej) => {
-      const s = net.connect(port, "127.0.0.1", () => {
-        socket = s;
-        res(s);
-      });
+      let s: net.Socket;
+      if (addrSpec.startsWith("unix:")) {
+        const sockPath = addrSpec.slice(5);
+        s = net.connect(sockPath, () => {
+          socket = s;
+          res(s);
+        });
+      } else {
+        // tcp:PORT
+        const port = parseInt(addrSpec.slice(4), 10);
+        s = net.connect(port, "127.0.0.1", () => {
+          socket = s;
+          res(s);
+        });
+      }
       s.on("data", onSocketData);
       s.on("error", rej);
     });
@@ -181,7 +204,8 @@ function createClient(
         new Promise((res, rej) => {
           const id = ++idCounter;
           pending.set(id, { resolve: res, reject: rej });
-          s.write(JSON.stringify({ ...request, id }) + "\n");
+          // Include capability token in every request
+          s.write(JSON.stringify({ ...request, id, token: capabilityToken }) + "\n");
         }),
     );
   }

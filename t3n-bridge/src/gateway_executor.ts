@@ -5,8 +5,16 @@
  * The bridge spawns it with the key in the child environment and
  * immediately deletes the key from its own process.env.
  *
- * Protocol: newline-delimited JSON over loopback TCP (127.0.0.1).
- * On startup, prints "GATEWAY_EXECUTOR_READY:<port>" to stdout.
+ * Protocol: newline-delimited JSON over a Unix-domain socket (non-Windows)
+ * or loopback TCP (Windows fallback).
+ *
+ * On startup, prints one of:
+ *   GATEWAY_EXECUTOR_READY:unix:<socketPath>
+ *   GATEWAY_EXECUTOR_READY:tcp:<port>
+ *
+ * Every request MUST include a `token` field matching the GATEWAY_CAPABILITY_TOKEN
+ * env var that was passed at spawn time. Wrong or missing token → {"error":"unauthorized"}
+ * and the connection is closed immediately, before any method is dispatched.
  *
  * Supported methods:
  *   get_public_key  → { publicKeyHex, agentId, did, gatewayKeyId }
@@ -19,6 +27,9 @@
 
 import * as net from "net";
 import * as crypto from "crypto";
+import * as os from "os";
+import * as path from "path";
+import * as fs from "fs";
 import { ed25519 } from "@noble/curves/ed25519";
 
 // ─── Crypto helpers (must exactly match Python's terminal3_agent_auth_adapter) ───
@@ -99,6 +110,34 @@ function loadGatewayIdentity(): GatewayIdentity {
   const gatewayKeyId =
     process.env.ADN_GATEWAY_KEY_ID?.trim() || `gateway-${publicKeyHex.slice(0, 12)}`;
   return { privateKeyBytes, publicKeyHex, agentId, did, gatewayKeyId };
+}
+
+// ─── Capability token ─────────────────────────────────────────────────────────
+
+function loadCapabilityToken(): Buffer {
+  const raw = process.env.GATEWAY_CAPABILITY_TOKEN;
+  if (!raw?.trim()) {
+    process.stderr.write("[gateway_executor] GATEWAY_CAPABILITY_TOKEN is required\n");
+    process.exit(1);
+  }
+  const tokenHex = raw.trim();
+  const buf = Buffer.from(tokenHex, "hex");
+  if (buf.length !== 32) {
+    process.stderr.write(
+      "[gateway_executor] GATEWAY_CAPABILITY_TOKEN must be 32 bytes (64 hex chars)\n",
+    );
+    process.exit(1);
+  }
+  delete process.env.GATEWAY_CAPABILITY_TOKEN;
+  return buf;
+}
+
+/** Constant-time token comparison — guards against timing side-channels. */
+function isTokenValid(provided: unknown, expected: Buffer): boolean {
+  if (typeof provided !== "string") return false;
+  const providedBuf = Buffer.from(provided, "hex");
+  if (providedBuf.length !== expected.length) return false;
+  return crypto.timingSafeEqual(providedBuf, expected);
 }
 
 // ─── Signing (matches Python's sign_action_request) ───────────────────────────
@@ -216,7 +255,7 @@ export function buildSignedReceipt(
   };
 }
 
-// ─── TCP Server ────────────────────────────────────────────────────────────────
+// ─── Request dispatcher ────────────────────────────────────────────────────────
 
 function handleRequest(
   identity: GatewayIdentity,
@@ -243,8 +282,10 @@ function handleRequest(
     return { id, receipt };
   }
 
-  return { id, error: `unknown method: ${method}` };
+  return { id, error: "unknown_method" };
 }
+
+// ─── Server ────────────────────────────────────────────────────────────────────
 
 function startExecutor(): void {
   let identity: GatewayIdentity;
@@ -255,25 +296,41 @@ function startExecutor(): void {
     process.exit(1);
   }
 
-  // Security: scrub the private key from this process's env now that it's loaded
+  // Scrub the private key from env now that it's loaded into memory
   delete process.env.ADN_GATEWAY_PRIVATE_KEY_HEX;
+
+  // Load and scrub the capability token — never re-readable from env
+  const expectedToken = loadCapabilityToken();
 
   const server = net.createServer((socket) => {
     let buf = "";
+    let socketDone = false;
+
     socket.on("data", (chunk: Buffer) => {
+      if (socketDone) return;
       buf += chunk.toString("utf8");
       let nl: number;
       while ((nl = buf.indexOf("\n")) !== -1) {
         const line = buf.slice(0, nl).trim();
         buf = buf.slice(nl + 1);
         if (!line) continue;
+
         let req: Record<string, unknown>;
         try {
           req = JSON.parse(line) as Record<string, unknown>;
         } catch {
-          socket.write(JSON.stringify({ error: "invalid JSON" }) + "\n");
+          socket.write(JSON.stringify({ error: "invalid_json" }) + "\n");
           continue;
         }
+
+        // Token check — must pass before any method is dispatched
+        if (!isTokenValid(req.token, expectedToken)) {
+          socketDone = true;
+          socket.write(JSON.stringify({ id: req.id, error: "unauthorized" }) + "\n");
+          socket.end();
+          return;
+        }
+
         let resp: Record<string, unknown>;
         try {
           resp = handleRequest(identity, req);
@@ -283,23 +340,35 @@ function startExecutor(): void {
         socket.write(JSON.stringify(resp) + "\n");
       }
     });
+
     socket.on("error", () => {
       /* ignore individual socket errors */
     });
   });
 
-  server.listen(0, "127.0.0.1", () => {
-    const addr = server.address() as net.AddressInfo;
-    // Signal readiness to parent — parent reads this line and connects
-    process.stdout.write(`GATEWAY_EXECUTOR_READY:${addr.port}\n`);
-  });
+  const useUnixSocket = os.platform() !== "win32";
+  let socketPath: string | undefined;
+
+  if (useUnixSocket) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gw-"));
+    fs.chmodSync(dir, 0o700);
+    socketPath = path.join(dir, "gateway.sock");
+    server.listen(socketPath, () => {
+      fs.chmodSync(socketPath!, 0o600);
+      process.stdout.write(`GATEWAY_EXECUTOR_READY:unix:${socketPath}\n`);
+    });
+  } else {
+    server.listen(0, "127.0.0.1", () => {
+      const port = (server.address() as net.AddressInfo).port;
+      process.stdout.write(`GATEWAY_EXECUTOR_READY:tcp:${port}\n`);
+    });
+  }
 
   server.on("error", (err) => {
     process.stderr.write(`[gateway_executor] server error: ${err.message}\n`);
     process.exit(1);
   });
 
-  // Shut down cleanly when parent closes stdin or sends SIGTERM
   process.on("SIGTERM", () => {
     server.close(() => process.exit(0));
   });

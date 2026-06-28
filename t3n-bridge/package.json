@@ -8,7 +8,8 @@
     "build": "tsc",
     "test": "node --loader ts-node/esm test/release_proof.integration.mjs && node --loader ts-node/esm test/adn_runner.integration.mjs && node test/replay_restart.integration.mjs",
     "doctor": "node --loader ts-node/esm src/doctor.ts",
-    "demo": "node --loader ts-node/esm src/index.ts",
+    "live": "node --loader ts-node/esm src/index.ts",
+    "demo": "npm run live",
     "dev": "ts-node src/index.ts"
   },
   "dependencies": {

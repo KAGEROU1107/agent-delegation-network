@@ -557,7 +557,13 @@ function cleanupTempFiles(paths: string[], dirs: string[] = []): void {
   }
 }
 
+/**
+ * @deprecated Use spawnGatewayExecutor() instead. Blocked in live mode.
+ */
 export function requireConfiguredGatewayKeyBundleFromEnv(): GatewayKeyBundle {
+  if (process.env.ADN_RUNTIME_MODE === "live") {
+    throw new Error("[ADN] GatewayKeyBundle private key path is rejected in live mode.");
+  }
   const privateKeyHex = requireHexEnv("ADN_GATEWAY_PRIVATE_KEY_HEX");
   const publicKeyHex = requireHexEnv("ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX");
   const gatewayKeyId = process.env.ADN_GATEWAY_KEY_ID?.trim() || `gateway-${publicKeyHex.slice(0, 12)}`;
@@ -663,6 +669,9 @@ export async function prepareGatewayKeyBundle(
   }
 }
 
+/**
+ * @deprecated Use runAdnWithSignedGateway() with spawnGatewayExecutor() instead. Blocked in live mode.
+ */
 export async function runAdnWithRealDid(
   tenantDid: string,
   preparedExecution: PreparedAdnExecution,
@@ -670,6 +679,11 @@ export async function runAdnWithRealDid(
   gatewayKeyBundle: GatewayKeyBundle,
   deps: RunAdnDeps = {},
 ): Promise<AdnDelegationResult> {
+  if (process.env.ADN_RUNTIME_MODE === "live") {
+    throw new Error(
+      "[ADN] runAdnWithRealDid() is blocked in live mode. Use runAdnWithSignedGateway() with spawnGatewayExecutor()."
+    );
+  }
   const tempDir = createSecureTempDir("adn_execute");
   const runtimeMode = getRuntimeMode();
   const replayLedgerDir = requireReplayLedgerDir(runtimeMode, tempDir);

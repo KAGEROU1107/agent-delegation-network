@@ -45,7 +45,7 @@ export interface PreparedAdnIdentity {
   agentId: string;
   did: string;
   publicKeyHex: string;
-  privateKeyHex: string;
+  // privateKeyHex removed — never sent to bridge
 }
 
 export interface PreparedAdnExecution {
@@ -54,6 +54,10 @@ export interface PreparedAdnExecution {
   worker1: PreparedAdnIdentity;
   worker2: PreparedAdnIdentity;
   validator: PreparedAdnIdentity;
+  /** Internal: path to the Python-managed temp dir holding worker_private_keys.json.
+   *  TypeScript holds this path but never reads the file contents.
+   *  Caller must clean up via cleanupTempFiles([], [_workerKeysTempDir]) when done. */
+  _workerKeysTempDir: string;
 }
 
 export interface GatewayKeyBundle {
@@ -120,28 +124,17 @@ def load_json_file(env_name):
     return json.loads(Path(input_path).read_text(encoding='utf-8'))
 
 
-def make_identity(name, private_key_hex=None):
-    private_key_hex = private_key_hex or secrets.token_hex(32)
+def make_identity(name):
+    private_key_hex = secrets.token_hex(32)
     agent = create_agent(name, private_key_hex=private_key_hex)
     packet = {
         'agentId': agent.identity.agent_id,
         'did': agent.identity.did,
         'publicKeyHex': agent.identity.public_key_hex,
-        'privateKeyHex': private_key_hex,
+        # privateKeyHex intentionally absent — private key returned separately, never in the packet
     }
-    return agent, packet
+    return agent, packet, private_key_hex
 
-
-def restore_identity(name, packet):
-    private_key_hex = (packet or {}).get('privateKeyHex')
-    if not private_key_hex:
-        raise RuntimeError(f'{name} private key bundle missing')
-    agent = create_agent(name, private_key_hex=private_key_hex)
-    if agent.identity.agent_id != packet.get('agentId'):
-        raise RuntimeError(f'{name} agentId mismatch')
-    if agent.identity.public_key_hex != packet.get('publicKeyHex'):
-        raise RuntimeError(f'{name} publicKeyHex mismatch')
-    return agent
 
 
 def restore_gateway_identity(gateway_bundle):
@@ -189,10 +182,11 @@ def require_authorization_result(name, tee_bundle, expected_worker_id, expected_
 
 
 if mode == 'prepare':
-    coordinator, coordinator_packet = make_identity('coordinator')
-    worker1, worker1_packet = make_identity('worker1')
-    worker2, worker2_packet = make_identity('worker2')
-    validator, validator_packet = make_identity('validator')
+    coordinator, coordinator_packet, coordinator_priv = make_identity('coordinator')
+    worker1, worker1_packet, worker1_priv = make_identity('worker1')
+    worker2, worker2_packet, worker2_priv = make_identity('worker2')
+    validator, validator_packet, validator_priv = make_identity('validator')
+    # Bridge-visible output: packets contain only public fields — private keys never cross to TypeScript
     write_output({
         'tenantDid': tenant_did,
         'coordinator': coordinator_packet,
@@ -200,22 +194,41 @@ if mode == 'prepare':
         'worker2': worker2_packet,
         'validator': validator_packet,
     })
+    # Worker private keys written to a Python-only secure file — TypeScript receives only the path, never the content
+    _private_keys_out = os.environ.get('ADN_PRIVATE_KEYS_OUTPUT_PATH', '')
+    if _private_keys_out:
+        Path(_private_keys_out).write_text(json.dumps({
+            'coordinator': coordinator_priv,
+            'worker1': worker1_priv,
+            'worker2': worker2_priv,
+            'validator': validator_priv,
+        }), encoding='utf-8')
+        try:
+            os.chmod(_private_keys_out, 0o600)
+        except OSError:
+            pass
     print(json.dumps({'status': 'prepared'}))
     raise SystemExit(0)
 
 if mode == 'prepare_gateway':
-    gateway, gateway_packet = make_identity('gateway')
+    gateway, gateway_packet, gateway_priv = make_identity('gateway')
     gateway_key_id = os.environ.get('ADN_GATEWAY_KEY_ID', '') or f"gateway-{gateway.identity.agent_id}"
     write_output({
         'gatewayKeyId': gateway_key_id,
         'publicKeyHex': gateway_packet['publicKeyHex'],
-        'privateKeyHex': gateway_packet['privateKeyHex'],
+        'privateKeyHex': gateway_priv,
     })
     print(json.dumps({'status': 'prepared_gateway'}))
     raise SystemExit(0)
 
 identity_bundle = load_json_file('ADN_IDENTITY_BUNDLE_PATH')
 tee_bundle = load_json_file('TEE_AUTHORIZATION_BUNDLE_PATH')
+
+# Phase 3: worker private keys live in a Python-only secure file — never in the identity bundle
+_private_keys_path = os.environ.get('ADN_PRIVATE_KEYS_PATH', '')
+if not _private_keys_path:
+    raise RuntimeError('ADN_PRIVATE_KEYS_PATH is required')
+_worker_keys = json.loads(Path(_private_keys_path).read_text(encoding='utf-8'))
 
 # Phase 2: prefer pre-signed receipts (private key isolated in executor)
 _pre_signed_path = os.environ.get('ADN_PRE_SIGNED_RECEIPTS_PATH', '')
@@ -244,10 +257,11 @@ if not trusted_gateway_key_id:
 if not expected_build_config_id:
     raise RuntimeError('TEE authorization buildConfigId is required')
 
-coordinator = restore_identity('coordinator', identity_bundle.get('coordinator'))
-worker1 = restore_identity('worker1', identity_bundle.get('worker1'))
-worker2 = restore_identity('worker2', identity_bundle.get('worker2'))
-validator = restore_identity('validator', identity_bundle.get('validator'))
+# Restore worker identities from Python-only private keys — these never passed through TypeScript
+coordinator = create_agent('coordinator', private_key_hex=_worker_keys.get('coordinator'))
+worker1 = create_agent('worker1', private_key_hex=_worker_keys.get('worker1'))
+worker2 = create_agent('worker2', private_key_hex=_worker_keys.get('worker2'))
+validator = create_agent('validator', private_key_hex=_worker_keys.get('validator'))
 # Phase 2: no private key in Python when pre-signed receipts are provided
 gateway = None if pre_signed_bundle is not None else restore_gateway_identity({
     'publicKeyHex': trusted_gateway_public_key_hex,
@@ -602,20 +616,29 @@ export async function prepareAdnExecution(
   deps: RunAdnDeps = {}
 ): Promise<PreparedAdnExecution> {
   const tempDir = createSecureTempDir("adn_prepare");
-  const outputPath = tempPath(tempDir, "adn_prepare", "json");
+  // Fixed names within the secure temp dir — TypeScript reads only public_info, never private_keys
+  const outputPath = join(tempDir, "public_info.json");
+  const privateKeysPath = join(tempDir, "worker_private_keys.json");
   try {
     await runPythonProcess(
       {
         DID: tenantDid,
         ADN_RUN_MODE: "prepare",
         ADN_OUTPUT_PATH: outputPath,
+        ADN_PRIVATE_KEYS_OUTPUT_PATH: privateKeysPath,
         ADN_REPLAY_LEDGER_DIR: join(tempDir, "replay-ledger"),
       },
       deps,
     );
-    return readJsonFile<PreparedAdnExecution>(outputPath);
-  } finally {
-    cleanupTempFiles([outputPath], [tempDir]);
+    const prepared = readJsonFile<PreparedAdnExecution>(outputPath);
+    // Remove the public info file — its content is now in memory
+    cleanupTempFiles([outputPath]);
+    // Keep tempDir alive: worker_private_keys.json must survive until runAdnWith* completes.
+    // Caller is responsible for cleanup via cleanupTempFiles([], [prepared._workerKeysTempDir]).
+    return { ...prepared, _workerKeysTempDir: tempDir };
+  } catch (e) {
+    cleanupTempFiles([], [tempDir]);
+    throw e;
   }
 }
 
@@ -651,10 +674,20 @@ export async function runAdnWithRealDid(
   const runtimeMode = getRuntimeMode();
   const replayLedgerDir = requireReplayLedgerDir(runtimeMode, tempDir);
   const replayKeyProvider = resolveReplayKeyProvider(runtimeMode);
-  const identityBundlePath = writeJsonTemp(tempDir, "adn_identity_bundle", preparedExecution);
+  // Bridge-visible identity bundle contains only public fields — private keys stay in the prepare temp dir
+  const publicOnlyExecution = {
+    tenantDid: preparedExecution.tenantDid,
+    coordinator: preparedExecution.coordinator,
+    worker1: preparedExecution.worker1,
+    worker2: preparedExecution.worker2,
+    validator: preparedExecution.validator,
+  };
+  const identityBundlePath = writeJsonTemp(tempDir, "adn_identity_bundle", publicOnlyExecution);
   const teeAuthorizationPath = writeJsonTemp(tempDir, "adn_tee_bundle", teeAuthorizationBundle);
   const gatewayKeyBundlePath = writeJsonTemp(tempDir, "adn_gateway_bundle", gatewayKeyBundle);
   const replayIntegrityKeyPath = writeSecretTemp(tempDir, "adn_replay_integrity", replayKeyProvider.keyHex);
+  // Python reads worker private keys from the prepare-phase temp dir — TypeScript never reads this file
+  const workerKeysPath = join(preparedExecution._workerKeysTempDir, "worker_private_keys.json");
 
   try {
     const { stdout, stderr } = await runPythonProcess(
@@ -664,6 +697,7 @@ export async function runAdnWithRealDid(
         ADN_IDENTITY_BUNDLE_PATH: identityBundlePath,
         TEE_AUTHORIZATION_BUNDLE_PATH: teeAuthorizationPath,
         ADN_GATEWAY_KEY_BUNDLE_PATH: gatewayKeyBundlePath,
+        ADN_PRIVATE_KEYS_PATH: workerKeysPath,
         ADN_RUNTIME_MODE: runtimeMode,
         ADN_REPLAY_LEDGER_DIR: replayLedgerDir,
         ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE: replayIntegrityKeyPath,
@@ -678,6 +712,7 @@ export async function runAdnWithRealDid(
     }
   } finally {
     cleanupTempFiles([identityBundlePath, teeAuthorizationPath, gatewayKeyBundlePath, replayIntegrityKeyPath], [tempDir]);
+    // Note: preparedExecution._workerKeysTempDir is NOT cleaned here — caller's responsibility
   }
 }
 
@@ -733,9 +768,19 @@ export async function runAdnWithSignedGateway(
   const runtimeMode = getRuntimeMode();
   const replayLedgerDir = requireReplayLedgerDir(runtimeMode, tempDir);
   const replayKeyProvider = resolveReplayKeyProvider(runtimeMode);
-  const identityBundlePath = writeJsonTemp(tempDir, "adn_identity_bundle", preparedExecution);
+  // Bridge-visible identity bundle contains only public fields — private keys stay in prepare temp dir
+  const publicOnlyExecution = {
+    tenantDid: preparedExecution.tenantDid,
+    coordinator: preparedExecution.coordinator,
+    worker1: preparedExecution.worker1,
+    worker2: preparedExecution.worker2,
+    validator: preparedExecution.validator,
+  };
+  const identityBundlePath = writeJsonTemp(tempDir, "adn_identity_bundle", publicOnlyExecution);
   const teeAuthorizationPath = writeJsonTemp(tempDir, "adn_tee_bundle", teeAuthorizationBundle);
   const replayIntegrityKeyPath = writeSecretTemp(tempDir, "adn_replay_integrity", replayKeyProvider.keyHex);
+  // Python reads worker private keys from the prepare-phase temp dir — TypeScript never reads this file
+  const workerKeysPath = join(preparedExecution._workerKeysTempDir, "worker_private_keys.json");
 
   const tempFiles = [identityBundlePath, teeAuthorizationPath, replayIntegrityKeyPath];
 
@@ -757,6 +802,7 @@ export async function runAdnWithSignedGateway(
         ADN_IDENTITY_BUNDLE_PATH: identityBundlePath,
         TEE_AUTHORIZATION_BUNDLE_PATH: teeAuthorizationPath,
         ADN_PRE_SIGNED_RECEIPTS_PATH: processPreSignedPath,
+        ADN_PRIVATE_KEYS_PATH: workerKeysPath,
         ADN_RUNTIME_MODE: runtimeMode,
         ADN_REPLAY_LEDGER_DIR: replayLedgerDir,
         ADN_REPLAY_LEDGER_INTEGRITY_KEY_FILE: replayIntegrityKeyPath,
@@ -801,6 +847,7 @@ export async function runAdnWithSignedGateway(
         ADN_IDENTITY_BUNDLE_PATH: identityBundlePath,
         TEE_AUTHORIZATION_BUNDLE_PATH: teeAuthorizationPath,
         ADN_PRE_SIGNED_RECEIPTS_PATH: validatePreSignedPath,
+        ADN_PRIVATE_KEYS_PATH: workerKeysPath,
         ADN_PROCESSED_DATA_PATH: processedDataPath,
         ADN_RUNTIME_MODE: runtimeMode,
         ADN_REPLAY_LEDGER_DIR: replayLedgerDir,

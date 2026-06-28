@@ -1,4 +1,4 @@
-# ADN Install Script — Windows (PowerShell)
+# ADN Install Script - Windows (PowerShell)
 $ErrorActionPreference = "Stop"
 
 Write-Host "=== ADN Install Script ===" -ForegroundColor Cyan
@@ -38,15 +38,18 @@ pip install -r requirements.txt
 # Copy .env if not present
 if (-not (Test-Path ".env")) {
     Copy-Item ".env.example" ".env"
-    Write-Host "[+] Created .env from .env.example — fill in your T3N_API_KEY" -ForegroundColor Yellow
+    Write-Host "[+] Created .env from .env.example for local demos/tests" -ForegroundColor Yellow
 } else {
-    Write-Host "[+] .env already exists — skipping" -ForegroundColor Green
+    Write-Host "[+] .env already exists - skipping" -ForegroundColor Green
 }
 
 Write-Host ""
 Write-Host "=== Setup complete ===" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Next steps:"
-Write-Host "  1. Edit .env and set T3N_API_KEY to your Terminal 3 testnet key"
-Write-Host "  2. cd t3n-bridge"
-Write-Host "  3. node --loader ts-node/esm src/index.ts"
+Write-Host "  1. For local tests: cd t3n-bridge; npm test"
+Write-Host "  2. For the official live bridge run, set the live environment variables from README.md"
+Write-Host "  3. cd t3n-bridge"
+Write-Host "  4. npm run live"
+Write-Host ""
+Write-Host "Note: live mode intentionally skips repository .env loading; provide live secrets through the shell/service environment." -ForegroundColor Yellow

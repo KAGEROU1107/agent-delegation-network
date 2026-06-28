@@ -70,7 +70,7 @@ WASM contract: REGISTERED + INVOKED (v3.8.1, 20/20 WIT functions)
 SDK:    @terminal3/t3n-sdk@3.5.2
 WASM:   adn_processor.wasm v3.8.1 — hardened envelope validation + SHA-256 credential fingerprint
 Proof:  proof/live_run_v3.8.1_final_88b7b88.txt
-Run:    T3N_API_KEY=0x<key> ADN_GATEWAY_PRIVATE_KEY_HEX=<ed25519-seed-hex> ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX=<ed25519-pubkey-hex> node --loader ts-node/esm src/index.ts  (from t3n-bridge/)
+Run:    ADN_RUNTIME_MODE=live T3N_API_KEY=0x<key> ADN_GATEWAY_PRIVATE_KEY_HEX=<ed25519-seed-hex> ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX=<ed25519-pubkey-hex> npm run live  (from t3n-bridge/)
 ```
 
 ---
@@ -220,8 +220,10 @@ ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_IS
 
 # Deploy/invoke the pinned artifact and capture fresh proof
 cd ../t3n-bridge
-T3N_API_KEY=0x<your_key> ADN_RUNTIME_MODE=live ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> ADN_GATEWAY_PRIVATE_KEY_HEX=<32-byte-ed25519-seed-hex> ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX=<matching-ed25519-pubkey-hex> ADN_GATEWAY_KEY_ID=<gateway-key-id> ADN_RELEASE_OPERATOR_PRIVATE_KEY_HEX=<32-byte-ed25519-release-seed-hex> ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX=<matching-ed25519-release-pubkey-hex> ADN_REPLAY_LEDGER_DIR=../runtime/replay_ledger ADN_REPLAY_LEDGER_KEY_REF=file:/var/lib/adn/replay-hmac.key node --loader ts-node/esm src/index.ts 2>&1 | tee ../proof/live_run_v3.9.2.txt
+T3N_API_KEY=0x<your_key> ADN_RUNTIME_MODE=live ADN_BUILD_COMMIT=$BUILD_COMMIT ADN_RUSTC_VERSION="$RUSTC_VERSION" ADN_TRUSTED_ISSUER=<issuer-address-without-0x> ADN_TENANT_DID=did:t3n:<tenant-hex> ADN_GATEWAY_PRIVATE_KEY_HEX=<32-byte-ed25519-seed-hex> ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX=<matching-ed25519-pubkey-hex> ADN_GATEWAY_KEY_ID=<gateway-key-id> ADN_RELEASE_OPERATOR_PRIVATE_KEY_HEX=<32-byte-ed25519-release-seed-hex> ADN_RELEASE_OPERATOR_PUBLIC_KEY_HEX=<matching-ed25519-release-pubkey-hex> ADN_REPLAY_LEDGER_DIR=../runtime/replay_ledger ADN_REPLAY_LEDGER_KEY_REF=file:/var/lib/adn/replay-hmac.key npm run live 2>&1 | tee ../proof/live_run_v3.9.2.txt
 ```
+
+**Judge-facing command:** use `npm run live` from `t3n-bridge/` with `ADN_RUNTIME_MODE=live`. `npm run demo` remains only as a legacy alias for the same TypeScript bridge entrypoint; it is not the local Python feature-pattern demo.
 
 The bridge writes `proof/release/deployment_manifest.json` first as a pending manifest with the actual post-build `local_wasm_sha256`, then finalizes it after registration with `raw_registration_response_digest`, `registered_at`, optional `remote_contract_id`, and the first validated invocation digest. The legacy `proof/deployment_manifest_v3.9.2.local.json` path is kept only as a compatibility copy. This remains operator evidence rather than remote byte attestation until a pinned v3.9.2 proof bundle is committed, `Release Proof Input` completes, `Release Proof Attest` generates the final `ci_release_sha.json`, `python scripts/verify_release.py proof/release` passes, `python scripts/verify_release_remote.py proof/release` verifies the retained GitHub Actions artifact against the completed workflow-run metadata, and `python scripts/verify_release_asset.py <downloaded-release-asset-dir>` verifies the signed durable GitHub Release asset bundle.
 

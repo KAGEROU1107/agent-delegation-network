@@ -28,15 +28,18 @@ pip3 install -r requirements.txt
 
 if [ ! -f .env ]; then
   cp .env.example .env
-  echo "[+] Created .env from .env.example — fill in your T3N_API_KEY"
+  echo "[+] Created .env from .env.example for local demos/tests"
 else
-  echo "[+] .env already exists — skipping"
+  echo "[+] .env already exists - skipping"
 fi
 
 echo ""
 echo "=== Setup complete ==="
 echo ""
 echo "Next steps:"
-echo "  1. Edit .env and set T3N_API_KEY to your Terminal 3 testnet key"
-echo "  2. cd t3n-bridge"
-echo "  3. node --loader ts-node/esm src/index.ts"
+echo "  1. For local tests: cd t3n-bridge && npm test"
+echo "  2. For the official live bridge run, set the live environment variables from README.md"
+echo "  3. cd t3n-bridge"
+echo "  4. npm run live"
+echo ""
+echo "Note: live mode intentionally skips repository .env loading; provide live secrets through the shell/service environment."

@@ -1,0 +1,23 @@
+{
+  "report_type": "adn-remediation-report-v1",
+  "baseline_commit": "84a5d2fbdd44466058e6ffb3349a8e1e687ac33b",
+  "remediation_phases": [
+    {"phase": 0, "commit": "40eb618", "description": "Resolve rust-lld WIT symbol linker failure"},
+    {"phase": 1, "commit": "56e1506", "description": "Authenticate gateway executor RPC with capability token + Unix socket"},
+    {"phase": 2, "commit": "b56e6ea", "description": "Fix validation receipt to bind actual processed_data (two-pass execution)"},
+    {"phase": 3, "commit": "2b314d9", "description": "Remove worker privateKeyHex from bridge; keys generated inside Python executor"},
+    {"phase": 4, "commit": "c33ad55", "description": "Block legacy private-key paths in live mode; add CI audit guard"},
+    {"phase": 5, "commit": "6a5a794", "description": "T3nInvocationEvidence + T3nAttestedEvidenceVerifier; live mode requires platform evidence"},
+    {"phase": 6, "commit": "265c40d", "description": "Align contract state scope claims with actual stateless WIT capabilities"},
+    {"phase": 7, "commit": "84a5d2f", "description": "Proof manifest - all phases committed, replay proof generated"}
+  ],
+  "security_posture": {
+    "gateway_auth": true,
+    "two_pass_execution": true,
+    "worker_keys_in_python": true,
+    "legacy_paths_blocked": true,
+    "platform_evidence_schema": true,
+    "stateless_wit_claims": true
+  },
+  "note": "This file is separate from deployment_manifest.json which must remain schema-valid against adn-release-proof-v1"
+}

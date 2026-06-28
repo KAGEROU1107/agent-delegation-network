@@ -44,6 +44,9 @@ jobs:
       - name: Check README claims
         run: python scripts/check_readme_claims.py
 
+      - name: Validate release manifest schema
+        run: python scripts/validate_manifest.py proof/release
+
       - name: Run Python security tests
         run: python -m pytest tests/negative_security.py tests/test_result_verifier.py tests/test_audit_guards.py tests/test_release_verifier.py tests/test_release_remote_verifier.py tests/test_release_asset_verifier.py tests/test_release_asset_remote_verifier.py -v --tb=short
 

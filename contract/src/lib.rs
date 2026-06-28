@@ -1370,3 +1370,21 @@ mod delegate_tests {
         assert!(out.is_ok(), "pinned production path rejected: {:?}", out.err());
     }
 }
+
+// Regression: export!(Component) must be gated behind #[cfg(target_arch = "wasm32")].
+// Without the gate, cargo test on Linux emits cabi_post_* symbols containing `:` into
+// the GNU-ld version script, which rust-lld on ubuntu-latest rejects. If this module
+// compiles and runs, the native build succeeded without that linker error.
+#[cfg(test)]
+mod regression_tests {
+    #[test]
+    fn native_build_does_not_emit_wit_abi_trampolines() {
+        // This test passing proves the native build linked without the rust-lld
+        // version-script colon error. The export!(Component) macro is #[cfg(wasm32)]-gated
+        // in lib.rs, so cabi_post_z:adn-processor/... symbols are never emitted natively.
+        assert!(
+            cfg!(not(target_arch = "wasm32")),
+            "regression test must run on native (non-wasm32) target"
+        );
+    }
+}

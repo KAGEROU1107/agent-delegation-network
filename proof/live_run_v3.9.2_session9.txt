@@ -1,0 +1,106 @@
+node : (node:63012) ExperimentalWarning: `--experimental-loader` may be removed in the future; instead use 
+`register()`:
+At E:\LLM SHARED MEMORY PROJECT\PROJECT\Terminal 3 Agent Dev Kit Bounty Challenge (Launch 
+Ed)\agent-delegation-network\run_v392_proof.ps1:24 char:1
++ node --loader ts-node/esm src/index.ts 2>&1 | Tee-Object -FilePath $p ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:63012) Ex...e `register()`::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+--import 'data:text/javascript,import { register } from "node:module"; import { pathToFileURL } from "node:url"; 
+register("ts-node/esm", pathToFileURL("./"));'
+(Use `node --trace-warnings ...` to show where the warning was created)
+  [~] Skipping .env load in live mode; provide production secrets through the service environment or key provider.
+=== Terminal 3 Agent Delegation Network ΓÇö Full ADK Demo ===
+
+[Phase 1] Authenticating with Terminal 3 testnet...
+(node:63012) [DEP0180] DeprecationWarning: fs.Stats constructor is deprecated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+  [+] handshake() complete
+  [+] authenticate() complete
+  [+] Authenticated DID (from session): did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
+  [+] Ethereum address: 0xb5a5808b97bdef6b053bb110be63af0deec60ed9
+  [+] TenantClient initialized
+  [+] Pinned issuer matches authenticated T3N issuer: 0xb5a5808b97bdef6b053bb110be63af0deec60ed9
+  [+] Pinned tenant DID matches authenticated T3N tenant: did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
+  [+] Local WASM SHA-256: 6b7be2136b9401d12e7bce2a5847382bedde15959ced459b138217f37bc12d47
+  [+] Deployment manifest digest: 31e1d47d33852512e8b96b22556e7ad4c39a88f10b502d75de06bea8a96f65bc
+  [+] Deployment manifest: E:\LLM SHARED MEMORY PROJECT\PROJECT\Terminal 3 Agent Dev Kit Bounty Challenge (Launch Ed)\agent-delegation-network\proof\release\deployment_manifest.json
+  [+] register() returned contractId: 459 (BUG-001 resolved by SDK)
+
+[Phase 0] Agent Auth SDK ΓÇö delegation credential + enforcement cycle...
+  [+] credential built: vc_id=01e8247bd2e15ab9a3af82dee3901851
+  [+] granted functions: delegate-task, process-data
+  [+] signed with EIP-191: user_sig=WIJqQ5ZBiGQJlTyg...
+  [+] envelope: agent_sig=4brET6WUPWnftGzM... nonce=QOKP-bDB...
+  [+] pre-revocation call:  ACCEPTED: {"delegation_id":"tee-del-0ef81fc8900d0c1fb59a4a38ccc16ad0","status":"ROUTED","r
+  [+] revocation: SUCCESS (tee:delegation/contracts::revoke)
+  [+] post-revocation call: REJECTED: HTTP 400: Invalid params ({"code":"bad_request","detail":"delegate-task: credential expired (expired epoch 1782604692, n
+  [+] Negative envelope tests ΓÇö proving v3.9.2 cryptographic contract-layer verification...
+  [+]   missing agent_sig:    REJECTED: HTTP 400: Invalid params ({"code":"bad_request","detail":"delegate-task: agent_sig missing from enve
+  [+] short nonce (4 bytes): REJECTED: HTTP 400: Invalid params ({"code":"bad_request","detail":"delegate-task: nonce must be exactly 16 by
+  [+]   no envelope at all:   REJECTED: HTTP 400: Invalid params ({"code":"bad_request","detail":"delegate-task: __delegation_envelope required ΓÇö unauthenticate
+
+[Phase 2] Running Python ADN with authenticated DID...
+  DID injected into coordinator: did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
+  [+] Prepared worker target for PROCESS_DATA: 8a29137c7e0b
+  [+] Prepared worker target for VALIDATE_QUALITY: ae77d3a09505
+  [+] Trusted gateway key id: gw-v3.9.2-session9
+  [+] delegate-task PROCESS_DATA: tee-del-6e220dd99090cb3661f3a8157770b235 -> 8a29137c7e0b
+  [+] delegate-task VALIDATE_QUALITY: tee-del-86d16c416cc3080ef7ccd0a00b8b44c9 -> ae77d3a09505
+  [+] Real T3N authorization bundle acquired for prepared Python workers.
+  [+] Unique cryptographic identities: 4/4
+  [+] Records processed: 30
+  [+] Total revenue: $13253
+  [+] Quality score: 1 | passed: true
+  [+] Session DID injected correctly: true
+
+[Phase 3] TEE Contract...
+  [+] Registered: tail=adn-processor version=3.9.2
+  [+] Script: z:ad146e6861ac408900af7ece1f6e90976dad3a02:adn-processor
+  [+] Setting up ADN tenant maps...
+  [+] map ACL: contractId=459 (contract-only ACL)
+  [+] Maps: 0 created, 8 already existed
+  [+] Invoking process-data in TEE...
+  [+] Sending 30 sale records into TEE enclave for computation
+  [+] TEE result: 30 records | total=$13253 | avg=$441.77 | min=$198.25 | max=$687.75 | trend=increasing
+  [+] processed_in_tee: true
+  [+] Invoking validate-quality in TEE...
+  [+] TEE quality: score=1 | validated_in_tee: true
+  [+] Negative test ΓÇö empty records array (TEE must reject)...
+  [+] TEE correctly rejected empty records: HTTP 400: Invalid params ({"code":"bad_request","detail":"process-data: records 
+
+[Phase 4] Full Feature Contract Coverage ΓÇö invoking all 20 WIT exports...
+  (waiting 65s for fuel window reset, then 7s/call ΓÇö ~3 min total)
+  [+] delegate-task: {"delegation_id":"tee-del-62db82907b7f8c306014199400c8dfed","status":"ROUTED","routed_to":"did:key:ed25519:worker-demo-1
+  [+] submit-bid: {"bid_hash":"3a2a166f6e636282","item_id":"item-001","sealed_in_tee":true,"receipt":"bid-receipt-3a2a166f6e63"}
+  [+] resolve-auction: {"winner_did":"did:key:ed25519:worker2-demo-1782604766","winning_amount":185,"item_id":"item-001","total_bids":2,"resolv
+  [+] record-completion: {"agent_did":"did:key:ed25519:worker-demo-1782604766","task_id":"task-001","reputation_delta":0.94,"recorded_in_tee":tru
+  [+] get-reputation: {"agent_did":"did:key:ed25519:worker-demo-1782604766","reputation_score":0.84,"tier":"SILVER","tasks_evaluated":3,"compu
+  [+] send-personalized-outreach: {"customer_id":"cust-001","message_variant":"tmpl-premium:standard_offer","personalization_score":0.7,"raw_data_exposed"
+  [+] issue-time-grant: {"grant_token":"tgrant-12172ce36ffad9fd","grantee_did":"did:key:ed25519:worker-demo-1782604766","action":"VALIDATE_DATA"
+  [+] check-grant: {"valid":true,"reason":"VALID until epoch 1782608366","checked_in_tee":true}
+  [+] kyc-submit-step: {"applicant_id":"applicant-001","step":"identity_check","step_receipt":"kyc-identity_check-cafebabe","progress_pct":25,"
+  [+] kyc-get-status: {"applicant_id":"applicant-001","status":"PENDING","steps_completed":1,"steps_required":4,"missing_steps":["identity","a
+  [+] store-secret: {"vault_id":"vault-3efe7edb3b326f54","owner_did":"did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02","label":"api-key","s
+  [+] invoke-with-secret: {"vault_id":"vault-demo","action_executed":"decrypt","tee_attested":true,"raw_secret_exposed":false}
+  [+] cast-vote: {"voter_did":"did:key:ed25519:worker-demo-1782604766","proposal_id":"prop-001","vote_receipt":"vote-1b670a5484aacb22","r
+  [+] tally-votes: {"proposal_id":"prop-001","result":"PASSED","votes_for":2,"votes_against":1,"quorum_met":true,"tallied_in_tee":true}
+  [+] log-decision: {"decision_id":"dec-001","agent_did":"did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02","entry_hash":"45003997662c893d",
+  [+] audit-decisions: {"total_decisions":2,"anomalies_detected":1,"risk_score":0.5,"attestation":"audit-9d16d11daa5c6c11","audited_in_tee":tru
+  [+] lock-bond: {"bond_id":"bond-92c3fb94150d6dc3","agent_did":"did:key:ed25519:worker-demo-1782604766","task_id":"task-001","bond_amoun
+  [+] verify-and-settle: {"bond_id":"bond-demo","settlement":"FULL","payout_pct":1,"payout_amount":500,"reason":"EXCELLENT_DELIVERY","settled_in_
+  [+] Phase 4: 18/18 passed | 0 failed
+  [+] All 20 WIT exports invoked via live T3N TEE bridge.
+
+=======================================================
+DEMO SUMMARY
+=======================================================
+Real T3N auth:             YES
+DID from session:          did:t3n:ad146e6861ac408900af7ece1f6e90976dad3a02
+Agent Auth credential:     BUILT + SIGNED + ENFORCED (EIP-191, SDK-native, C-01 live)
+Distinct agent identities: 4/4
+Multi-agent delegation:    PASSED
+Tamper detection:          ACTIVE (data_hash in signed payload)
+WASM contract:             REGISTERED + INVOKED (20/20 WIT functions)
+=======================================================

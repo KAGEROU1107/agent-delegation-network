@@ -91,13 +91,14 @@ def build_valid_release_asset_fixture(asset_dir: Path, monkeypatch):
         "schema_version": "adn-release-proof-v1",
         "contract_tail": "adn-processor",
         "contract_version": "3.9.2",
-        "build_commit": "abc1234",
+        "build_commit": "abc1234000000000000000000000000000000000",
         "rustc_version": "rustc 1.0.0",
         "tenant_did": "did:t3n:fixture",
         "trusted_issuer": "58da990a8f4a3a6ca7cb6315d68a140105917352",
         "build_config_id": "adn-build-fixture",
         "local_wasm_sha256": "a" * 64,
         "registration_status": "registered",
+        "registered_at": "2026-06-28T10:10:36.104Z",
         "remote_contract_id": 991,
         "raw_registration_response_digest": verify_release.digest_hex(
             verify_release.canonical_json(registration_response).encode("utf-8")
@@ -123,14 +124,14 @@ def build_valid_release_asset_fixture(asset_dir: Path, monkeypatch):
         "attested_workflow": ".github/workflows/release-proof-input.yml",
         "attestation_phase": "post_verify_completed_run",
         "repository": "KAGEROU1107/agent-delegation-network",
-        "sha": "abc1234",
+        "sha": "abc1234000000000000000000000000000000000",
         "workflow_run_id": "12345",
         "workflow_run_url": "https://github.com/KAGEROU1107/agent-delegation-network/actions/runs/12345",
         "workflow_conclusion": "success",
         "tests_workflow_run_id": "54321",
         "tests_workflow_run_url": "https://github.com/KAGEROU1107/agent-delegation-network/actions/runs/54321",
         "tests_workflow_conclusion": "success",
-        "tests_workflow_head_sha": "abc1234",
+        "tests_workflow_head_sha": "abc1234000000000000000000000000000000000",
         "tests_workflow_event": "push",
         "tests_workflow_head_branch": "main",
         "artifact_id": "67890",
@@ -241,7 +242,7 @@ def test_verify_release_asset_accepts_signed_release_asset_bundle(tmp_path, monk
     result = verify_release_asset.verify_release_asset_dir(asset_dir)
 
     assert result["status"] == "RELEASE_ASSET_OK"
-    assert result["build_commit"] == "abc1234"
+    assert result["build_commit"] == "abc1234000000000000000000000000000000000"
     assert result["proof_input_digest"]
 
 

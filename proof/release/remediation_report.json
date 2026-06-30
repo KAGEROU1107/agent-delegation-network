@@ -8,8 +8,22 @@
     {"phase": 3, "commit": "2b314d9", "description": "Remove worker privateKeyHex from bridge; keys generated inside Python executor"},
     {"phase": 4, "commit": "c33ad55", "description": "Block legacy private-key paths in live mode; add CI audit guard"},
     {"phase": 5, "commit": "6a5a794", "description": "T3nInvocationEvidence + T3nAttestedEvidenceVerifier; live mode requires platform evidence"},
-    {"phase": 6, "commit": "265c40d", "description": "Align contract state scope claims with actual stateless WIT capabilities"},
-    {"phase": 7, "commit": "84a5d2f", "description": "Proof manifest - all phases committed, replay proof generated"}
+    {"phase": 6, "commit": "546f283", "description": "All legacy private-key paths blocked in live mode; expanded CI audit guard"},
+    {"phase": 7, "commit": "pending", "description": "v3.9.2 testnet proof rebuilt; all file digests corrected; manifest schema-valid; test fixture SHAs fixed"}
+  ],
+  "phase7_status": "complete",
+  "live_run_delegation_id": "tee-del-2c970ed3f7ff0514a6069aad8ed96b05",
+  "live_run_timestamp": "2026-06-28T10:16:02Z",
+  "verifier_status": {
+    "validate_manifest": "pass",
+    "release_gate": "pass",
+    "verify_release": "partial — missing deployment_manifest.sig (requires operator key) and ci_release_sha.json (requires GitHub Actions CI)",
+    "verify_release_remote": "partial — same pre-existing failures; GitHub API not called without token",
+    "verify_release_asset": "partial — same pre-existing failures; CI-generated files not present"
+  },
+  "known_pending": [
+    "deployment_manifest.sig (requires operator private key — pre-existing)",
+    "ci_release_sha.json (requires GitHub Actions CI on HEAD — pre-existing)"
   ],
   "security_posture": {
     "gateway_auth": true,

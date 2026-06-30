@@ -7,6 +7,38 @@ A multi-agent delegation system built on the Terminal 3 ADK. A T3N-authenticated
 
 ---
 
+## v3.9.2 Remediation Status — Phases 0–8
+
+This section documents exactly what is verified and what remains pending after the complete ADN remediation plan. See [docs/security/current-posture.md](docs/security/current-posture.md) for full posture detail.
+
+### Verified and Proven
+
+| Item | Evidence |
+|---|---|
+| Contract ID 459 registered on T3N testnet | `proof/release/deployment_manifest.json` — `remote_contract_id: 459`, `registered_at: 2026-06-28T10:10:36Z` |
+| v3.9.2 WASM build clean; Rust tests pass | WIT `export!(Component)` gated under `#[cfg(target_arch = "wasm32")]`; `cargo test --locked` passes |
+| Worker keys OS-isolated in dedicated executor process | `adn/worker_executor.py` owns keys; bridge receives only public identity (Phase 4) |
+| Gateway key never enters bridge process in live mode | Bridge calls `connectToExistingExecutor()` only; standalone executor required (Phase 5) |
+| All legacy private-key paths hard-blocked in live mode | `audit_legacy_imports.mjs` exits 0; live-mode guards enforced (Phase 6) |
+| Release manifest schema-valid; all file digests correct | `validate_manifest.py proof/release` exits 0 against `adn-release-proof-v1` (Phase 7) |
+| 113 Python tests pass; TypeScript tests pass | `pytest tests/ -q` + `npm test` in `t3n-bridge/` |
+| T3N invocation receipt: `credential_enforced: true` | `proof/release/invocation_receipt.json` — delegation ID `tee-del-2c970ed3f7ff0514a6069aad8ed96b05` |
+| Legacy audit exits 0 | `node scripts/audit_legacy_imports.mjs` — no forbidden symbols in live-path source |
+
+### Pending — Not Yet Cryptographically Complete
+
+These items require external ceremony or platform infrastructure not yet available:
+
+| Item | Reason Pending |
+|---|---|
+| `deployment_manifest.sig` | Operator private key signing ceremony not performed; `operator_public_key` placeholder in manifest |
+| `ci_release_sha.json` | Requires a GitHub Actions CI run on HEAD to produce the pinned workflow SHA |
+| T3N platform cryptographic signature | `T3nAttestedEvidenceVerifier` accepts any non-empty `platformMaterial`; real T3N trust anchor signature not yet published |
+
+The v3.8.1 historical proof (Phase 0) remains the sole fully live-attested run. The v3.9.2 proof bundle is structurally complete and self-validating but is not yet backed by an operator-signed manifest or a pinned CI artifact.
+
+---
+
 ## Live Proof
 
 All phases in the current committed live proof run against the real T3N testnet using `adn-processor` contract v3.8.1 with hardened structural delegation enforcement. The v3.9.2 cryptographic path is built and unit-tested, but still needs a pinned live deployment proof.

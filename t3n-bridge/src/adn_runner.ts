@@ -60,6 +60,10 @@ export interface PreparedAdnExecution {
   _workerKeysTempDir: string;
 }
 
+/**
+ * @deprecated Demo/test only. Blocked in ADN_RUNTIME_MODE=live.
+ * In live mode, the gateway executor owns the signing key internally — it never crosses to the bridge.
+ */
 export interface GatewayKeyBundle {
   gatewayKeyId: string;
   publicKeyHex: string;
@@ -140,6 +144,11 @@ def make_identity(name):
 
 
 def restore_gateway_identity(gateway_bundle):
+    if os.environ.get('ADN_RUNTIME_MODE') == 'live':
+        raise RuntimeError(
+            '[ADN] restore_gateway_identity() is blocked in live mode. '
+            'Use the standalone gateway executor process instead.'
+        )
     private_key_hex = (gateway_bundle or {}).get('privateKeyHex')
     if not private_key_hex:
         raise RuntimeError('gateway private key bundle missing')
@@ -564,7 +573,10 @@ function cleanupTempFiles(paths: string[], dirs: string[] = []): void {
  */
 export function requireConfiguredGatewayKeyBundleFromEnv(): GatewayKeyBundle {
   if (process.env.ADN_RUNTIME_MODE === "live") {
-    throw new Error("[ADN] GatewayKeyBundle private key path is rejected in live mode.");
+    throw new Error(
+      "[ADN] requireConfiguredGatewayKeyBundleFromEnv() is blocked in live mode. " +
+      "Use connectToExistingExecutor() instead."
+    );
   }
   const privateKeyHex = requireHexEnv("ADN_GATEWAY_PRIVATE_KEY_HEX");
   const publicKeyHex = requireHexEnv("ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX");
@@ -650,9 +662,19 @@ export async function prepareAdnExecution(
   }
 }
 
+/**
+ * @deprecated Demo/test only. Throws in ADN_RUNTIME_MODE=live.
+ * In live mode, the gateway executor manages its own key — use connectToExistingExecutor() instead.
+ */
 export async function prepareGatewayKeyBundle(
   deps: RunAdnDeps = {}
 ): Promise<GatewayKeyBundle> {
+  if (process.env.ADN_RUNTIME_MODE === "live") {
+    throw new Error(
+      "[ADN] prepareGatewayKeyBundle() is blocked in live mode. " +
+      "Use connectToExistingExecutor() instead."
+    );
+  }
   const tempDir = createSecureTempDir("adn_gateway");
   const outputPath = tempPath(tempDir, "adn_gateway", "json");
   try {

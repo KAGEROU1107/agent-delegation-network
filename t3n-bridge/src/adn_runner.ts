@@ -63,6 +63,8 @@ export interface PreparedAdnExecution {
 export interface GatewayKeyBundle {
   gatewayKeyId: string;
   publicKeyHex: string;
+  // Gateway signing key only — NOT a worker key. Worker private keys never appear in TypeScript.
+  // Worker key isolation: see adn/worker_executor.py + WorkerExecutorClient in worker_client.ts.
   privateKeyHex: string;
 }
 

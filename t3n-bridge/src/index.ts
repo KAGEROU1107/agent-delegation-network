@@ -53,6 +53,8 @@ export {
   type EvidenceMode,
 } from "./t3n_evidence.js";
 export { verifyPlatformSignature, type T3nTrustAnchor } from "./t3n_evidence_crypto.js";
+export { WorkerExecutorClient } from "./worker_client.js";
+export type { WorkerPublicIdentity, WorkerSignResult } from "./worker_client.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WASM_PATH = join(__dirname, "../../contract/target/wasm32-wasip2/release/adn_processor.wasm");

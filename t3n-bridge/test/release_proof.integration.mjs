@@ -10,7 +10,7 @@ const validManifest = {
   schema_version: "adn-release-proof-v1",
   contract_tail: "adn-processor",
   contract_version: "3.9.2",
-  build_commit: "abc1234",
+  build_commit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   rustc_version: "rustc 1.0.0",
   trusted_issuer: "58da990a8f4a3a6ca7cb6315d68a140105917352",
   tenant_did: "did:t3n:fixture",

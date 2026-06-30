@@ -2,14 +2,19 @@
  * Gateway Client — bridge-side interface to the Gateway Executor.
  *
  * Security model:
- *   1. This module reads ADN_GATEWAY_PRIVATE_KEY_HEX once from the bridge's env.
- *   2. Before spawning, it generates a 32-byte per-session capability token and
- *      passes it to the child via GATEWAY_CAPABILITY_TOKEN (env, not TCP).
- *   3. It immediately deletes the private key from the bridge's own process.env.
- *   4. All subsequent signing happens inside the executor process.
- *   5. Every JSON-RPC call over the socket includes the capability token so the
- *      executor can reject requests from any other local process that guesses the port.
- *   6. The bridge never touches raw Ed25519 key material again.
+ *   DEV/DEMO MODE (ADN_RUNTIME_MODE ≠ "live"):
+ *     - spawnGatewayExecutor() reads ADN_GATEWAY_PRIVATE_KEY_HEX once,
+ *       passes it to the child process, and immediately deletes it from the
+ *       bridge's own process.env. All signing happens inside the executor.
+ *
+ *   LIVE MODE (ADN_RUNTIME_MODE === "live"):
+ *     - connectToExistingExecutor() is used instead. The bridge reads ONLY:
+ *         ADN_GATEWAY_EXECUTOR_SOCKET          — "tcp:<port>" or "unix:<path>"
+ *         ADN_GATEWAY_EXECUTOR_CAPABILITY_FILE — path to a file containing the token
+ *     - ADN_GATEWAY_PRIVATE_KEY_HEX MUST NOT be set in the bridge env in live mode.
+ *     - The gateway executor is started by a secrets provider / process supervisor
+ *       that has access to the key. The bridge never holds raw key material.
+ *     - spawnGatewayExecutor() throws immediately in live mode.
  *
  * The executor communicates over a Unix-domain socket (non-Windows) or loopback
  * TCP (Windows). Protocol: newline-delimited JSON.
@@ -20,6 +25,7 @@ import * as cp from "child_process";
 import { randomBytes } from "crypto";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { readFileSync as fsReadFileSync } from "fs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -28,6 +34,11 @@ export interface GatewayPublicInfo {
   agentId: string;
   did: string;
   gatewayKeyId: string;
+}
+
+export interface GatewayHealthResult {
+  status: string;
+  hasKey: boolean;
 }
 
 export interface GatewaySigningClient {
@@ -44,45 +55,110 @@ export interface GatewaySigningClient {
     parameters?: Record<string, unknown>,
   ): Promise<Record<string, unknown>>;
 
-  /** Terminates the executor and closes the socket. */
+  /** Checks executor liveness — returns status without exposing key material. */
+  health(): Promise<GatewayHealthResult>;
+
+  /** Closes the socket. In dev mode also terminates the spawned executor. */
   close(): void;
 }
 
-// ─── Spawn & connect ──────────────────────────────────────────────────────────
+// ─── Live mode: connect to an already-running executor ───────────────────────
+
+/**
+ * Connect to an already-running gateway executor.
+ * Used in live mode — the executor was started by a secrets provider/supervisor,
+ * not by the bridge. The bridge never handles the raw gateway private key.
+ *
+ * Reads from env:
+ *   ADN_GATEWAY_EXECUTOR_SOCKET          — "tcp:<port>" or "unix:<path>"
+ *   ADN_GATEWAY_EXECUTOR_CAPABILITY_FILE — path to file containing capability token
+ */
+export async function connectToExistingExecutor(): Promise<GatewaySigningClient> {
+  const socketEnv = process.env.ADN_GATEWAY_EXECUTOR_SOCKET;
+  const tokenFile = process.env.ADN_GATEWAY_EXECUTOR_CAPABILITY_FILE;
+
+  if (!socketEnv) {
+    throw new Error(
+      "[gateway] ADN_GATEWAY_EXECUTOR_SOCKET not set — cannot connect to executor in live mode",
+    );
+  }
+  if (!tokenFile) {
+    throw new Error(
+      "[gateway] ADN_GATEWAY_EXECUTOR_CAPABILITY_FILE not set — cannot load capability token",
+    );
+  }
+
+  let token: string;
+  try {
+    token = fsReadFileSync(tokenFile, "utf8").trim();
+  } catch (err) {
+    throw new Error(
+      `[gateway] Cannot read capability token file "${tokenFile}": ${(err as Error).message}`,
+    );
+  }
+  if (!token || token.length < 32) {
+    throw new Error("[gateway] Capability token file is empty or too short");
+  }
+
+  let addrSpec: string;
+  if (socketEnv.startsWith("tcp:") || socketEnv.startsWith("unix:")) {
+    addrSpec = socketEnv;
+  } else {
+    throw new Error(`[gateway] Unknown socket format: ${socketEnv} — expected "tcp:<port>" or "unix:<path>"`);
+  }
+
+  // Verify the executor is reachable before returning the client
+  const client = createClient(null, addrSpec, token);
+  const health = await client.health();
+  if (health.status !== "ok") {
+    client.close();
+    throw new Error(`[gateway] Executor health check failed: status=${health.status}`);
+  }
+
+  return client;
+}
+
+// ─── Dev mode: spawn & connect ───────────────────────────────────────────────
 
 export function spawnGatewayExecutor(): Promise<GatewaySigningClient> {
+  if (process.env.ADN_RUNTIME_MODE === "live") {
+    return Promise.reject(
+      new Error(
+        "[gateway] spawnGatewayExecutor() is blocked in live mode. " +
+          "Start the executor as a separate process and use connectToExistingExecutor() instead.",
+      ),
+    );
+  }
+
   return new Promise((resolve, reject) => {
     // Generate a per-session capability token — passed out-of-band via env, not TCP
     const capabilityToken = randomBytes(32).toString("hex");
 
-    // Read the private key once — immediately scrub from this process's env
-    const privateKeyHex = process.env.ADN_GATEWAY_PRIVATE_KEY_HEX;
-    const gatewayKeyId = process.env.ADN_GATEWAY_KEY_ID;
-
-    if (!privateKeyHex?.trim()) {
+    // Presence-only check — the bridge never reads the key VALUE.
+    // The executor reads ADN_GATEWAY_PRIVATE_KEY_HEX from its own inherited environment.
+    if (!process.env.ADN_GATEWAY_PRIVATE_KEY_HEX?.trim()) {
       reject(
         new Error(
-          "ADN_GATEWAY_PRIVATE_KEY_HEX is required to spawn the gateway executor. " +
-            "Pass it via the service environment; it will be isolated to the executor process.",
+          "ADN_GATEWAY_PRIVATE_KEY_HEX must be set for dev-mode executor spawn. " +
+            "The key is read by the executor from its own environment, not by the bridge.",
         ),
       );
       return;
     }
 
-    // Scrub from bridge env immediately — executor gets its own isolated copy
-    delete process.env.ADN_GATEWAY_PRIVATE_KEY_HEX;
-
-    const executorEnv: Record<string, string> = {
-      ADN_GATEWAY_PRIVATE_KEY_HEX: privateKeyHex.trim(),
+    // Snapshot parent env for the child, then immediately scrub key from bridge env.
+    // The key is in the snapshot for the executor but is never held in a bridge variable.
+    const executorEnv: NodeJS.ProcessEnv = {
+      ...process.env,
       GATEWAY_CAPABILITY_TOKEN: capabilityToken,
     };
-    if (gatewayKeyId) executorEnv.ADN_GATEWAY_KEY_ID = gatewayKeyId;
+    delete process.env.ADN_GATEWAY_PRIVATE_KEY_HEX;
 
     // Resolve the compiled executor path (sits next to this file after `tsc`)
     const executorPath = join(__dirname, "gateway_executor.js");
 
     const child = cp.spawn(process.execPath, [executorPath], {
-      env: executorEnv,
+      env: executorEnv as Record<string, string>,
       stdio: ["ignore", "pipe", "pipe"],
     });
 
@@ -134,8 +210,13 @@ export function spawnGatewayExecutor(): Promise<GatewaySigningClient> {
 
 // ─── Client implementation ────────────────────────────────────────────────────
 
+/**
+ * Creates a GatewaySigningClient that communicates over the given socket.
+ * Pass child=null when connecting to an externally-managed executor (live mode).
+ * Pass child=ChildProcess when the bridge spawned the executor (dev mode).
+ */
 function createClient(
-  child: cp.ChildProcess,
+  child: cp.ChildProcess | null,
   addrSpec: string,
   capabilityToken: string,
 ): GatewaySigningClient {
@@ -235,13 +316,20 @@ function createClient(
       return resp.receipt as Record<string, unknown>;
     },
 
+    async health(): Promise<GatewayHealthResult> {
+      const resp = await rpc({ method: "health" });
+      return { status: resp.status as string, hasKey: resp.hasKey as boolean };
+    },
+
     close(): void {
       socket?.destroy();
       socket = null;
-      try {
-        child.kill("SIGTERM");
-      } catch {
-        /* already gone */
+      if (child) {
+        try {
+          child.kill("SIGTERM");
+        } catch {
+          /* already gone */
+        }
       }
     },
   };

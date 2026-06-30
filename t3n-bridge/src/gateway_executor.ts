@@ -264,6 +264,11 @@ function handleRequest(
   const id = req.id;
   const method = req.method as string;
 
+  if (method === "health") {
+    // Returns liveness status — never exposes key material
+    return { id, status: "ok", hasKey: identity.publicKeyHex.length === 64 };
+  }
+
   if (method === "get_public_key") {
     return {
       id,

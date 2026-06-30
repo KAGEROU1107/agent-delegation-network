@@ -8,8 +8,12 @@
  * 4. Run multi-agent delegation workflow (4 distinct Ed25519 identities)
  * 5. [Optional] Register and invoke TEE contract if WASM available
  *
- * Usage:
- *   T3N_API_KEY=0x<key> ADN_RUNTIME_MODE=live ADN_BUILD_COMMIT=<commit> ADN_RUSTC_VERSION="<rustc --version>" ADN_TRUSTED_ISSUER=<issuer> ADN_TENANT_DID=<tenant-did> ADN_GATEWAY_PRIVATE_KEY_HEX=<ed25519-seed-hex> ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX=<ed25519-pubkey-hex> [ADN_GATEWAY_KEY_ID=<key-id>] npm run live
+ * Usage (live mode — bridge never holds the raw gateway private key):
+ *   Start the gateway executor separately (with key in its own env), then:
+ *   T3N_API_KEY=0x<key> ADN_RUNTIME_MODE=live ADN_BUILD_COMMIT=<commit> ADN_RUSTC_VERSION="<rustc --version>" ADN_TRUSTED_ISSUER=<issuer> ADN_TENANT_DID=<tenant-did> ADN_TRUSTED_GATEWAY_PUBLIC_KEY_HEX=<ed25519-pubkey-hex> ADN_GATEWAY_EXECUTOR_SOCKET=tcp:<port> ADN_GATEWAY_EXECUTOR_CAPABILITY_FILE=/path/to/token.bin [ADN_GATEWAY_KEY_ID=<key-id>] npm run live
+ *
+ * Dev mode (bridge spawns the executor locally — NOT for production):
+ *   ADN_GATEWAY_PRIVATE_KEY_HEX=<ed25519-seed-hex> npm run live
  */
 
 import { createT3nSession } from "./t3n_auth.js";
@@ -18,7 +22,7 @@ import {
   runAdnWithSignedGateway,
   type TeeAuthorizationResult,
 } from "./adn_runner.js";
-import { spawnGatewayExecutor } from "./gateway_client.js";
+import { spawnGatewayExecutor, connectToExistingExecutor } from "./gateway_client.js";
 import {
   registerAdnContract,
   recordFirstInvocationDigest,
@@ -218,12 +222,21 @@ async function main() {
       );
     }
 
-    // Phase 2: spawn isolated executor — reads and scrubs ADN_GATEWAY_PRIVATE_KEY_HEX from THIS process
-    console.log("  [+] Spawning gateway executor (Phase 2 security boundary)...");
-    const gatewayClient = await spawnGatewayExecutor();
+    // Phase 2: connect to/spawn isolated executor — bridge never holds raw key in live mode
+    const isLive = getRuntimeMode() === "live";
+    if (isLive) {
+      console.log("  [+] Connecting to pre-started gateway executor (live mode — bridge holds no key)...");
+    } else {
+      console.log("  [+] Spawning gateway executor (dev mode — key isolated to child process)...");
+    }
+    const gatewayClient = isLive
+      ? await connectToExistingExecutor()
+      : await spawnGatewayExecutor();
     const gatewayPubInfo = await gatewayClient.getPublicInfo();
     console.log(`  [+] Executor ready — gateway key id: ${gatewayPubInfo.gatewayKeyId}`);
-    console.log(`  [+] ADN_GATEWAY_PRIVATE_KEY_HEX scrubbed from bridge process env`);
+    if (!isLive) {
+      console.log(`  [+] ADN_GATEWAY_PRIVATE_KEY_HEX scrubbed from bridge process env`);
+    }
 
     const preparedExecution = await prepareAdnExecution(tenantDid);
     console.log(`  [+] Prepared worker target for PROCESS_DATA: ${preparedExecution.worker1.agentId}`);
